@@ -324,13 +324,14 @@ impl App {
         let frame = FrameData {
             view: camera.view(),
             projection: camera.projection(width as f32 / height as f32),
+            viewport: Vec2::new(width as f32, height as f32),
             camera_position: camera.eye,
             light_direction: Vec3::new(-0.35, -0.82, -0.45).normalize(),
             elapsed,
             style: self.style,
         };
 
-        self.renderer.draw_grid(&frame);
+        self.renderer.draw_showroom(&frame);
         for object in self.scene.objects.iter_mut() {
             object.transform.rotation_y += 0.002;
             self.renderer
@@ -393,6 +394,7 @@ struct Palette {
 struct FrameData {
     view: Mat4,
     projection: Mat4,
+    viewport: Vec2,
     camera_position: Vec3,
     light_direction: Vec3,
     elapsed: f32,
@@ -880,40 +882,44 @@ struct Renderer {
     gl: Rc<glow::Context>,
     object_program: glow::NativeProgram,
     outline_program: glow::NativeProgram,
-    grid_program: glow::NativeProgram,
-    grid: MeshGpu,
+    showroom_program: glow::NativeProgram,
+    showroom: MeshGpu,
 }
 
 impl Renderer {
     unsafe fn new(gl: Rc<glow::Context>) -> Result<Self, String> {
         let object_program = compile_program(&gl, OBJECT_VERTEX, OBJECT_FRAGMENT)?;
         let outline_program = compile_program(&gl, OUTLINE_VERTEX, OUTLINE_FRAGMENT)?;
-        let grid_program = compile_program(&gl, GRID_VERTEX, GRID_FRAGMENT)?;
-        let grid = MeshGpu::from_cpu(gl.clone(), &grid_mesh())?;
+        let showroom_program = compile_program(&gl, SHOWROOM_VERTEX, SHOWROOM_FRAGMENT)?;
+        let showroom = MeshGpu::from_cpu(gl.clone(), &showroom_mesh())?;
         Ok(Self {
             gl,
             object_program,
             outline_program,
-            grid_program,
-            grid,
+            showroom_program,
+            showroom,
         })
     }
 
-    unsafe fn draw_grid(&self, frame: &FrameData) {
+    unsafe fn draw_showroom(&self, frame: &FrameData) {
         self.gl.disable(glow::CULL_FACE);
-        self.gl.use_program(Some(self.grid_program));
-        set_mat4(&self.gl, self.grid_program, "u_model", Mat4::IDENTITY);
-        set_mat4(&self.gl, self.grid_program, "u_view", frame.view);
+        self.gl.use_program(Some(self.showroom_program));
+        set_mat4(&self.gl, self.showroom_program, "u_model", Mat4::IDENTITY);
+        set_mat4(&self.gl, self.showroom_program, "u_view", frame.view);
         set_mat4(
             &self.gl,
-            self.grid_program,
+            self.showroom_program,
             "u_projection",
             frame.projection,
         );
-        set_f32(&self.gl, self.grid_program, "u_time", frame.elapsed);
-        self.gl.bind_vertex_array(Some(self.grid.vertex_array));
-        self.gl
-            .draw_elements(glow::LINES, self.grid.index_count, glow::UNSIGNED_INT, 0);
+        set_f32(&self.gl, self.showroom_program, "u_time", frame.elapsed);
+        self.gl.bind_vertex_array(Some(self.showroom.vertex_array));
+        self.gl.draw_elements(
+            glow::TRIANGLES,
+            self.showroom.index_count,
+            glow::UNSIGNED_INT,
+            0,
+        );
         self.gl.bind_vertex_array(None);
         self.gl.enable(glow::CULL_FACE);
     }
@@ -932,6 +938,7 @@ impl Renderer {
             "u_projection",
             frame.projection,
         );
+        set_vec2(&self.gl, self.outline_program, "u_viewport", frame.viewport);
         set_vec3(
             &self.gl,
             self.outline_program,
@@ -942,7 +949,7 @@ impl Renderer {
             &self.gl,
             self.outline_program,
             "u_outline_width",
-            if selected { 0.042 } else { 0.026 },
+            if selected { 3.4 } else { 2.2 },
         );
         self.gl.bind_vertex_array(Some(object.mesh.vertex_array));
         self.gl.draw_elements(
@@ -1008,37 +1015,106 @@ impl Renderer {
     }
 }
 
-fn grid_mesh() -> MeshCpu {
+fn showroom_mesh() -> MeshCpu {
     let mut vertices = Vec::new();
     let mut indices = Vec::new();
-    let mut push_line = |a: Vec3, b: Vec3, color: [f32; 4]| {
+
+    let mut push_quad = |a: Vec3, b: Vec3, c: Vec3, d: Vec3, color: [f32; 4]| {
         let base = vertices.len() as u32;
+        let normal = (b - a).cross(c - a).normalize_or_zero();
         vertices.push(Vertex {
             position: a.to_array(),
-            normal: Vec3::Y.to_array(),
+            normal: normal.to_array(),
             color,
             tex_coord: [0.0, 0.0],
         });
         vertices.push(Vertex {
             position: b.to_array(),
-            normal: Vec3::Y.to_array(),
+            normal: normal.to_array(),
             color,
-            tex_coord: [0.0, 0.0],
+            tex_coord: [1.0, 0.0],
         });
-        indices.extend_from_slice(&[base, base + 1]);
+        vertices.push(Vertex {
+            position: c.to_array(),
+            normal: normal.to_array(),
+            color,
+            tex_coord: [1.0, 1.0],
+        });
+        vertices.push(Vertex {
+            position: d.to_array(),
+            normal: normal.to_array(),
+            color,
+            tex_coord: [0.0, 1.0],
+        });
+        indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
     };
-    for i in -12..=12 {
-        let color = if i == 0 {
-            [0.95, 0.78, 0.28, 0.9]
-        } else {
-            [0.24, 0.34, 0.30, 0.45]
-        };
-        let f = i as f32;
-        push_line(Vec3::new(f, 0.0, -12.0), Vec3::new(f, 0.0, 12.0), color);
-        push_line(Vec3::new(-12.0, 0.0, f), Vec3::new(12.0, 0.0, f), color);
+
+    let segments = 96;
+    let radius = 7.2;
+    let wall_height = 4.2;
+    for segment in 0..segments {
+        let a0 = segment as f32 / segments as f32 * std::f32::consts::TAU;
+        let a1 = (segment + 1) as f32 / segments as f32 * std::f32::consts::TAU;
+        let p0 = Vec3::new(a0.cos() * radius, 0.0, a0.sin() * radius);
+        let p1 = Vec3::new(a1.cos() * radius, 0.0, a1.sin() * radius);
+        let tint = if segment % 12 < 6 { 0.03 } else { 0.0 };
+        push_quad(
+            Vec3::ZERO,
+            p1,
+            p0,
+            Vec3::ZERO,
+            [0.17 + tint, 0.18 + tint, 0.17 + tint, 1.0],
+        );
+        push_quad(
+            p0,
+            p1,
+            p1 + Vec3::Y * wall_height,
+            p0 + Vec3::Y * wall_height,
+            [0.24, 0.25, 0.23, 1.0],
+        );
     }
+
+    for ring in 0..16 {
+        let angle = ring as f32 / 16.0 * std::f32::consts::TAU;
+        let dir = Vec3::new(angle.cos(), 0.0, angle.sin());
+        let side = Vec3::new(-angle.sin(), 0.0, angle.cos());
+        let center = dir * 4.9 + Vec3::Y * 3.72;
+        let color = match ring % 4 {
+            0 => [1.00, 0.92, 0.72, 1.0],
+            1 => [0.60, 0.92, 1.00, 1.0],
+            2 => [1.00, 0.68, 0.42, 1.0],
+            _ => [0.88, 1.00, 0.84, 1.0],
+        };
+        push_quad(
+            center - side * 0.42 - dir * 0.12,
+            center + side * 0.42 - dir * 0.12,
+            center + side * 0.42 + dir * 0.12,
+            center - side * 0.42 + dir * 0.12,
+            color,
+        );
+    }
+
+    for ring in 0..10 {
+        let angle = (ring as f32 + 0.5) / 10.0 * std::f32::consts::TAU;
+        let dir = Vec3::new(angle.cos(), 0.0, angle.sin());
+        let side = Vec3::new(-angle.sin(), 0.0, angle.cos());
+        let center = dir * 5.9 + Vec3::Y * 0.035;
+        let color = if ring % 2 == 0 {
+            [0.18, 0.95, 0.82, 1.0]
+        } else {
+            [1.0, 0.46, 0.18, 1.0]
+        };
+        push_quad(
+            center - side * 0.18 - dir * 0.38,
+            center + side * 0.18 - dir * 0.38,
+            center + side * 0.18 + dir * 0.38,
+            center - side * 0.18 + dir * 0.38,
+            color,
+        );
+    }
+
     MeshCpu {
-        name: "editor grid".to_string(),
+        name: "circular showroom".to_string(),
         vertices,
         indices,
         texture: None,
@@ -1092,6 +1168,12 @@ unsafe fn set_mat4(gl: &glow::Context, program: glow::NativeProgram, name: &str,
 unsafe fn set_vec3(gl: &glow::Context, program: glow::NativeProgram, name: &str, value: Vec3) {
     if let Some(location) = gl.get_uniform_location(program, name) {
         gl.uniform_3_f32(Some(&location), value.x, value.y, value.z);
+    }
+}
+
+unsafe fn set_vec2(gl: &glow::Context, program: glow::NativeProgram, name: &str, value: Vec2) {
+    if let Some(location) = gl.get_uniform_location(program, name) {
+        gl.uniform_2_f32(Some(&location), value.x, value.y);
     }
 }
 
@@ -1153,9 +1235,15 @@ out vec4 out_color;
 void main() {
     vec3 normal = normalize(v_normal);
     float ndl = dot(normal, normalize(-u_light_direction));
-    float ramp = ndl < 0.28 ? 0.0 : (ndl < 0.68 ? 0.58 : 1.0);
-    vec3 ramp_color = mix(u_shadow, u_mid, step(0.35, ramp));
-    ramp_color = mix(ramp_color, u_light, step(0.9, ramp));
+    float wrapped = clamp(ndl * 0.72 + 0.36, 0.0, 1.0);
+    float mid_band = smoothstep(0.24, 0.42, wrapped);
+    float high_band = smoothstep(0.62, 0.82, wrapped);
+    vec3 ramp_color = mix(u_shadow, u_mid, mid_band);
+    ramp_color = mix(ramp_color, u_light, high_band);
+
+    vec3 warm_floor = vec3(1.0, 0.48, 0.16) * smoothstep(0.0, 1.8, v_world_position.y) * 0.06;
+    vec3 cool_side = vec3(0.12, 0.78, 0.95) * (0.5 + 0.5 * normal.x) * 0.07;
+    ramp_color += warm_floor + cool_side;
 
     vec3 view_dir = normalize(u_camera_position - v_world_position);
     float rim = pow(1.0 - max(dot(view_dir, normal), 0.0), 3.0);
@@ -1178,10 +1266,16 @@ uniform mat4 u_model;
 uniform mat4 u_view;
 uniform mat4 u_projection;
 uniform float u_outline_width;
+uniform vec2 u_viewport;
 
 void main() {
-    vec3 pushed = a_position + normalize(a_normal) * u_outline_width;
-    gl_Position = u_projection * u_view * u_model * vec4(pushed, 1.0);
+    vec4 world = u_model * vec4(a_position, 1.0);
+    vec3 view_normal = normalize(mat3(u_view * u_model) * a_normal);
+    vec4 clip = u_projection * u_view * world;
+    vec2 dir = normalize(view_normal.xy + vec2(0.0001, 0.0001));
+    vec2 pixel = vec2(2.0 / u_viewport.x, 2.0 / u_viewport.y);
+    clip.xy += dir * pixel * u_outline_width * clip.w;
+    gl_Position = clip;
 }
 "#;
 
@@ -1194,7 +1288,7 @@ void main() {
 }
 "#;
 
-const GRID_VERTEX: &str = r#"#version 330 core
+const SHOWROOM_VERTEX: &str = r#"#version 330 core
 layout (location = 0) in vec3 a_position;
 layout (location = 2) in vec4 a_color;
 
@@ -1211,11 +1305,14 @@ void main() {
 }
 "#;
 
-const GRID_FRAGMENT: &str = r#"#version 330 core
+const SHOWROOM_FRAGMENT: &str = r#"#version 330 core
 in vec4 v_color;
 out vec4 out_color;
 
 void main() {
-    out_color = v_color;
+    vec3 color = v_color.rgb;
+    float glow = max(max(color.r, color.g), color.b);
+    color += color * smoothstep(0.55, 1.0, glow) * 0.35;
+    out_color = vec4(color, v_color.a);
 }
 "#;
