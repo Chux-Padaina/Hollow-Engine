@@ -268,8 +268,8 @@ impl App {
 
     fn camera(&self) -> Camera {
         Camera {
-            eye: Vec3::new(4.5, 3.4, 6.0),
-            target: Vec3::new(0.0, 0.85, 0.0),
+            eye: Vec3::new(3.8, 2.45, 4.6),
+            target: Vec3::new(0.0, 0.72, 0.0),
             fov_y_radians: 48.0_f32.to_radians(),
         }
     }
