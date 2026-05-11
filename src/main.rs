@@ -170,7 +170,10 @@ impl App {
             name: "Starter cube".to_string(),
             mesh: MeshGpu::from_cpu(gl.clone(), &MeshCpu::cube())?,
             group_id: 0,
-            transform: Transform::default(),
+            transform: Transform {
+                translation: Vec3::new(0.0, 0.5, 0.0),
+                ..Transform::default()
+            },
         });
         Ok(Self {
             gl,
@@ -258,7 +261,7 @@ impl App {
         self.scene.selected_group = 0;
         for (index, object) in self.scene.objects.iter_mut().enumerate() {
             object.transform.translation = if object.group_id == 0 {
-                Vec3::ZERO
+                Vec3::new(0.0, 0.5, 0.0)
             } else {
                 Vec3::new(index as f32 * 0.02, 0.0, 0.0)
             };
@@ -334,13 +337,13 @@ impl App {
         };
 
         self.renderer.draw_showroom(&frame);
-        self.renderer.draw_light_gizmos(&frame);
         for object in self.scene.objects.iter_mut() {
             object.transform.rotation_y += 0.002;
             self.renderer.draw_contact_shadow(object, &frame);
             self.renderer
                 .draw_object(object, object.group_id == self.scene.selected_group, &frame);
         }
+        self.renderer.draw_light_gizmos(&frame);
     }
 }
 
@@ -1025,6 +1028,7 @@ impl Renderer {
 
     unsafe fn draw_light_gizmos(&self, frame: &FrameData) {
         self.gl.disable(glow::CULL_FACE);
+        self.gl.depth_mask(false);
         self.gl.use_program(Some(self.unlit_program));
         set_mat4(&self.gl, self.unlit_program, "u_view", frame.view);
         set_mat4(
@@ -1054,12 +1058,17 @@ impl Renderer {
             );
         }
         self.gl.bind_vertex_array(None);
+        self.gl.depth_mask(true);
         self.gl.enable(glow::CULL_FACE);
     }
 
     unsafe fn draw_contact_shadow(&self, object: &SceneObject, frame: &FrameData) {
         let radius = object.mesh.bounds_radius.clamp(0.35, 2.4);
-        let position = object.transform.translation + Vec3::new(0.0, 0.014, 0.0);
+        let position = Vec3::new(
+            object.transform.translation.x,
+            0.014,
+            object.transform.translation.z,
+        );
         let model = Mat4::from_translation(position)
             * Mat4::from_rotation_y(object.transform.rotation_y)
             * Mat4::from_scale(Vec3::new(radius * 1.2, 1.0, radius * 0.78));
@@ -1103,6 +1112,7 @@ impl Renderer {
         let palette = frame.style.palette();
 
         self.gl.cull_face(glow::FRONT);
+        self.gl.depth_mask(false);
         self.gl.use_program(Some(self.outline_program));
         set_mat4(&self.gl, self.outline_program, "u_model", model);
         set_mat4(&self.gl, self.outline_program, "u_view", frame.view);
@@ -1132,6 +1142,7 @@ impl Renderer {
             glow::UNSIGNED_INT,
             0,
         );
+        self.gl.depth_mask(true);
 
         self.gl.cull_face(glow::BACK);
         self.gl.use_program(Some(self.object_program));
