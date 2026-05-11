@@ -22,6 +22,7 @@ use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::{Window, WindowAttributes};
 
 const WINDOW_TITLE: &str = "ZZZ Style Engine Prototype - drop .glb/.gltf/.obj, left-drag to move";
+const MAX_POINT_LIGHTS: usize = 8;
 
 fn main() {
     if let Err(error) = run() {
@@ -327,6 +328,7 @@ impl App {
             viewport: Vec2::new(width as f32, height as f32),
             camera_position: camera.eye,
             light_direction: Vec3::new(-0.35, -0.82, -0.45).normalize(),
+            point_lights: showroom_lights(elapsed),
             elapsed,
             style: self.style,
         };
@@ -397,8 +399,82 @@ struct FrameData {
     viewport: Vec2,
     camera_position: Vec3,
     light_direction: Vec3,
+    point_lights: [PointLight; MAX_POINT_LIGHTS],
     elapsed: f32,
     style: StylePreset,
+}
+
+#[derive(Clone, Copy)]
+struct PointLight {
+    position: Vec3,
+    color: Vec3,
+    range: f32,
+    intensity: f32,
+}
+
+impl Default for PointLight {
+    fn default() -> Self {
+        Self {
+            position: Vec3::ZERO,
+            color: Vec3::ZERO,
+            range: 1.0,
+            intensity: 0.0,
+        }
+    }
+}
+
+fn showroom_lights(time: f32) -> [PointLight; MAX_POINT_LIGHTS] {
+    let pulse = 0.92 + time.sin() * 0.04;
+    [
+        PointLight {
+            position: Vec3::new(0.0, 3.65, 0.0),
+            color: Vec3::new(1.0, 0.96, 0.82),
+            range: 8.5,
+            intensity: 0.92,
+        },
+        PointLight {
+            position: Vec3::new(3.8, 3.25, 2.6),
+            color: Vec3::new(0.95, 0.98, 1.0),
+            range: 5.8,
+            intensity: 0.62,
+        },
+        PointLight {
+            position: Vec3::new(-3.8, 3.25, 2.6),
+            color: Vec3::new(0.95, 0.98, 1.0),
+            range: 5.8,
+            intensity: 0.62,
+        },
+        PointLight {
+            position: Vec3::new(4.8, 0.45, 0.2),
+            color: Vec3::new(0.0, 0.95, 0.88),
+            range: 4.3,
+            intensity: 0.95 * pulse,
+        },
+        PointLight {
+            position: Vec3::new(-4.8, 0.45, 0.2),
+            color: Vec3::new(0.0, 0.95, 0.88),
+            range: 4.3,
+            intensity: 0.95 * pulse,
+        },
+        PointLight {
+            position: Vec3::new(2.7, 0.45, -4.0),
+            color: Vec3::new(1.0, 0.45, 0.12),
+            range: 4.0,
+            intensity: 0.82,
+        },
+        PointLight {
+            position: Vec3::new(-2.7, 0.45, -4.0),
+            color: Vec3::new(1.0, 0.45, 0.12),
+            range: 4.0,
+            intensity: 0.82,
+        },
+        PointLight {
+            position: Vec3::new(0.0, 2.8, -5.5),
+            color: Vec3::new(1.0, 0.88, 0.45),
+            range: 5.2,
+            intensity: 0.48,
+        },
+    ]
 }
 
 struct Camera {
@@ -987,6 +1063,13 @@ impl Renderer {
         set_vec3(&self.gl, self.object_program, "u_mid", palette.mid);
         set_vec3(&self.gl, self.object_program, "u_light", palette.light);
         set_vec3(&self.gl, self.object_program, "u_rim", palette.rim);
+        set_i32(
+            &self.gl,
+            self.object_program,
+            "u_point_light_count",
+            frame.point_lights.len() as i32,
+        );
+        set_point_lights(&self.gl, self.object_program, &frame.point_lights);
         set_i32(&self.gl, self.object_program, "u_base_texture", 0);
         set_f32(
             &self.gl,
@@ -1177,6 +1260,35 @@ unsafe fn set_vec2(gl: &glow::Context, program: glow::NativeProgram, name: &str,
     }
 }
 
+unsafe fn set_point_lights(
+    gl: &glow::Context,
+    program: glow::NativeProgram,
+    lights: &[PointLight; MAX_POINT_LIGHTS],
+) {
+    let mut positions = [0.0; MAX_POINT_LIGHTS * 3];
+    let mut colors = [0.0; MAX_POINT_LIGHTS * 3];
+    let mut params = [0.0; MAX_POINT_LIGHTS * 2];
+    for (index, light) in lights.iter().enumerate() {
+        positions[index * 3] = light.position.x;
+        positions[index * 3 + 1] = light.position.y;
+        positions[index * 3 + 2] = light.position.z;
+        colors[index * 3] = light.color.x;
+        colors[index * 3 + 1] = light.color.y;
+        colors[index * 3 + 2] = light.color.z;
+        params[index * 2] = light.range;
+        params[index * 2 + 1] = light.intensity;
+    }
+    if let Some(location) = gl.get_uniform_location(program, "u_point_light_positions") {
+        gl.uniform_3_f32_slice(Some(&location), &positions);
+    }
+    if let Some(location) = gl.get_uniform_location(program, "u_point_light_colors") {
+        gl.uniform_3_f32_slice(Some(&location), &colors);
+    }
+    if let Some(location) = gl.get_uniform_location(program, "u_point_light_params") {
+        gl.uniform_2_f32_slice(Some(&location), &params);
+    }
+}
+
 unsafe fn set_f32(gl: &glow::Context, program: glow::NativeProgram, name: &str, value: f32) {
     if let Some(location) = gl.get_uniform_location(program, name) {
         gl.uniform_1_f32(Some(&location), value);
@@ -1229,6 +1341,10 @@ uniform vec3 u_rim;
 uniform float u_selected;
 uniform float u_has_texture;
 uniform sampler2D u_base_texture;
+uniform int u_point_light_count;
+uniform vec3 u_point_light_positions[8];
+uniform vec3 u_point_light_colors[8];
+uniform vec2 u_point_light_params[8];
 
 out vec4 out_color;
 
@@ -1245,13 +1361,28 @@ void main() {
     vec3 cool_side = vec3(0.12, 0.78, 0.95) * (0.5 + 0.5 * normal.x) * 0.07;
     ramp_color += warm_floor + cool_side;
 
+    vec3 point_light = vec3(0.0);
+    for (int i = 0; i < 8; ++i) {
+        if (i >= u_point_light_count) {
+            break;
+        }
+        vec3 to_light = u_point_light_positions[i] - v_world_position;
+        float distance_to_light = length(to_light);
+        vec3 light_dir = to_light / max(distance_to_light, 0.001);
+        float range = u_point_light_params[i].x;
+        float intensity = u_point_light_params[i].y;
+        float attenuation = smoothstep(range, 0.0, distance_to_light);
+        float facing = smoothstep(-0.25, 0.72, dot(normal, light_dir));
+        point_light += u_point_light_colors[i] * attenuation * facing * intensity;
+    }
+
     vec3 view_dir = normalize(u_camera_position - v_world_position);
     float rim = pow(1.0 - max(dot(view_dir, normal), 0.0), 3.0);
     rim = smoothstep(0.34, 0.88, rim);
 
     vec3 sampled = u_has_texture > 0.5 ? texture(u_base_texture, v_tex_coord).rgb : vec3(1.0);
     vec3 base = pow(v_color.rgb * sampled, vec3(0.85));
-    vec3 color = base * ramp_color + u_rim * rim * 0.42;
+    vec3 color = base * (ramp_color + point_light * 0.48) + u_rim * rim * 0.42;
     color += vec3(1.0, 0.82, 0.18) * u_selected * 0.08;
     color = pow(color, vec3(0.92));
     out_color = vec4(color, v_color.a);
