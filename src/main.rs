@@ -334,8 +334,10 @@ impl App {
         };
 
         self.renderer.draw_showroom(&frame);
+        self.renderer.draw_light_gizmos(&frame);
         for object in self.scene.objects.iter_mut() {
             object.transform.rotation_y += 0.002;
+            self.renderer.draw_contact_shadow(object, &frame);
             self.renderer
                 .draw_object(object, object.group_id == self.scene.selected_group, &frame);
         }
@@ -875,6 +877,7 @@ struct MeshGpu {
     _vertex_buffer: glow::NativeBuffer,
     _index_buffer: glow::NativeBuffer,
     texture: Option<glow::NativeTexture>,
+    bounds_radius: f32,
     index_count: i32,
 }
 
@@ -944,11 +947,18 @@ impl MeshGpu {
             None
         };
 
+        let bounds_radius = mesh
+            .vertices
+            .iter()
+            .map(|vertex| Vec3::from_array(vertex.position).length())
+            .fold(0.001_f32, f32::max);
+
         Ok(Self {
             vertex_array,
             _vertex_buffer: vertex_buffer,
             _index_buffer: index_buffer,
             texture,
+            bounds_radius,
             index_count: mesh.indices.len() as i32,
         })
     }
@@ -959,7 +969,11 @@ struct Renderer {
     object_program: glow::NativeProgram,
     outline_program: glow::NativeProgram,
     showroom_program: glow::NativeProgram,
+    unlit_program: glow::NativeProgram,
+    contact_shadow_program: glow::NativeProgram,
     showroom: MeshGpu,
+    light_gizmo: MeshGpu,
+    contact_shadow: MeshGpu,
 }
 
 impl Renderer {
@@ -967,13 +981,22 @@ impl Renderer {
         let object_program = compile_program(&gl, OBJECT_VERTEX, OBJECT_FRAGMENT)?;
         let outline_program = compile_program(&gl, OUTLINE_VERTEX, OUTLINE_FRAGMENT)?;
         let showroom_program = compile_program(&gl, SHOWROOM_VERTEX, SHOWROOM_FRAGMENT)?;
+        let unlit_program = compile_program(&gl, UNLIT_VERTEX, UNLIT_FRAGMENT)?;
+        let contact_shadow_program =
+            compile_program(&gl, CONTACT_SHADOW_VERTEX, CONTACT_SHADOW_FRAGMENT)?;
         let showroom = MeshGpu::from_cpu(gl.clone(), &showroom_mesh())?;
+        let light_gizmo = MeshGpu::from_cpu(gl.clone(), &MeshCpu::cube())?;
+        let contact_shadow = MeshGpu::from_cpu(gl.clone(), &contact_shadow_mesh())?;
         Ok(Self {
             gl,
             object_program,
             outline_program,
             showroom_program,
+            unlit_program,
+            contact_shadow_program,
             showroom,
+            light_gizmo,
+            contact_shadow,
         })
     }
 
@@ -997,6 +1020,81 @@ impl Renderer {
             0,
         );
         self.gl.bind_vertex_array(None);
+        self.gl.enable(glow::CULL_FACE);
+    }
+
+    unsafe fn draw_light_gizmos(&self, frame: &FrameData) {
+        self.gl.disable(glow::CULL_FACE);
+        self.gl.use_program(Some(self.unlit_program));
+        set_mat4(&self.gl, self.unlit_program, "u_view", frame.view);
+        set_mat4(
+            &self.gl,
+            self.unlit_program,
+            "u_projection",
+            frame.projection,
+        );
+        self.gl
+            .bind_vertex_array(Some(self.light_gizmo.vertex_array));
+        for light in frame.point_lights {
+            let scale = 0.055 + light.intensity * 0.045;
+            let model =
+                Mat4::from_translation(light.position) * Mat4::from_scale(Vec3::splat(scale));
+            set_mat4(&self.gl, self.unlit_program, "u_model", model);
+            set_vec3(
+                &self.gl,
+                self.unlit_program,
+                "u_color",
+                light.color * (0.55 + light.intensity * 0.65),
+            );
+            self.gl.draw_elements(
+                glow::TRIANGLES,
+                self.light_gizmo.index_count,
+                glow::UNSIGNED_INT,
+                0,
+            );
+        }
+        self.gl.bind_vertex_array(None);
+        self.gl.enable(glow::CULL_FACE);
+    }
+
+    unsafe fn draw_contact_shadow(&self, object: &SceneObject, frame: &FrameData) {
+        let radius = object.mesh.bounds_radius.clamp(0.35, 2.4);
+        let position = object.transform.translation + Vec3::new(0.0, 0.014, 0.0);
+        let model = Mat4::from_translation(position)
+            * Mat4::from_rotation_y(object.transform.rotation_y)
+            * Mat4::from_scale(Vec3::new(radius * 1.2, 1.0, radius * 0.78));
+
+        self.gl.disable(glow::CULL_FACE);
+        self.gl.enable(glow::BLEND);
+        self.gl
+            .blend_func(glow::SRC_ALPHA, glow::ONE_MINUS_SRC_ALPHA);
+        self.gl.depth_mask(false);
+        self.gl.use_program(Some(self.contact_shadow_program));
+        set_mat4(&self.gl, self.contact_shadow_program, "u_model", model);
+        set_mat4(&self.gl, self.contact_shadow_program, "u_view", frame.view);
+        set_mat4(
+            &self.gl,
+            self.contact_shadow_program,
+            "u_projection",
+            frame.projection,
+        );
+        set_f32(
+            &self.gl,
+            self.contact_shadow_program,
+            "u_strength",
+            (0.36 / radius.sqrt()).clamp(0.12, 0.34),
+        );
+        self.gl
+            .bind_vertex_array(Some(self.contact_shadow.vertex_array));
+        self.gl.draw_elements(
+            glow::TRIANGLES,
+            self.contact_shadow.index_count,
+            glow::UNSIGNED_INT,
+            0,
+        );
+        self.gl.bind_vertex_array(None);
+        self.gl.depth_mask(true);
+        self.gl.disable(glow::BLEND);
         self.gl.enable(glow::CULL_FACE);
     }
 
@@ -1101,6 +1199,8 @@ impl Renderer {
 fn showroom_mesh() -> MeshCpu {
     let mut vertices = Vec::new();
     let mut indices = Vec::new();
+    let ceiling_center = Vec3::ZERO;
+    let ceiling_color = [0.92, 0.94, 0.9, 1.0];
 
     let mut push_quad = |a: Vec3, b: Vec3, c: Vec3, d: Vec3, color: [f32; 4]| {
         let base = vertices.len() as u32;
@@ -1157,6 +1257,20 @@ fn showroom_mesh() -> MeshCpu {
         );
     }
 
+    for segment in 0..segments {
+        let a0 = segment as f32 / segments as f32 * std::f32::consts::TAU;
+        let a1 = (segment + 1) as f32 / segments as f32 * std::f32::consts::TAU;
+        let p0 = Vec3::new(a0.cos() * radius, wall_height, a0.sin() * radius);
+        let p1 = Vec3::new(a1.cos() * radius, wall_height, a1.sin() * radius);
+        push_quad(
+            ceiling_center + Vec3::Y * wall_height,
+            p0,
+            p1,
+            ceiling_center + Vec3::Y * wall_height,
+            ceiling_color,
+        );
+    }
+
     for ring in 0..16 {
         let angle = ring as f32 / 16.0 * std::f32::consts::TAU;
         let dir = Vec3::new(angle.cos(), 0.0, angle.sin());
@@ -1200,6 +1314,41 @@ fn showroom_mesh() -> MeshCpu {
         name: "circular showroom".to_string(),
         vertices,
         indices,
+        texture: None,
+    }
+}
+
+fn contact_shadow_mesh() -> MeshCpu {
+    let vertices = vec![
+        Vertex {
+            position: [-1.0, 0.0, -1.0],
+            normal: [0.0, 1.0, 0.0],
+            color: [0.0, 0.0, 0.0, 1.0],
+            tex_coord: [0.0, 0.0],
+        },
+        Vertex {
+            position: [1.0, 0.0, -1.0],
+            normal: [0.0, 1.0, 0.0],
+            color: [0.0, 0.0, 0.0, 1.0],
+            tex_coord: [1.0, 0.0],
+        },
+        Vertex {
+            position: [1.0, 0.0, 1.0],
+            normal: [0.0, 1.0, 0.0],
+            color: [0.0, 0.0, 0.0, 1.0],
+            tex_coord: [1.0, 1.0],
+        },
+        Vertex {
+            position: [-1.0, 0.0, 1.0],
+            normal: [0.0, 1.0, 0.0],
+            color: [0.0, 0.0, 0.0, 1.0],
+            tex_coord: [0.0, 1.0],
+        },
+    ];
+    MeshCpu {
+        name: "contact shadow".to_string(),
+        vertices,
+        indices: vec![0, 1, 2, 0, 2, 3],
         texture: None,
     }
 }
@@ -1384,7 +1533,11 @@ void main() {
     vec3 base = pow(v_color.rgb * sampled, vec3(0.85));
     vec3 color = base * (ramp_color + point_light * 0.48) + u_rim * rim * 0.42;
     color += vec3(1.0, 0.82, 0.18) * u_selected * 0.08;
-    color = pow(color, vec3(0.92));
+    float camera_distance = length(u_camera_position - v_world_position);
+    vec3 fog_color = vec3(0.17, 0.19, 0.17);
+    color = mix(color, fog_color, smoothstep(12.0, 28.0, camera_distance) * 0.42);
+    color = color / (color + vec3(1.0));
+    color = pow(color, vec3(0.82)) * 1.18;
     out_color = vec4(color, v_color.a);
 }
 "#;
@@ -1416,6 +1569,57 @@ out vec4 out_color;
 
 void main() {
     out_color = vec4(u_outline_color, 1.0);
+}
+"#;
+
+const UNLIT_VERTEX: &str = r#"#version 330 core
+layout (location = 0) in vec3 a_position;
+
+uniform mat4 u_model;
+uniform mat4 u_view;
+uniform mat4 u_projection;
+
+void main() {
+    gl_Position = u_projection * u_view * u_model * vec4(a_position, 1.0);
+}
+"#;
+
+const UNLIT_FRAGMENT: &str = r#"#version 330 core
+uniform vec3 u_color;
+out vec4 out_color;
+
+void main() {
+    vec3 color = u_color / (u_color + vec3(1.0));
+    out_color = vec4(pow(color, vec3(0.72)), 1.0);
+}
+"#;
+
+const CONTACT_SHADOW_VERTEX: &str = r#"#version 330 core
+layout (location = 0) in vec3 a_position;
+layout (location = 3) in vec2 a_tex_coord;
+
+uniform mat4 u_model;
+uniform mat4 u_view;
+uniform mat4 u_projection;
+
+out vec2 v_tex_coord;
+
+void main() {
+    v_tex_coord = a_tex_coord;
+    gl_Position = u_projection * u_view * u_model * vec4(a_position, 1.0);
+}
+"#;
+
+const CONTACT_SHADOW_FRAGMENT: &str = r#"#version 330 core
+in vec2 v_tex_coord;
+uniform float u_strength;
+out vec4 out_color;
+
+void main() {
+    vec2 centered = v_tex_coord * 2.0 - 1.0;
+    float d = dot(centered, centered);
+    float alpha = smoothstep(1.0, 0.08, d) * u_strength;
+    out_color = vec4(0.0, 0.0, 0.0, alpha);
 }
 "#;
 
