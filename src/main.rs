@@ -164,9 +164,11 @@ impl App {
         gl.clear_color(0.075, 0.085, 0.08, 1.0);
         let renderer = Renderer::new(gl.clone())?;
         let mut scene = Scene::default();
+        scene.next_group_id = 1;
         scene.objects.push(SceneObject {
             name: "Starter cube".to_string(),
             mesh: MeshGpu::from_cpu(gl.clone(), &MeshCpu::cube())?,
+            group_id: 0,
             transform: Transform::default(),
         });
         Ok(Self {
@@ -190,20 +192,22 @@ impl App {
     }
 
     fn import_model(&mut self, path: PathBuf) {
-        match MeshCpu::load(&path) {
-            Ok(meshes) => {
+        match ImportedModel::load(&path) {
+            Ok(model) => {
                 let mut imported = 0;
-                for mesh in meshes {
+                let group_id = self.scene.next_group_id;
+                self.scene.next_group_id += 1;
+                for mesh in model.meshes {
                     match unsafe { MeshGpu::from_cpu(self.gl.clone(), &mesh) } {
                         Ok(gpu_mesh) => {
-                            let scale = mesh.suggested_scale();
                             self.scene.objects.push(SceneObject {
                                 name: mesh.name,
                                 mesh: gpu_mesh,
+                                group_id,
                                 transform: Transform {
-                                    translation: Vec3::new(imported as f32 * 1.8 - 0.9, 0.0, 0.0),
+                                    translation: Vec3::ZERO,
                                     rotation_y: 0.0,
-                                    scale: Vec3::splat(scale),
+                                    scale: Vec3::ONE,
                                 },
                             });
                             imported += 1;
@@ -213,6 +217,7 @@ impl App {
                 }
                 if imported > 0 {
                     self.scene.selected = self.scene.objects.len().saturating_sub(1);
+                    self.scene.selected_group = group_id;
                     self.status = format!("Imported {imported} mesh(es) from {}", path.display());
                 }
             }
@@ -228,8 +233,9 @@ impl App {
         self.cursor = Vec2::new(position.x as f32, position.y as f32);
         if self.dragging {
             if let Some(point) = self.cursor_ground_point() {
-                if let Some(object) = self.scene.objects.get_mut(self.scene.selected) {
-                    object.transform.translation = point + self.drag_offset;
+                let translation = point + self.drag_offset;
+                for object in self.scene.selected_group_mut() {
+                    object.transform.translation = translation;
                 }
             }
         }
@@ -239,7 +245,7 @@ impl App {
         self.dragging = pressed;
         if pressed {
             if let Some(point) = self.cursor_ground_point() {
-                if let Some(object) = self.scene.objects.get(self.scene.selected) {
+                if let Some(object) = self.scene.selected_group().first() {
                     self.drag_offset = object.transform.translation - point;
                 }
             }
@@ -248,8 +254,13 @@ impl App {
 
     fn reset_scene(&mut self) {
         self.scene.selected = 0;
+        self.scene.selected_group = 0;
         for (index, object) in self.scene.objects.iter_mut().enumerate() {
-            object.transform.translation = Vec3::new(index as f32 * 1.7, 0.0, 0.0);
+            object.transform.translation = if object.group_id == 0 {
+                Vec3::ZERO
+            } else {
+                Vec3::new(index as f32 * 0.02, 0.0, 0.0)
+            };
             object.transform.rotation_y = 0.0;
         }
         self.status = "Scene reset".to_string();
@@ -320,10 +331,10 @@ impl App {
         };
 
         self.renderer.draw_grid(&frame);
-        for (index, object) in self.scene.objects.iter_mut().enumerate() {
+        for object in self.scene.objects.iter_mut() {
             object.transform.rotation_y += 0.002;
             self.renderer
-                .draw_object(object, index == self.scene.selected, &frame);
+                .draw_object(object, object.group_id == self.scene.selected_group, &frame);
         }
     }
 }
@@ -433,12 +444,31 @@ impl Transform {
 struct Scene {
     objects: Vec<SceneObject>,
     selected: usize,
+    selected_group: u32,
+    next_group_id: u32,
 }
 
 struct SceneObject {
     name: String,
     mesh: MeshGpu,
+    group_id: u32,
     transform: Transform,
+}
+
+impl Scene {
+    fn selected_group(&self) -> Vec<&SceneObject> {
+        self.objects
+            .iter()
+            .filter(|object| object.group_id == self.selected_group)
+            .collect()
+    }
+
+    fn selected_group_mut(&mut self) -> impl Iterator<Item = &mut SceneObject> {
+        let selected_group = self.selected_group;
+        self.objects
+            .iter_mut()
+            .filter(move |object| object.group_id == selected_group)
+    }
 }
 
 #[repr(C)]
@@ -447,6 +477,7 @@ struct Vertex {
     position: [f32; 3],
     normal: [f32; 3],
     color: [f32; 4],
+    tex_coord: [f32; 2],
 }
 
 unsafe impl bytemuck::Zeroable for Vertex {}
@@ -456,17 +487,31 @@ struct MeshCpu {
     name: String,
     vertices: Vec<Vertex>,
     indices: Vec<u32>,
+    texture: Option<TextureCpu>,
 }
 
-impl MeshCpu {
-    fn load(path: &Path) -> Result<Vec<Self>, String> {
+#[derive(Clone)]
+struct TextureCpu {
+    width: u32,
+    height: u32,
+    pixels: Vec<u8>,
+}
+
+struct ImportedModel {
+    meshes: Vec<MeshCpu>,
+}
+
+impl ImportedModel {
+    fn load(path: &Path) -> Result<Self, String> {
         match path
             .extension()
             .and_then(|extension| extension.to_str())
             .map(str::to_ascii_lowercase)
             .as_deref()
         {
-            Some("obj") => Self::load_obj(path),
+            Some("obj") => Ok(Self {
+                meshes: MeshCpu::load_obj(path)?,
+            }),
             Some("glb") | Some("gltf") => Self::load_gltf(path),
             _ => Err(format!(
                 "unsupported asset type for {}. Use .glb, .gltf, or .obj",
@@ -475,6 +520,31 @@ impl MeshCpu {
         }
     }
 
+    fn load_gltf(path: &Path) -> Result<Self, String> {
+        let (document, buffers, images) = gltf::import(path)
+            .map_err(|error| format!("glTF read error for {}: {error}", path.display()))?;
+        let textures = images
+            .iter()
+            .map(TextureCpu::from_gltf_image)
+            .collect::<Vec<_>>();
+        let mut meshes = Vec::new();
+
+        for scene in document.scenes() {
+            for node in scene.nodes() {
+                collect_gltf_node(&node, Mat4::IDENTITY, &buffers, &textures, &mut meshes);
+            }
+        }
+
+        if meshes.is_empty() {
+            return Err(format!("no triangle meshes found in {}", path.display()));
+        }
+
+        normalize_meshes(&mut meshes);
+        Ok(Self { meshes })
+    }
+}
+
+impl MeshCpu {
     fn cube() -> Self {
         let mut vertices = Vec::new();
         let mut indices = Vec::new();
@@ -503,6 +573,7 @@ impl MeshCpu {
                     position: corners[corner_index].to_array(),
                     normal: face.to_array(),
                     color: [0.82, 0.86, 0.76, 1.0],
+                    tex_coord: [0.0, 0.0],
                 });
             }
             indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
@@ -511,6 +582,7 @@ impl MeshCpu {
             name: "Starter cube".to_string(),
             vertices,
             indices,
+            texture: None,
         }
     }
 
@@ -551,70 +623,172 @@ impl MeshCpu {
                         ],
                         normal,
                         color: [color[0], color[1], color[2], 1.0],
+                        tex_coord: if mesh.texcoords.len() >= index * 2 + 2 {
+                            [mesh.texcoords[index * 2], mesh.texcoords[index * 2 + 1]]
+                        } else {
+                            [0.0, 0.0]
+                        },
                     });
                 }
                 Ok(Self {
                     name: model.name,
                     vertices,
                     indices: mesh.indices,
+                    texture: None,
                 })
             })
             .collect()
     }
+}
 
-    fn load_gltf(path: &Path) -> Result<Vec<Self>, String> {
-        let (document, buffers, _) = gltf::import(path)
-            .map_err(|error| format!("glTF read error for {}: {error}", path.display()))?;
-        let mut meshes = Vec::new();
-        for mesh in document.meshes() {
-            for primitive in mesh.primitives() {
-                let reader = primitive.reader(|buffer| Some(&buffers[buffer.index()]));
-                let Some(positions) = reader.read_positions() else {
-                    continue;
-                };
-                let positions: Vec<[f32; 3]> = positions.collect();
-                let normals: Vec<[f32; 3]> = reader
-                    .read_normals()
-                    .map(Iterator::collect)
-                    .unwrap_or_else(|| vec![[0.0, 1.0, 0.0]; positions.len()]);
-                let color = primitive
-                    .material()
-                    .pbr_metallic_roughness()
-                    .base_color_factor();
-                let vertices = positions
-                    .into_iter()
-                    .enumerate()
-                    .map(|(index, position)| Vertex {
-                        position,
-                        normal: normals.get(index).copied().unwrap_or([0.0, 1.0, 0.0]),
-                        color,
-                    })
-                    .collect::<Vec<_>>();
-                let indices = reader
-                    .read_indices()
-                    .map(|indices| indices.into_u32().collect())
-                    .unwrap_or_else(|| (0..vertices.len() as u32).collect());
-                meshes.push(Self {
-                    name: mesh.name().unwrap_or("glTF mesh").to_string(),
-                    vertices,
-                    indices,
-                });
+impl TextureCpu {
+    fn from_gltf_image(image: &gltf::image::Data) -> Option<Self> {
+        use gltf::image::Format;
+
+        let mut pixels = Vec::with_capacity((image.width * image.height * 4) as usize);
+        match image.format {
+            Format::R8 => {
+                for value in &image.pixels {
+                    pixels.extend_from_slice(&[*value, *value, *value, 255]);
+                }
             }
+            Format::R8G8 => {
+                for pixel in image.pixels.chunks_exact(2) {
+                    pixels.extend_from_slice(&[pixel[0], pixel[0], pixel[0], pixel[1]]);
+                }
+            }
+            Format::R8G8B8 => {
+                for pixel in image.pixels.chunks_exact(3) {
+                    pixels.extend_from_slice(&[pixel[0], pixel[1], pixel[2], 255]);
+                }
+            }
+            Format::R8G8B8A8 => pixels.extend_from_slice(&image.pixels),
+            _ => return None,
         }
-        if meshes.is_empty() {
-            Err(format!("no triangle meshes found in {}", path.display()))
-        } else {
-            Ok(meshes)
+
+        Some(Self {
+            width: image.width,
+            height: image.height,
+            pixels,
+        })
+    }
+}
+
+fn collect_gltf_node(
+    node: &gltf::Node<'_>,
+    parent_transform: Mat4,
+    buffers: &[gltf::buffer::Data],
+    textures: &[Option<TextureCpu>],
+    meshes: &mut Vec<MeshCpu>,
+) {
+    let local = mat4_from_gltf(node.transform().matrix());
+    let world = parent_transform * local;
+
+    if let Some(mesh) = node.mesh() {
+        for primitive in mesh.primitives() {
+            let reader = primitive.reader(|buffer| Some(&buffers[buffer.index()]));
+            let Some(positions) = reader.read_positions() else {
+                continue;
+            };
+            let positions: Vec<[f32; 3]> = positions.collect();
+            let normals: Vec<[f32; 3]> = reader
+                .read_normals()
+                .map(Iterator::collect)
+                .unwrap_or_else(|| vec![[0.0, 1.0, 0.0]; positions.len()]);
+            let tex_coords: Vec<[f32; 2]> = reader
+                .read_tex_coords(0)
+                .map(|coords| coords.into_f32().collect())
+                .unwrap_or_else(|| vec![[0.0, 0.0]; positions.len()]);
+            let vertex_colors: Vec<[f32; 4]> = reader
+                .read_colors(0)
+                .map(|colors| colors.into_rgba_f32().collect())
+                .unwrap_or_else(|| vec![[1.0, 1.0, 1.0, 1.0]; positions.len()]);
+            let material = primitive.material();
+            let pbr = material.pbr_metallic_roughness();
+            let factor = pbr.base_color_factor();
+            let texture = pbr
+                .base_color_texture()
+                .and_then(|info| textures.get(info.texture().source().index()))
+                .cloned()
+                .flatten();
+
+            let vertices = positions
+                .into_iter()
+                .enumerate()
+                .map(|(index, position)| {
+                    let color = vertex_colors
+                        .get(index)
+                        .copied()
+                        .unwrap_or([1.0, 1.0, 1.0, 1.0]);
+                    let color = [
+                        color[0] * factor[0],
+                        color[1] * factor[1],
+                        color[2] * factor[2],
+                        color[3] * factor[3],
+                    ];
+                    let normal =
+                        Vec3::from_array(normals.get(index).copied().unwrap_or([0.0, 1.0, 0.0]));
+                    Vertex {
+                        position: world
+                            .transform_point3(Vec3::from_array(position))
+                            .to_array(),
+                        normal: world
+                            .transform_vector3(normal)
+                            .normalize_or_zero()
+                            .to_array(),
+                        color,
+                        tex_coord: tex_coords.get(index).copied().unwrap_or([0.0, 0.0]),
+                    }
+                })
+                .collect::<Vec<_>>();
+            let indices = reader
+                .read_indices()
+                .map(|indices| indices.into_u32().collect())
+                .unwrap_or_else(|| (0..vertices.len() as u32).collect());
+
+            meshes.push(MeshCpu {
+                name: format!(
+                    "{}:{}",
+                    mesh.name().unwrap_or("glTF mesh"),
+                    primitive.index()
+                ),
+                vertices,
+                indices,
+                texture,
+            });
         }
     }
 
-    fn suggested_scale(&self) -> f32 {
-        let mut max_extent = 0.001_f32;
-        for vertex in &self.vertices {
+    for child in node.children() {
+        collect_gltf_node(&child, world, buffers, textures, meshes);
+    }
+}
+
+fn mat4_from_gltf(matrix: [[f32; 4]; 4]) -> Mat4 {
+    Mat4::from_cols_array_2d(&matrix)
+}
+
+fn normalize_meshes(meshes: &mut [MeshCpu]) {
+    let mut min = Vec3::splat(f32::INFINITY);
+    let mut max = Vec3::splat(f32::NEG_INFINITY);
+    for mesh in meshes.iter() {
+        for vertex in &mesh.vertices {
             let position = Vec3::from_array(vertex.position);
-            max_extent = max_extent.max(position.length());
+            min = min.min(position);
+            max = max.max(position);
         }
-        (1.7 / max_extent).clamp(0.01, 20.0)
+    }
+
+    let size = max - min;
+    let longest_axis = size.x.max(size.y).max(size.z).max(0.001);
+    let scale = 3.8 / longest_axis;
+    let center = Vec3::new((min.x + max.x) * 0.5, min.y, (min.z + max.z) * 0.5);
+
+    for mesh in meshes {
+        for vertex in &mut mesh.vertices {
+            let position = Vec3::from_array(vertex.position);
+            vertex.position = ((position - center) * scale).to_array();
+        }
     }
 }
 
@@ -622,6 +796,7 @@ struct MeshGpu {
     vertex_array: glow::NativeVertexArray,
     _vertex_buffer: glow::NativeBuffer,
     _index_buffer: glow::NativeBuffer,
+    texture: Option<glow::NativeTexture>,
     index_count: i32,
 }
 
@@ -654,12 +829,48 @@ impl MeshGpu {
         gl.vertex_attrib_pointer_f32(1, 3, glow::FLOAT, false, stride, 12);
         gl.enable_vertex_attrib_array(2);
         gl.vertex_attrib_pointer_f32(2, 4, glow::FLOAT, false, stride, 24);
+        gl.enable_vertex_attrib_array(3);
+        gl.vertex_attrib_pointer_f32(3, 2, glow::FLOAT, false, stride, 40);
         gl.bind_vertex_array(None);
+
+        let texture = if let Some(texture) = &mesh.texture {
+            let gl_texture = gl.create_texture().map_err(|error| error.to_string())?;
+            gl.bind_texture(glow::TEXTURE_2D, Some(gl_texture));
+            gl.tex_parameter_i32(
+                glow::TEXTURE_2D,
+                glow::TEXTURE_MIN_FILTER,
+                glow::LINEAR_MIPMAP_LINEAR as i32,
+            );
+            gl.tex_parameter_i32(
+                glow::TEXTURE_2D,
+                glow::TEXTURE_MAG_FILTER,
+                glow::LINEAR as i32,
+            );
+            gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_WRAP_S, glow::REPEAT as i32);
+            gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_WRAP_T, glow::REPEAT as i32);
+            gl.tex_image_2d(
+                glow::TEXTURE_2D,
+                0,
+                glow::RGBA as i32,
+                texture.width as i32,
+                texture.height as i32,
+                0,
+                glow::RGBA,
+                glow::UNSIGNED_BYTE,
+                glow::PixelUnpackData::Slice(Some(&texture.pixels)),
+            );
+            gl.generate_mipmap(glow::TEXTURE_2D);
+            gl.bind_texture(glow::TEXTURE_2D, None);
+            Some(gl_texture)
+        } else {
+            None
+        };
 
         Ok(Self {
             vertex_array,
             _vertex_buffer: vertex_buffer,
             _index_buffer: index_buffer,
+            texture,
             index_count: mesh.indices.len() as i32,
         })
     }
@@ -743,6 +954,8 @@ impl Renderer {
 
         self.gl.cull_face(glow::BACK);
         self.gl.use_program(Some(self.object_program));
+        self.gl.active_texture(glow::TEXTURE0);
+        self.gl.bind_texture(glow::TEXTURE_2D, object.mesh.texture);
         set_mat4(&self.gl, self.object_program, "u_model", model);
         set_mat4(&self.gl, self.object_program, "u_view", frame.view);
         set_mat4(
@@ -767,6 +980,17 @@ impl Renderer {
         set_vec3(&self.gl, self.object_program, "u_mid", palette.mid);
         set_vec3(&self.gl, self.object_program, "u_light", palette.light);
         set_vec3(&self.gl, self.object_program, "u_rim", palette.rim);
+        set_i32(&self.gl, self.object_program, "u_base_texture", 0);
+        set_f32(
+            &self.gl,
+            self.object_program,
+            "u_has_texture",
+            if object.mesh.texture.is_some() {
+                1.0
+            } else {
+                0.0
+            },
+        );
         set_f32(
             &self.gl,
             self.object_program,
@@ -780,6 +1004,7 @@ impl Renderer {
             0,
         );
         self.gl.bind_vertex_array(None);
+        self.gl.bind_texture(glow::TEXTURE_2D, None);
     }
 }
 
@@ -792,11 +1017,13 @@ fn grid_mesh() -> MeshCpu {
             position: a.to_array(),
             normal: Vec3::Y.to_array(),
             color,
+            tex_coord: [0.0, 0.0],
         });
         vertices.push(Vertex {
             position: b.to_array(),
             normal: Vec3::Y.to_array(),
             color,
+            tex_coord: [0.0, 0.0],
         });
         indices.extend_from_slice(&[base, base + 1]);
     };
@@ -814,6 +1041,7 @@ fn grid_mesh() -> MeshCpu {
         name: "editor grid".to_string(),
         vertices,
         indices,
+        texture: None,
     }
 }
 
@@ -873,10 +1101,17 @@ unsafe fn set_f32(gl: &glow::Context, program: glow::NativeProgram, name: &str, 
     }
 }
 
+unsafe fn set_i32(gl: &glow::Context, program: glow::NativeProgram, name: &str, value: i32) {
+    if let Some(location) = gl.get_uniform_location(program, name) {
+        gl.uniform_1_i32(Some(&location), value);
+    }
+}
+
 const OBJECT_VERTEX: &str = r#"#version 330 core
 layout (location = 0) in vec3 a_position;
 layout (location = 1) in vec3 a_normal;
 layout (location = 2) in vec4 a_color;
+layout (location = 3) in vec2 a_tex_coord;
 
 uniform mat4 u_model;
 uniform mat4 u_view;
@@ -885,12 +1120,14 @@ uniform mat4 u_projection;
 out vec3 v_world_position;
 out vec3 v_normal;
 out vec4 v_color;
+out vec2 v_tex_coord;
 
 void main() {
     vec4 world = u_model * vec4(a_position, 1.0);
     v_world_position = world.xyz;
     v_normal = normalize(mat3(transpose(inverse(u_model))) * a_normal);
     v_color = a_color;
+    v_tex_coord = a_tex_coord;
     gl_Position = u_projection * u_view * world;
 }
 "#;
@@ -899,6 +1136,7 @@ const OBJECT_FRAGMENT: &str = r#"#version 330 core
 in vec3 v_world_position;
 in vec3 v_normal;
 in vec4 v_color;
+in vec2 v_tex_coord;
 
 uniform vec3 u_camera_position;
 uniform vec3 u_light_direction;
@@ -907,6 +1145,8 @@ uniform vec3 u_mid;
 uniform vec3 u_light;
 uniform vec3 u_rim;
 uniform float u_selected;
+uniform float u_has_texture;
+uniform sampler2D u_base_texture;
 
 out vec4 out_color;
 
@@ -921,7 +1161,8 @@ void main() {
     float rim = pow(1.0 - max(dot(view_dir, normal), 0.0), 3.0);
     rim = smoothstep(0.34, 0.88, rim);
 
-    vec3 base = pow(v_color.rgb, vec3(0.85));
+    vec3 sampled = u_has_texture > 0.5 ? texture(u_base_texture, v_tex_coord).rgb : vec3(1.0);
+    vec3 base = pow(v_color.rgb * sampled, vec3(0.85));
     vec3 color = base * ramp_color + u_rim * rim * 0.42;
     color += vec3(1.0, 0.82, 0.18) * u_selected * 0.08;
     color = pow(color, vec3(0.92));
