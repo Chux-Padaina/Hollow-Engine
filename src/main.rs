@@ -1281,6 +1281,7 @@ impl Renderer {
             "u_selected",
             if selected { 1.0 } else { 0.0 },
         );
+        self.gl.bind_vertex_array(Some(object.mesh.vertex_array));
         self.gl.draw_elements(
             glow::TRIANGLES,
             object.mesh.index_count,
