@@ -336,14 +336,59 @@ impl App {
             style: self.style,
         };
 
-        self.renderer.draw_showroom(&frame);
-        for object in self.scene.objects.iter_mut() {
+        for object in &mut self.scene.objects {
             object.transform.rotation_y += 0.002;
-            self.renderer.draw_contact_shadow(object, &frame);
-            self.renderer
-                .draw_object(object, object.group_id == self.scene.selected_group, &frame);
         }
-        self.renderer.draw_light_gizmos(&frame);
+        self.renderer
+            .render_scene(&self.scene.objects, self.scene.selected_group, &frame);
+    }
+}
+
+#[derive(Clone, Copy)]
+enum RenderPass {
+    Environment,
+    Decals,
+    Opaque,
+    Outlines,
+    Gizmos,
+}
+
+#[derive(Clone, Copy)]
+struct RenderState {
+    depth_write: bool,
+    blend: bool,
+    cull_face: Option<u32>,
+}
+
+impl RenderPass {
+    fn state(self) -> RenderState {
+        match self {
+            Self::Environment => RenderState {
+                depth_write: true,
+                blend: false,
+                cull_face: None,
+            },
+            Self::Decals => RenderState {
+                depth_write: false,
+                blend: true,
+                cull_face: None,
+            },
+            Self::Opaque => RenderState {
+                depth_write: true,
+                blend: false,
+                cull_face: Some(glow::BACK),
+            },
+            Self::Outlines => RenderState {
+                depth_write: false,
+                blend: false,
+                cull_face: Some(glow::FRONT),
+            },
+            Self::Gizmos => RenderState {
+                depth_write: false,
+                blend: false,
+                cull_face: None,
+            },
+        }
     }
 }
 
@@ -1003,8 +1048,59 @@ impl Renderer {
         })
     }
 
+    unsafe fn render_scene(&self, objects: &[SceneObject], selected_group: u32, frame: &FrameData) {
+        self.begin_pass(RenderPass::Environment);
+        self.draw_showroom(frame);
+
+        self.begin_pass(RenderPass::Decals);
+        for object in objects {
+            self.draw_contact_shadow(object, frame);
+        }
+
+        self.begin_pass(RenderPass::Opaque);
+        for object in objects {
+            self.draw_object_surface(object, object.group_id == selected_group, frame);
+        }
+
+        self.begin_pass(RenderPass::Outlines);
+        for object in objects {
+            self.draw_object_outline(object, object.group_id == selected_group, frame);
+        }
+
+        self.begin_pass(RenderPass::Gizmos);
+        self.draw_light_gizmos(frame);
+        self.end_frame_state();
+    }
+
+    unsafe fn begin_pass(&self, pass: RenderPass) {
+        let state = pass.state();
+        self.gl.depth_mask(state.depth_write);
+        if state.blend {
+            self.gl.enable(glow::BLEND);
+            self.gl
+                .blend_func(glow::SRC_ALPHA, glow::ONE_MINUS_SRC_ALPHA);
+        } else {
+            self.gl.disable(glow::BLEND);
+        }
+        if let Some(face) = state.cull_face {
+            self.gl.enable(glow::CULL_FACE);
+            self.gl.cull_face(face);
+        } else {
+            self.gl.disable(glow::CULL_FACE);
+        }
+    }
+
+    unsafe fn end_frame_state(&self) {
+        self.gl.depth_mask(true);
+        self.gl.disable(glow::BLEND);
+        self.gl.enable(glow::CULL_FACE);
+        self.gl.cull_face(glow::BACK);
+        self.gl.bind_vertex_array(None);
+        self.gl.bind_texture(glow::TEXTURE_2D, None);
+        self.gl.use_program(None);
+    }
+
     unsafe fn draw_showroom(&self, frame: &FrameData) {
-        self.gl.disable(glow::CULL_FACE);
         self.gl.use_program(Some(self.showroom_program));
         set_mat4(&self.gl, self.showroom_program, "u_model", Mat4::IDENTITY);
         set_mat4(&self.gl, self.showroom_program, "u_view", frame.view);
@@ -1023,12 +1119,9 @@ impl Renderer {
             0,
         );
         self.gl.bind_vertex_array(None);
-        self.gl.enable(glow::CULL_FACE);
     }
 
     unsafe fn draw_light_gizmos(&self, frame: &FrameData) {
-        self.gl.disable(glow::CULL_FACE);
-        self.gl.depth_mask(false);
         self.gl.use_program(Some(self.unlit_program));
         set_mat4(&self.gl, self.unlit_program, "u_view", frame.view);
         set_mat4(
@@ -1058,8 +1151,6 @@ impl Renderer {
             );
         }
         self.gl.bind_vertex_array(None);
-        self.gl.depth_mask(true);
-        self.gl.enable(glow::CULL_FACE);
     }
 
     unsafe fn draw_contact_shadow(&self, object: &SceneObject, frame: &FrameData) {
@@ -1073,11 +1164,6 @@ impl Renderer {
             * Mat4::from_rotation_y(object.transform.rotation_y)
             * Mat4::from_scale(Vec3::new(radius * 1.2, 1.0, radius * 0.78));
 
-        self.gl.disable(glow::CULL_FACE);
-        self.gl.enable(glow::BLEND);
-        self.gl
-            .blend_func(glow::SRC_ALPHA, glow::ONE_MINUS_SRC_ALPHA);
-        self.gl.depth_mask(false);
         self.gl.use_program(Some(self.contact_shadow_program));
         set_mat4(&self.gl, self.contact_shadow_program, "u_model", model);
         set_mat4(&self.gl, self.contact_shadow_program, "u_view", frame.view);
@@ -1102,17 +1188,12 @@ impl Renderer {
             0,
         );
         self.gl.bind_vertex_array(None);
-        self.gl.depth_mask(true);
-        self.gl.disable(glow::BLEND);
-        self.gl.enable(glow::CULL_FACE);
     }
 
-    unsafe fn draw_object(&self, object: &SceneObject, selected: bool, frame: &FrameData) {
+    unsafe fn draw_object_outline(&self, object: &SceneObject, selected: bool, frame: &FrameData) {
         let model = object.transform.matrix();
         let palette = frame.style.palette();
 
-        self.gl.cull_face(glow::FRONT);
-        self.gl.depth_mask(false);
         self.gl.use_program(Some(self.outline_program));
         set_mat4(&self.gl, self.outline_program, "u_model", model);
         set_mat4(&self.gl, self.outline_program, "u_view", frame.view);
@@ -1142,9 +1223,13 @@ impl Renderer {
             glow::UNSIGNED_INT,
             0,
         );
-        self.gl.depth_mask(true);
+        self.gl.bind_vertex_array(None);
+    }
 
-        self.gl.cull_face(glow::BACK);
+    unsafe fn draw_object_surface(&self, object: &SceneObject, selected: bool, frame: &FrameData) {
+        let model = object.transform.matrix();
+        let palette = frame.style.palette();
+
         self.gl.use_program(Some(self.object_program));
         self.gl.active_texture(glow::TEXTURE0);
         self.gl.bind_texture(glow::TEXTURE_2D, object.mesh.texture);

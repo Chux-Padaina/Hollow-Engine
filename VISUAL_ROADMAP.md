@@ -10,6 +10,14 @@ This roadmap is intentionally step-by-step. The goal is to build the visual stac
 - Ground imported objects consistently so floor effects do not intersect meshes.
 - Add simple visual regression scenes: cube, car, mech, small props, large prop.
 
+Current pass order:
+
+1. Environment/showroom
+2. Decals/contact shadows
+3. Opaque objects
+4. Object outlines
+5. Gizmos/debug overlays
+
 ## Phase 1: Scene Lighting Foundation
 
 - Represent lights as scene data, not hardcoded shader constants.
