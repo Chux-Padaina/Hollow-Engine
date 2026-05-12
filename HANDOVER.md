@@ -44,6 +44,7 @@ Do not copy proprietary ZZZ models, environments, UI, logos, or exact assets. Th
 - Fixed oversized outlines by switching outline expansion to a pixel-based clip-space offset.
 - Fixed abrupt ramp changes by replacing hard `step()` bands with smooth stylized bands.
 - Fixed render ordering and hidden OpenGL state dependencies after pass refactor.
+- Reduced floor/object intersection artifacts by adding ground clearance, flattening/repositioning floor emitters, and clipping outline hull fragments below the floor threshold.
 
 ## Known Limitations
 

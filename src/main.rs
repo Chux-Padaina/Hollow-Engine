@@ -23,6 +23,7 @@ use winit::window::{Window, WindowAttributes};
 
 const WINDOW_TITLE: &str = "ZZZ Style Engine Prototype - drop .glb/.gltf/.obj, left-drag to move";
 const MAX_POINT_LIGHTS: usize = 8;
+const GROUND_CLEARANCE: f32 = 0.035;
 
 fn main() {
     if let Err(error) = run() {
@@ -179,7 +180,7 @@ impl App {
             mesh: MeshGpu::from_cpu(gl.clone(), &MeshCpu::cube())?,
             group_id: 0,
             transform: Transform {
-                translation: Vec3::new(0.0, 0.5, 0.0),
+                translation: Vec3::new(0.0, 0.5 + GROUND_CLEARANCE, 0.0),
                 ..Transform::default()
             },
         });
@@ -218,7 +219,7 @@ impl App {
                                 mesh: gpu_mesh,
                                 group_id,
                                 transform: Transform {
-                                    translation: Vec3::ZERO,
+                                    translation: Vec3::new(0.0, GROUND_CLEARANCE, 0.0),
                                     rotation_y: 0.0,
                                     scale: Vec3::ONE,
                                 },
@@ -270,9 +271,9 @@ impl App {
         self.scene.selected_group = 0;
         for (index, object) in self.scene.objects.iter_mut().enumerate() {
             object.transform.translation = if object.group_id == 0 {
-                Vec3::new(0.0, 0.5, 0.0)
+                Vec3::new(0.0, 0.5 + GROUND_CLEARANCE, 0.0)
             } else {
-                Vec3::new(index as f32 * 0.02, 0.0, 0.0)
+                Vec3::new(index as f32 * 0.02, GROUND_CLEARANCE, 0.0)
             };
             object.transform.rotation_y = 0.0;
         }
@@ -1411,6 +1412,12 @@ impl Renderer {
             "u_outline_width",
             if selected { 3.4 } else { 2.2 },
         );
+        set_f32(
+            &self.gl,
+            self.outline_program,
+            "u_ground_clip_y",
+            GROUND_CLEARANCE * 0.45,
+        );
         self.gl.bind_vertex_array(Some(object.mesh.vertex_array));
         self.gl.draw_elements(
             glow::TRIANGLES,
@@ -1593,17 +1600,17 @@ fn showroom_mesh() -> MeshCpu {
         let angle = (ring as f32 + 0.5) / 10.0 * std::f32::consts::TAU;
         let dir = Vec3::new(angle.cos(), 0.0, angle.sin());
         let side = Vec3::new(-angle.sin(), 0.0, angle.cos());
-        let center = dir * 5.9 + Vec3::Y * 0.035;
+        let center = dir * 6.35 + Vec3::Y * 0.004;
         let color = if ring % 2 == 0 {
             [0.18, 0.95, 0.82, 1.0]
         } else {
             [1.0, 0.46, 0.18, 1.0]
         };
         push_quad(
-            center - side * 0.18 - dir * 0.38,
-            center + side * 0.18 - dir * 0.38,
-            center + side * 0.18 + dir * 0.38,
-            center - side * 0.18 + dir * 0.38,
+            center - side * 0.14 - dir * 0.28,
+            center + side * 0.14 - dir * 0.28,
+            center + side * 0.14 + dir * 0.28,
+            center - side * 0.14 + dir * 0.28,
             color,
         );
     }
@@ -1869,8 +1876,11 @@ uniform mat4 u_projection;
 uniform float u_outline_width;
 uniform vec2 u_viewport;
 
+out float v_world_y;
+
 void main() {
     vec4 world = u_model * vec4(a_position, 1.0);
+    v_world_y = world.y;
     vec3 view_normal = normalize(mat3(u_view * u_model) * a_normal);
     vec4 clip = u_projection * u_view * world;
     vec2 dir = normalize(view_normal.xy + vec2(0.0001, 0.0001));
@@ -1881,10 +1891,15 @@ void main() {
 "#;
 
 const OUTLINE_FRAGMENT: &str = r#"#version 330 core
+in float v_world_y;
 uniform vec3 u_outline_color;
+uniform float u_ground_clip_y;
 out vec4 out_color;
 
 void main() {
+    if (v_world_y < u_ground_clip_y) {
+        discard;
+    }
     out_color = vec4(u_outline_color, 1.0);
 }
 "#;
