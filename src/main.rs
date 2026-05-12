@@ -108,6 +108,12 @@ fn run() -> Result<(), String> {
                             }
                             PhysicalKey::Code(KeyCode::Digit2) => app.style = StylePreset::Street,
                             PhysicalKey::Code(KeyCode::Digit3) => app.style = StylePreset::Combat,
+                            PhysicalKey::Code(KeyCode::F1) => app.debug_view = DebugView::Final,
+                            PhysicalKey::Code(KeyCode::F2) => app.debug_view = DebugView::Albedo,
+                            PhysicalKey::Code(KeyCode::F3) => app.debug_view = DebugView::Normals,
+                            PhysicalKey::Code(KeyCode::F4) => {
+                                app.debug_view = DebugView::LightingOnly
+                            }
                             PhysicalKey::Code(KeyCode::KeyR) => app.reset_scene(),
                             _ => {}
                         }
@@ -155,6 +161,7 @@ struct App {
     drag_offset: Vec3,
     start_time: Instant,
     style: StylePreset,
+    debug_view: DebugView,
     status: String,
 }
 
@@ -185,6 +192,7 @@ impl App {
             drag_offset: Vec3::ZERO,
             start_time: Instant::now(),
             style: StylePreset::Street,
+            debug_view: DebugView::Final,
             status: "Drop a Sketchfab-style .glb/.gltf/.obj to import".to_string(),
         })
     }
@@ -304,8 +312,9 @@ impl App {
 
     fn update_title(&self, window: &Window) {
         window.set_title(&format!(
-            "{WINDOW_TITLE} | style: {} | selected: {} | objects: {} | {}",
+            "{WINDOW_TITLE} | style: {} | view: {} | selected: {} | objects: {} | {}",
             self.style.name(),
+            self.debug_view.name(),
             self.scene
                 .objects
                 .get(self.scene.selected)
@@ -334,6 +343,7 @@ impl App {
             point_lights: showroom_lights(elapsed),
             elapsed,
             style: self.style,
+            debug_view: self.debug_view,
         };
 
         for object in &mut self.scene.objects {
@@ -351,6 +361,34 @@ enum RenderPass {
     Opaque,
     Outlines,
     Gizmos,
+}
+
+#[derive(Clone, Copy)]
+enum DebugView {
+    Final,
+    Albedo,
+    Normals,
+    LightingOnly,
+}
+
+impl DebugView {
+    fn name(self) -> &'static str {
+        match self {
+            Self::Final => "final",
+            Self::Albedo => "albedo",
+            Self::Normals => "normals",
+            Self::LightingOnly => "lighting-only",
+        }
+    }
+
+    fn shader_id(self) -> i32 {
+        match self {
+            Self::Final => 0,
+            Self::Albedo => 1,
+            Self::Normals => 2,
+            Self::LightingOnly => 3,
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -452,6 +490,7 @@ struct FrameData {
     point_lights: [PointLight; MAX_POINT_LIGHTS],
     elapsed: f32,
     style: StylePreset,
+    debug_view: DebugView,
 }
 
 #[derive(Clone, Copy)]
@@ -1263,6 +1302,12 @@ impl Renderer {
             "u_point_light_count",
             frame.point_lights.len() as i32,
         );
+        set_i32(
+            &self.gl,
+            self.object_program,
+            "u_debug_view",
+            frame.debug_view.shader_id(),
+        );
         set_point_lights(&self.gl, self.object_program, &frame.point_lights);
         set_i32(&self.gl, self.object_program, "u_base_texture", 0);
         set_f32(
@@ -1587,6 +1632,7 @@ uniform vec3 u_rim;
 uniform float u_selected;
 uniform float u_has_texture;
 uniform sampler2D u_base_texture;
+uniform int u_debug_view;
 uniform int u_point_light_count;
 uniform vec3 u_point_light_positions[8];
 uniform vec3 u_point_light_colors[8];
@@ -1627,9 +1673,27 @@ void main() {
     rim = smoothstep(0.34, 0.88, rim);
 
     vec3 sampled = u_has_texture > 0.5 ? texture(u_base_texture, v_tex_coord).rgb : vec3(1.0);
-    vec3 base = pow(v_color.rgb * sampled, vec3(0.85));
-    vec3 color = base * (ramp_color + point_light * 0.48) + u_rim * rim * 0.42;
+    vec3 albedo = clamp(v_color.rgb * sampled, 0.0, 8.0);
+    vec3 base = pow(albedo, vec3(0.85));
+    vec3 lighting = ramp_color + point_light * 0.48;
+    vec3 color = base * lighting + u_rim * rim * 0.42;
     color += vec3(1.0, 0.82, 0.18) * u_selected * 0.08;
+
+    if (u_debug_view == 1) {
+        out_color = vec4(pow(clamp(albedo, 0.0, 1.0), vec3(0.4545)), v_color.a);
+        return;
+    }
+    if (u_debug_view == 2) {
+        out_color = vec4(normal * 0.5 + 0.5, 1.0);
+        return;
+    }
+    if (u_debug_view == 3) {
+        vec3 lighting_only = clamp(lighting + u_rim * rim * 0.24, 0.0, 4.0);
+        lighting_only = lighting_only / (lighting_only + vec3(1.0));
+        out_color = vec4(pow(lighting_only, vec3(0.82)) * 1.25, 1.0);
+        return;
+    }
+
     float camera_distance = length(u_camera_position - v_world_position);
     vec3 fog_color = vec3(0.17, 0.19, 0.17);
     color = mix(color, fog_color, smoothstep(12.0, 28.0, camera_distance) * 0.42);

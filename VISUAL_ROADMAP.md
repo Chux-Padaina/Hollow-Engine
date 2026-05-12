@@ -20,6 +20,13 @@ Current pass order:
 
 The current outline implementation uses an inverted hull, so it renders before opaque objects. A later screen-space outline pass can move after opaque rendering once framebuffer/depth texture infrastructure exists.
 
+Current debug views:
+
+- `F1`: final shaded view
+- `F2`: albedo/base color
+- `F3`: normals
+- `F4`: lighting only
+
 ## Phase 1: Scene Lighting Foundation
 
 - Represent lights as scene data, not hardcoded shader constants.

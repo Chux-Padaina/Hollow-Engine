@@ -13,6 +13,10 @@ Small native Rust/OpenGL editor prototype for importing meshes and rendering the
   - `1`: character-biased palette
   - `2`: street palette
   - `3`: combat palette
+  - `F1`: final shaded view
+  - `F2`: albedo/base color debug view
+  - `F3`: normal debug view
+  - `F4`: lighting-only debug view
   - `R`: reset scene
   - `Esc`: quit
 

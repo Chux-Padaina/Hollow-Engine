@@ -1,0 +1,70 @@
+# Handover
+
+## Goal
+
+Build a portfolio-grade native OpenGL game-engine demo focused on visuals, not full gameplay tooling. The target is a stylized anime/urban rendering pipeline that gets close to the broad visual ingredients of Zenless Zone Zero: punchy toon lighting, bold silhouettes, colored urban light, crisp imported props/vehicles/characters, emissive accents, and a polished editor-style viewport.
+
+Do not copy proprietary ZZZ models, environments, UI, logos, or exact assets. The engine should import user-provided Sketchfab-style assets and convert their available data into this stylized rendering direction.
+
+## Current State
+
+- Rust/OpenGL desktop app.
+- Git repo initialized with incremental commits.
+- Drag/drop import for `.glb`, `.gltf`, and `.obj`.
+- glTF node transforms are applied so multi-part models stay assembled.
+- glTF base color factors, vertex colors, UVs, and base color textures are preserved.
+- Imported primitives are grouped so dragging moves the whole imported asset.
+- Circular showroom scene with floor, curved wall, ceiling panels, colored floor lights, and simple light gizmos.
+- Explicit render passes:
+  1. Environment/showroom
+  2. Decals/contact shadows
+  3. Object outlines
+  4. Opaque objects
+  5. Gizmos/debug overlays
+- Basic forward lighting:
+  - directional light
+  - fixed set of point lights with position, color, range, intensity
+- Stylized object shader:
+  - toon-like smooth ramp
+  - colored shadow/rim palette
+  - point light contribution
+  - simple fog and tonemapping
+  - inverted-hull outline
+- Debug object views:
+  - `F1`: final
+  - `F2`: albedo
+  - `F3`: normals
+  - `F4`: lighting only
+
+## Recent Fixes
+
+- Fixed import explosion by preserving glTF hierarchy transforms.
+- Fixed texture/color preservation for glTF base colors.
+- Fixed oversized outlines by switching outline expansion to a pixel-based clip-space offset.
+- Fixed abrupt ramp changes by replacing hard `step()` bands with smooth stylized bands.
+- Fixed render ordering and hidden OpenGL state dependencies after pass refactor.
+
+## Known Limitations
+
+- No shadow maps yet.
+- No HDR framebuffer or real post-processing yet.
+- No bloom despite emissive-looking showroom panels.
+- No spotlights or area lights.
+- No reflection probes.
+- No normal/emissive/roughness/metallic texture support yet.
+- No editor panels, transform gizmos, hierarchy, inspector, or material UI.
+- Inverted-hull outlines can still be imperfect on thin/open geometry; screen-space outlines should come later.
+- Scene lights are hardcoded showroom data, not editable scene entities.
+
+## Next Step
+
+Finish Phase 0 render correctness by using the debug views with the cube, Porsche, and mech test assets. Once the current passes look stable in final/albedo/normals/lighting-only, move into Phase 1:
+
+1. Turn hardcoded showroom lights into scene `Light` data.
+2. Add directional, point, and spot light variants.
+3. Add light range gizmos.
+4. Prepare for the first shadow-map pass.
+
+## Project Taste Direction
+
+Favor a crisp, confident, stylized viewport over physically perfect realism. The end result should feel like a custom engine demo with strong art direction: graphic silhouettes, controlled color palettes, responsive imported assets, clear debug tooling, and a showroom that can evolve into a flashy ZZZ-adjacent presentation scene.
