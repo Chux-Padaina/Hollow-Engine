@@ -12,7 +12,7 @@ This roadmap is intentionally step-by-step. The goal is to build the visual stac
 
 Current pass order:
 
-1. Environment/showroom
+1. Environment/grid
 2. Decals/contact shadows
 3. Object outlines
 4. Opaque objects
@@ -84,8 +84,9 @@ Current status:
 - Toolbar supports select/move/rotate/scale modes.
 - Camera supports orbit, pan, and zoom.
 - Basic 3D tool gizmo visuals exist for select, move, rotate, and scale.
-- Click selection and basic interactive center/axis/ring handles exist.
-- Polished Unreal-style arrow/cone/plane handle meshes are still pending.
+- Click selection and interactive center/axis/plane/ring handles exist.
+- Gizmo handles now provide hover and active highlighting.
+- Polished Unreal-style arrow/cone/torus handle meshes are still pending.
 
 ## Phase 7: Stylized Rendering Identity
 

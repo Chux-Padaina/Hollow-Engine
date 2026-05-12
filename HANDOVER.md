@@ -16,7 +16,7 @@ Do not copy proprietary ZZZ models, environments, UI, logos, or exact assets. Th
 - Imported primitives are grouped so dragging moves the whole imported asset.
 - Default editor test scene with two cubes, an editor grid, and two lights.
 - Explicit render passes:
-  1. Environment/showroom
+  1. Environment/grid
   2. Decals/contact shadows
   3. Object outlines
   4. Opaque objects
@@ -43,7 +43,8 @@ Do not copy proprietary ZZZ models, environments, UI, logos, or exact assets. Th
   - orbit/pan/zoom editor camera controls
   - simple tool-specific 3D gizmo visuals for select/move/rotate/scale
   - object click-selection in the viewport
-  - clickable transform gizmo handles for center/axis/ring manipulation
+  - clickable transform gizmo handles for center, axis, plane, and ring manipulation
+  - hover/active highlighting on targeted gizmo handles
 
 ## Recent Fixes
 
@@ -53,6 +54,7 @@ Do not copy proprietary ZZZ models, environments, UI, logos, or exact assets. Th
 - Fixed abrupt ramp changes by replacing hard `step()` bands with smooth stylized bands.
 - Fixed render ordering and hidden OpenGL state dependencies after pass refactor.
 - Replaced showroom with a simpler grid-based default scene so editor work and scene-building tests are easier to read.
+- Added Unreal-like transform affordances: move arrows, rotate rings, scale endpoint boxes, two-axis plane handles, and visible hover/active feedback.
 
 ## Known Limitations
 
@@ -63,17 +65,17 @@ Do not copy proprietary ZZZ models, environments, UI, logos, or exact assets. Th
 - Spotlights are represented as scene data, but the shader still treats them like focused point lights until cone falloff is implemented.
 - No reflection probes.
 - No normal/emissive/roughness/metallic texture support yet.
-- Editor panels and clickable transform gizmos exist. Gizmo visuals are still simple cube/bar/ring primitives, not polished Unreal-style arrow/cone meshes.
+- Editor panels and clickable transform gizmos exist. Gizmo behavior covers the core Unreal-style center/axis/plane/ring workflow, but visuals still use cube/bar/ring primitives rather than proper arrow/cone/torus meshes.
 - Inverted-hull outlines can still be imperfect on thin/open geometry; screen-space outlines should come later.
-- Scene lights are hardcoded showroom data, not editable scene entities.
+- Scene save/load is not implemented yet, so editor changes are session-only.
 
 ## Next Step
 
-Finish Phase 0 render correctness by using the debug views with the cube, Porsche, and mech test assets. Once the current passes look stable in final/albedo/normals/lighting-only, move into Phase 1:
+Finish the editor interaction foundation by checking cube, Porsche, and mech transforms with select/move/rotate/scale tools. Once the gizmo behavior feels reliable, move into the next visual-engine layer:
 
-1. Turn hardcoded showroom lights into scene `Light` data.
-2. Add true spotlight cone falloff and range visualization.
-3. Add light range gizmos.
+1. Add proper gizmo meshes and depth-aware selection outlines.
+2. Add true spotlight cone falloff and light range visualization.
+3. Prepare scene save/load so test compositions can persist.
 4. Prepare for the first shadow-map pass.
 
 ## Project Taste Direction
