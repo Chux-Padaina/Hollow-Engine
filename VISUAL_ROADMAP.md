@@ -84,7 +84,8 @@ Current status:
 - Toolbar supports select/move/rotate/scale modes.
 - Camera supports orbit, pan, and zoom.
 - Basic 3D tool gizmo visuals exist for select, move, rotate, and scale.
-- True interactive axis handles are still pending.
+- Click selection and basic interactive center/axis/ring handles exist.
+- Polished Unreal-style arrow/cone/plane handle meshes are still pending.
 
 ## Phase 7: Stylized Rendering Identity
 

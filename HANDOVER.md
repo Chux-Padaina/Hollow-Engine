@@ -42,6 +42,8 @@ Do not copy proprietary ZZZ models, environments, UI, logos, or exact assets. Th
   - toolbar for select/move/rotate/scale tools
   - orbit/pan/zoom editor camera controls
   - simple tool-specific 3D gizmo visuals for select/move/rotate/scale
+  - object click-selection in the viewport
+  - clickable transform gizmo handles for center/axis/ring manipulation
 
 ## Recent Fixes
 
@@ -61,7 +63,7 @@ Do not copy proprietary ZZZ models, environments, UI, logos, or exact assets. Th
 - Spotlights are represented as scene data, but the shader still treats them like focused point lights until cone falloff is implemented.
 - No reflection probes.
 - No normal/emissive/roughness/metallic texture support yet.
-- Editor panels exist, but there are no 3D axis gizmos yet. Transform tools currently use mouse drag and numeric inspector controls.
+- Editor panels and clickable transform gizmos exist. Gizmo visuals are still simple cube/bar/ring primitives, not polished Unreal-style arrow/cone meshes.
 - Inverted-hull outlines can still be imperfect on thin/open geometry; screen-space outlines should come later.
 - Scene lights are hardcoded showroom data, not editable scene entities.
 

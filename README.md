@@ -25,6 +25,8 @@ Small native Rust/OpenGL editor prototype for importing meshes and rendering the
   - Right mouse drag: orbit camera
   - Middle mouse drag: pan camera
   - Mouse wheel: zoom camera
+  - Click an object in the viewport to select it
+  - Click active gizmo center/axis/ring handles to move, rotate, or scale
   - `Esc`: quit
 
 ## Run

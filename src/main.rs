@@ -198,6 +198,9 @@ struct App {
     panning_camera: bool,
     last_cursor: Vec2,
     drag_offset: Vec3,
+    active_gizmo: Option<GizmoHandle>,
+    drag_start_cursor: Vec2,
+    drag_start_transform: Option<Transform>,
     start_time: Instant,
     style: StylePreset,
     debug_view: DebugView,
@@ -377,15 +380,17 @@ fn object_details(ui: &mut egui::Ui, scene: &mut Scene) {
         ui.separator();
         ui.label("Transform");
         changed |= vec3_drag(ui, "Position", &mut transform.translation, 0.05);
-        let mut rotation_degrees = transform.rotation_y.to_degrees();
-        changed |= ui
-            .add(
-                egui::DragValue::new(&mut rotation_degrees)
-                    .speed(0.4)
-                    .prefix("Y Rotation "),
-            )
-            .changed();
-        transform.rotation_y = rotation_degrees.to_radians();
+        let mut rotation_degrees = Vec3::new(
+            transform.rotation.x.to_degrees(),
+            transform.rotation.y.to_degrees(),
+            transform.rotation.z.to_degrees(),
+        );
+        changed |= vec3_drag(ui, "Rotation", &mut rotation_degrees, 0.4);
+        transform.rotation = Vec3::new(
+            rotation_degrees.x.to_radians(),
+            rotation_degrees.y.to_radians(),
+            rotation_degrees.z.to_radians(),
+        );
         changed |= vec3_drag(ui, "Scale", &mut transform.scale, 0.02);
         if changed {
             for object in scene.selected_group_mut() {
@@ -487,6 +492,9 @@ impl App {
             panning_camera: false,
             last_cursor: Vec2::ZERO,
             drag_offset: Vec3::ZERO,
+            active_gizmo: None,
+            drag_start_cursor: Vec2::ZERO,
+            drag_start_transform: None,
             start_time: Instant::now(),
             style: StylePreset::Street,
             debug_view: DebugView::Final,
@@ -517,7 +525,7 @@ impl App {
                                 group_id,
                                 transform: Transform {
                                     translation: Vec3::new(0.0, GROUND_CLEARANCE, 0.0),
-                                    rotation_y: 0.0,
+                                    rotation: Vec3::ZERO,
                                     scale: Vec3::ONE,
                                 },
                             });
@@ -555,28 +563,7 @@ impl App {
             return;
         }
         if self.dragging {
-            match self.editor_tool {
-                EditorTool::Select | EditorTool::Move => {
-                    if let Some(point) = self.cursor_ground_point() {
-                        let translation = point + self.drag_offset;
-                        for object in self.scene.selected_group_mut() {
-                            object.transform.translation = translation;
-                        }
-                    }
-                }
-                EditorTool::Rotate => {
-                    for object in self.scene.selected_group_mut() {
-                        object.transform.rotation_y += delta.x * 0.01;
-                    }
-                }
-                EditorTool::Scale => {
-                    let factor = (1.0 + delta.x * 0.006).clamp(0.05, 20.0);
-                    for object in self.scene.selected_group_mut() {
-                        object.transform.scale = (object.transform.scale * factor)
-                            .clamp(Vec3::splat(0.02), Vec3::splat(50.0));
-                    }
-                }
-            }
+            self.drag_active_gizmo(delta);
         }
     }
 
@@ -586,6 +573,9 @@ impl App {
                 self.dragging = pressed;
                 if pressed {
                     self.begin_tool_drag();
+                } else {
+                    self.active_gizmo = None;
+                    self.drag_start_transform = None;
                 }
             }
             MouseButton::Right => self.orbiting_camera = pressed,
@@ -595,12 +585,113 @@ impl App {
     }
 
     fn begin_tool_drag(&mut self) {
-        if matches!(self.editor_tool, EditorTool::Select | EditorTool::Move) {
+        self.drag_start_cursor = self.cursor;
+        self.drag_start_transform = self
+            .scene
+            .selected_group()
+            .first()
+            .map(|object| object.transform);
+        let ray = self.cursor_ray();
+        if let Some(ray) = ray {
+            if let Some(handle) = self.hit_test_gizmo(ray) {
+                self.active_gizmo = Some(handle);
+                if matches!(self.editor_tool, EditorTool::Select) {
+                    self.editor_tool = EditorTool::Move;
+                }
+            } else if let Some(group_id) = self.pick_object(ray) {
+                self.scene.select_group(group_id);
+                self.drag_start_transform = self
+                    .scene
+                    .selected_group()
+                    .first()
+                    .map(|object| object.transform);
+                self.active_gizmo = Some(GizmoHandle::Center);
+            } else {
+                self.active_gizmo = None;
+            }
+        }
+
+        if matches!(
+            (self.editor_tool, self.active_gizmo),
+            (EditorTool::Select, _) | (EditorTool::Move, Some(GizmoHandle::Center))
+        ) {
             if let Some(point) = self.cursor_ground_point() {
                 if let Some(object) = self.scene.selected_group().first() {
                     self.drag_offset = object.transform.translation - point;
                 }
             }
+        }
+    }
+
+    fn drag_active_gizmo(&mut self, delta: Vec2) {
+        let Some(handle) = self.active_gizmo else {
+            return;
+        };
+        let start_transform = self
+            .drag_start_transform
+            .or_else(|| {
+                self.scene
+                    .selected_group()
+                    .first()
+                    .map(|object| object.transform)
+            })
+            .unwrap_or_default();
+        let mut transform = start_transform;
+        let total_delta = self.cursor - self.drag_start_cursor;
+
+        match self.editor_tool {
+            EditorTool::Select | EditorTool::Move => match handle {
+                GizmoHandle::Center => {
+                    if let Some(point) = self.cursor_ground_point() {
+                        transform.translation = point + self.drag_offset;
+                    }
+                }
+                GizmoHandle::Axis(axis) => {
+                    if axis == Axis::Y {
+                        let mut translation = start_transform.translation;
+                        translation.y =
+                            (translation.y - total_delta.y * 0.01).max(GROUND_CLEARANCE);
+                        transform.translation = translation;
+                    } else if let Some(point) = self.cursor_ground_point() {
+                        let mut translation = start_transform.translation;
+                        axis.set_component(
+                            &mut translation,
+                            axis.component(point + self.drag_offset),
+                        );
+                        transform.translation = translation;
+                    }
+                }
+                GizmoHandle::Ring(_) => {}
+            },
+            EditorTool::Rotate => {
+                let axis = match handle {
+                    GizmoHandle::Ring(axis) | GizmoHandle::Axis(axis) => axis,
+                    GizmoHandle::Center => Axis::Y,
+                };
+                let amount = (delta.x - delta.y) * 0.012;
+                let current = axis.component(transform.rotation);
+                axis.set_component(&mut transform.rotation, current + amount);
+            }
+            EditorTool::Scale => {
+                let factor =
+                    (1.0 + total_delta.x * 0.006 - total_delta.y * 0.004).clamp(0.05, 20.0);
+                match handle {
+                    GizmoHandle::Center => transform.scale = start_transform.scale * factor,
+                    GizmoHandle::Axis(axis) => {
+                        transform.scale = start_transform.scale;
+                        axis.set_component(
+                            &mut transform.scale,
+                            (axis.component(start_transform.scale) * factor).max(0.02),
+                        );
+                    }
+                    GizmoHandle::Ring(_) => {}
+                }
+                transform.scale = transform.scale.clamp(Vec3::splat(0.02), Vec3::splat(50.0));
+            }
+        }
+
+        for object in self.scene.selected_group_mut() {
+            object.transform = transform;
         }
     }
 
@@ -624,7 +715,7 @@ impl App {
             } else {
                 Vec3::new(index as f32 * 0.02, GROUND_CLEARANCE, 0.0)
             };
-            object.transform.rotation_y = 0.0;
+            object.transform.rotation = Vec3::ZERO;
         }
         self.status = "Scene reset".to_string();
     }
@@ -634,6 +725,11 @@ impl App {
     }
 
     fn cursor_ground_point(&self) -> Option<Vec3> {
+        let ray = self.cursor_ray()?;
+        ray.intersect_y_plane(0.0)
+    }
+
+    fn cursor_ray(&self) -> Option<Ray> {
         let width = self.viewport.width.max(1) as f32;
         let height = self.viewport.height.max(1) as f32;
         let ndc = Vec2::new(
@@ -649,12 +745,65 @@ impl App {
         let ray_origin = near.truncate() / near.w;
         let ray_far = far.truncate() / far.w;
         let ray_dir = (ray_far - ray_origin).normalize();
-        let denom = ray_dir.y;
-        if denom.abs() < 0.0001 {
-            return None;
+        Some(Ray {
+            origin: ray_origin,
+            direction: ray_dir,
+        })
+    }
+
+    fn pick_object(&self, ray: Ray) -> Option<u32> {
+        self.scene
+            .objects
+            .iter()
+            .filter_map(|object| {
+                let scale = object.transform.scale.max_element().max(0.001);
+                let radius = object.mesh.bounds_radius * scale;
+                ray.intersect_sphere(object.transform.translation, radius)
+                    .map(|distance| (distance, object.group_id))
+            })
+            .min_by(|a, b| a.0.total_cmp(&b.0))
+            .map(|(_, group_id)| group_id)
+    }
+
+    fn hit_test_gizmo(&self, ray: Ray) -> Option<GizmoHandle> {
+        let origin = self.scene.selected_group().first()?.transform.translation;
+        if ray.intersect_sphere(origin, 0.22).is_some() {
+            return Some(GizmoHandle::Center);
         }
-        let t = -ray_origin.y / denom;
-        (t >= 0.0).then_some(ray_origin + ray_dir * t)
+        match self.editor_tool {
+            EditorTool::Select => None,
+            EditorTool::Move | EditorTool::Scale => {
+                let mut best = None;
+                for axis in [Axis::X, Axis::Y, Axis::Z] {
+                    let axis_vec = axis.vector();
+                    let start = origin + axis_vec * 0.16;
+                    let end = origin + axis_vec * 1.18;
+                    let distance = ray.distance_to_segment(start, end);
+                    if distance < 0.16 {
+                        let score = distance;
+                        if best.is_none_or(|(best_score, _)| score < best_score) {
+                            best = Some((score, GizmoHandle::Axis(axis)));
+                        }
+                    }
+                    if matches!(self.editor_tool, EditorTool::Scale)
+                        && ray
+                            .intersect_sphere(origin + axis_vec * 1.05, 0.2)
+                            .is_some()
+                    {
+                        return Some(GizmoHandle::Axis(axis));
+                    }
+                }
+                best.map(|(_, handle)| handle)
+            }
+            EditorTool::Rotate => {
+                for axis in [Axis::X, Axis::Y, Axis::Z] {
+                    if hit_ring(ray, origin, axis) {
+                        return Some(GizmoHandle::Ring(axis));
+                    }
+                }
+                None
+            }
+        }
     }
 
     fn update_title(&self, window: &Window) {
@@ -715,6 +864,102 @@ enum EditorTool {
     Move,
     Rotate,
     Scale,
+}
+
+#[derive(Clone, Copy)]
+struct Ray {
+    origin: Vec3,
+    direction: Vec3,
+}
+
+impl Ray {
+    fn intersect_y_plane(self, y: f32) -> Option<Vec3> {
+        let denom = self.direction.y;
+        if denom.abs() < 0.0001 {
+            return None;
+        }
+        let t = (y - self.origin.y) / denom;
+        (t >= 0.0).then_some(self.origin + self.direction * t)
+    }
+
+    fn intersect_sphere(self, center: Vec3, radius: f32) -> Option<f32> {
+        let oc = self.origin - center;
+        let b = oc.dot(self.direction);
+        let c = oc.length_squared() - radius * radius;
+        let h = b * b - c;
+        if h < 0.0 {
+            return None;
+        }
+        let t = -b - h.sqrt();
+        (t >= 0.0).then_some(t)
+    }
+
+    fn distance_to_segment(self, a: Vec3, b: Vec3) -> f32 {
+        let u = self.direction;
+        let v = b - a;
+        let w0 = self.origin - a;
+        let a_dot = u.dot(u);
+        let b_dot = u.dot(v);
+        let c_dot = v.dot(v);
+        let d_dot = u.dot(w0);
+        let e_dot = v.dot(w0);
+        let denom = a_dot * c_dot - b_dot * b_dot;
+        let mut ray_t = if denom.abs() > 0.0001 {
+            (b_dot * e_dot - c_dot * d_dot) / denom
+        } else {
+            0.0
+        };
+        let mut segment_t = if denom.abs() > 0.0001 {
+            (a_dot * e_dot - b_dot * d_dot) / denom
+        } else {
+            0.0
+        };
+        ray_t = ray_t.max(0.0);
+        segment_t = segment_t.clamp(0.0, 1.0);
+        let point_ray = self.origin + u * ray_t;
+        let point_segment = a + v * segment_t;
+        point_ray.distance(point_segment)
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Axis {
+    X,
+    Y,
+    Z,
+}
+
+impl Axis {
+    fn vector(self) -> Vec3 {
+        match self {
+            Self::X => Vec3::X,
+            Self::Y => Vec3::Y,
+            Self::Z => Vec3::Z,
+        }
+    }
+
+    fn component(self, value: Vec3) -> f32 {
+        match self {
+            Self::X => value.x,
+            Self::Y => value.y,
+            Self::Z => value.z,
+        }
+    }
+
+    fn set_component(self, value: &mut Vec3, component: f32) {
+        match self {
+            Self::X => value.x = component,
+            Self::Y => value.y = component,
+            Self::Z => value.z = component,
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum GizmoHandle {
+    Center,
+    Axis(Axis),
+    Ring(Axis),
 }
 
 impl EditorTool {
@@ -1068,7 +1313,7 @@ impl Camera {
 #[derive(Clone, Copy)]
 struct Transform {
     translation: Vec3,
-    rotation_y: f32,
+    rotation: Vec3,
     scale: Vec3,
 }
 
@@ -1076,7 +1321,7 @@ impl Default for Transform {
     fn default() -> Self {
         Self {
             translation: Vec3::ZERO,
-            rotation_y: 0.0,
+            rotation: Vec3::ZERO,
             scale: Vec3::ONE,
         }
     }
@@ -1085,7 +1330,12 @@ impl Default for Transform {
 impl Transform {
     fn matrix(self) -> Mat4 {
         Mat4::from_translation(self.translation)
-            * Mat4::from_rotation_y(self.rotation_y)
+            * Mat4::from_euler(
+                glam::EulerRot::XYZ,
+                self.rotation.x,
+                self.rotation.y,
+                self.rotation.z,
+            )
             * Mat4::from_scale(self.scale)
     }
 }
@@ -1855,7 +2105,7 @@ impl Renderer {
             object.transform.translation.z,
         );
         let model = Mat4::from_translation(position)
-            * Mat4::from_rotation_y(object.transform.rotation_y)
+            * Mat4::from_rotation_y(object.transform.rotation.y)
             * Mat4::from_scale(Vec3::new(radius * 1.2, 1.0, radius * 0.78));
 
         self.gl.use_program(Some(self.contact_shadow_program));
@@ -2110,6 +2360,21 @@ fn ring_point(axis: Vec3, angle: f32, radius: f32) -> Vec3 {
     } else {
         Vec3::new(c * radius, s * radius, 0.0)
     }
+}
+
+fn hit_ring(ray: Ray, origin: Vec3, axis: Axis) -> bool {
+    let normal = axis.vector();
+    let denom = ray.direction.dot(normal);
+    if denom.abs() < 0.0001 {
+        return false;
+    }
+    let t = (origin - ray.origin).dot(normal) / denom;
+    if t < 0.0 {
+        return false;
+    }
+    let hit = ray.origin + ray.direction * t;
+    let distance = (hit - origin).length();
+    (distance - 0.92).abs() < 0.16
 }
 
 unsafe fn compile_program(
