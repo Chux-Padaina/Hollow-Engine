@@ -77,6 +77,14 @@ Current status:
 - Add scene hierarchy and inspector panels.
 - Add visual debug modes: albedo, normals, depth, lighting, shadows, emissive.
 
+Current status:
+
+- Outliner exists for object groups and lights.
+- Details panel exists for transforms and light properties.
+- Toolbar supports select/move/rotate/scale modes.
+- Camera supports orbit, pan, and zoom.
+- True 3D axis gizmos are still pending.
+
 ## Phase 7: Stylized Rendering Identity
 
 - Add art-directed ramp textures.

@@ -36,6 +36,11 @@ Do not copy proprietary ZZZ models, environments, UI, logos, or exact assets. Th
   - `F2`: albedo
   - `F3`: normals
   - `F4`: lighting only
+- Editor UI:
+  - outliner with object groups and lights
+  - details panel for object transforms and light properties
+  - toolbar for select/move/rotate/scale tools
+  - orbit/pan/zoom editor camera controls
 
 ## Recent Fixes
 
@@ -55,7 +60,7 @@ Do not copy proprietary ZZZ models, environments, UI, logos, or exact assets. Th
 - Spotlights are represented as scene data, but the shader still treats them like focused point lights until cone falloff is implemented.
 - No reflection probes.
 - No normal/emissive/roughness/metallic texture support yet.
-- No editor panels, transform gizmos, hierarchy, inspector, or material UI.
+- Editor panels exist, but there are no 3D axis gizmos yet. Transform tools currently use mouse drag and numeric inspector controls.
 - Inverted-hull outlines can still be imperfect on thin/open geometry; screen-space outlines should come later.
 - Scene lights are hardcoded showroom data, not editable scene entities.
 

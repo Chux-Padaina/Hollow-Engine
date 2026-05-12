@@ -17,7 +17,14 @@ Small native Rust/OpenGL editor prototype for importing meshes and rendering the
   - `F2`: albedo/base color debug view
   - `F3`: normal debug view
   - `F4`: lighting-only debug view
-  - `R`: reset scene
+  - `Q`: select tool
+  - `W`: move tool
+  - `E`: rotate tool
+  - `R`: scale tool
+  - `Home`: reset scene
+  - Right mouse drag: orbit camera
+  - Middle mouse drag: pan camera
+  - Mouse wheel: zoom camera
   - `Esc`: quit
 
 ## Run

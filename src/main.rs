@@ -3,7 +3,7 @@
 use std::ffi::CString;
 use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
-use std::rc::Rc;
+use std::sync::Arc;
 use std::time::Instant;
 
 use glam::{Mat4, Vec2, Vec3, Vec4};
@@ -16,7 +16,7 @@ use glutin::surface::{GlSurface, SurfaceAttributesBuilder, WindowSurface};
 use glutin_winit::DisplayBuilder;
 use raw_window_handle::HasWindowHandle;
 use winit::dpi::{PhysicalPosition, PhysicalSize};
-use winit::event::{ElementState, Event, MouseButton, WindowEvent};
+use winit::event::{ElementState, Event, MouseButton, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::{Window, WindowAttributes};
@@ -65,14 +65,15 @@ fn run() -> Result<(), String> {
         .map_err(|error| format!("make OpenGL context current: {error}"))?;
 
     let gl = unsafe {
-        Rc::new(glow::Context::from_loader_function(|symbol| {
+        Arc::new(glow::Context::from_loader_function(|symbol| {
             let symbol = CString::new(symbol).expect("GL symbol has interior nul");
             gl_display.get_proc_address(&symbol).cast()
         }))
     };
 
-    let mut app = unsafe { App::new(gl, size)? };
+    let mut app = unsafe { App::new(gl.clone(), size)? };
     app.try_import_arg();
+    let mut editor = unsafe { EditorLayer::new(gl.clone(), &window)? };
 
     event_loop.set_control_flow(ControlFlow::Poll);
     event_loop
@@ -88,39 +89,73 @@ fn run() -> Result<(), String> {
                     unsafe {
                         app.render();
                     }
+                    editor.run(&window, &mut app);
+                    unsafe {
+                        editor.paint(&window);
+                    }
                     if let Err(error) = surface.swap_buffers(&gl_context) {
                         eprintln!("swap buffers: {error}");
                         target.exit();
                     }
                 }
-                WindowEvent::DroppedFile(path) => app.import_model(path),
-                WindowEvent::CursorMoved { position, .. } => app.cursor_moved(position),
-                WindowEvent::MouseInput { state, button, .. } => {
-                    if button == MouseButton::Left {
-                        app.mouse_left(state == ElementState::Pressed);
+                _ => {
+                    let egui_response = editor.on_window_event(&window, &event);
+                    if let WindowEvent::DroppedFile(path) = &event {
+                        app.import_model(path.clone());
                     }
-                }
-                WindowEvent::KeyboardInput { event, .. } => {
-                    if event.state == ElementState::Pressed {
-                        match event.physical_key {
-                            PhysicalKey::Code(KeyCode::Escape) => target.exit(),
-                            PhysicalKey::Code(KeyCode::Digit1) => {
-                                app.style = StylePreset::Character
+                    if !egui_response.consumed {
+                        match event {
+                            WindowEvent::CursorMoved { position, .. } => app.cursor_moved(position),
+                            WindowEvent::MouseInput { state, button, .. } => {
+                                app.mouse_button(button, state == ElementState::Pressed)
                             }
-                            PhysicalKey::Code(KeyCode::Digit2) => app.style = StylePreset::Street,
-                            PhysicalKey::Code(KeyCode::Digit3) => app.style = StylePreset::Combat,
-                            PhysicalKey::Code(KeyCode::F1) => app.debug_view = DebugView::Final,
-                            PhysicalKey::Code(KeyCode::F2) => app.debug_view = DebugView::Albedo,
-                            PhysicalKey::Code(KeyCode::F3) => app.debug_view = DebugView::Normals,
-                            PhysicalKey::Code(KeyCode::F4) => {
-                                app.debug_view = DebugView::LightingOnly
+                            WindowEvent::MouseWheel { delta, .. } => app.mouse_wheel(delta),
+                            WindowEvent::KeyboardInput { event, .. } => {
+                                if event.state == ElementState::Pressed {
+                                    match event.physical_key {
+                                        PhysicalKey::Code(KeyCode::Escape) => target.exit(),
+                                        PhysicalKey::Code(KeyCode::Digit1) => {
+                                            app.style = StylePreset::Character
+                                        }
+                                        PhysicalKey::Code(KeyCode::Digit2) => {
+                                            app.style = StylePreset::Street
+                                        }
+                                        PhysicalKey::Code(KeyCode::Digit3) => {
+                                            app.style = StylePreset::Combat
+                                        }
+                                        PhysicalKey::Code(KeyCode::F1) => {
+                                            app.debug_view = DebugView::Final
+                                        }
+                                        PhysicalKey::Code(KeyCode::F2) => {
+                                            app.debug_view = DebugView::Albedo
+                                        }
+                                        PhysicalKey::Code(KeyCode::F3) => {
+                                            app.debug_view = DebugView::Normals
+                                        }
+                                        PhysicalKey::Code(KeyCode::F4) => {
+                                            app.debug_view = DebugView::LightingOnly
+                                        }
+                                        PhysicalKey::Code(KeyCode::KeyQ) => {
+                                            app.editor_tool = EditorTool::Select
+                                        }
+                                        PhysicalKey::Code(KeyCode::KeyW) => {
+                                            app.editor_tool = EditorTool::Move
+                                        }
+                                        PhysicalKey::Code(KeyCode::KeyE) => {
+                                            app.editor_tool = EditorTool::Rotate
+                                        }
+                                        PhysicalKey::Code(KeyCode::KeyR) => {
+                                            app.editor_tool = EditorTool::Scale
+                                        }
+                                        PhysicalKey::Code(KeyCode::Home) => app.reset_scene(),
+                                        _ => {}
+                                    }
+                                }
                             }
-                            PhysicalKey::Code(KeyCode::KeyR) => app.reset_scene(),
                             _ => {}
                         }
                     }
                 }
-                _ => {}
             },
             Event::AboutToWait => window.request_redraw(),
             _ => {}
@@ -153,21 +188,267 @@ fn non_zero(value: u32) -> NonZeroU32 {
 }
 
 struct App {
-    gl: Rc<glow::Context>,
+    gl: Arc<glow::Context>,
     renderer: Renderer,
     scene: Scene,
     viewport: PhysicalSize<u32>,
     cursor: Vec2,
     dragging: bool,
+    orbiting_camera: bool,
+    panning_camera: bool,
+    last_cursor: Vec2,
     drag_offset: Vec3,
     start_time: Instant,
     style: StylePreset,
     debug_view: DebugView,
+    editor_tool: EditorTool,
+    camera: EditorCamera,
     status: String,
 }
 
+struct EditorLayer {
+    egui_ctx: egui::Context,
+    egui_state: egui_winit::State,
+    painter: egui_glow::Painter,
+    clipped_primitives: Vec<egui::ClippedPrimitive>,
+    textures_delta: egui::TexturesDelta,
+    pixels_per_point: f32,
+}
+
+impl EditorLayer {
+    unsafe fn new(gl: Arc<glow::Context>, window: &Window) -> Result<Self, String> {
+        let egui_ctx = egui::Context::default();
+        let painter = egui_glow::Painter::new(gl, "", None, true)
+            .map_err(|error| format!("egui painter: {error}"))?;
+        let egui_state = egui_winit::State::new(
+            egui_ctx.clone(),
+            egui::ViewportId::ROOT,
+            window,
+            None,
+            window.theme(),
+            Some(painter.max_texture_side()),
+        );
+        Ok(Self {
+            egui_ctx,
+            egui_state,
+            painter,
+            clipped_primitives: Vec::new(),
+            textures_delta: egui::TexturesDelta::default(),
+            pixels_per_point: 1.0,
+        })
+    }
+
+    fn on_window_event(
+        &mut self,
+        window: &Window,
+        event: &WindowEvent,
+    ) -> egui_winit::EventResponse {
+        self.egui_state.on_window_event(window, event)
+    }
+
+    fn run(&mut self, window: &Window, app: &mut App) {
+        let raw_input = self.egui_state.take_egui_input(window);
+        let output = self.egui_ctx.run(raw_input, |ctx| {
+            editor_ui(ctx, app);
+        });
+        self.egui_state
+            .handle_platform_output(window, output.platform_output);
+        self.pixels_per_point = output.pixels_per_point;
+        self.clipped_primitives = self
+            .egui_ctx
+            .tessellate(output.shapes, output.pixels_per_point);
+        self.textures_delta.append(output.textures_delta);
+    }
+
+    unsafe fn paint(&mut self, window: &Window) {
+        let size = window.inner_size();
+        let screen_size = [size.width, size.height];
+        self.painter.paint_and_update_textures(
+            screen_size,
+            self.pixels_per_point,
+            &self.clipped_primitives,
+            &self.textures_delta,
+        );
+        self.clipped_primitives.clear();
+        self.textures_delta = egui::TexturesDelta::default();
+    }
+}
+
+fn editor_ui(ctx: &egui::Context, app: &mut App) {
+    egui::TopBottomPanel::top("toolbar").show(ctx, |ui| {
+        ui.horizontal(|ui| {
+            ui.label("Tool");
+            tool_button(ui, app, EditorTool::Select, "Q Select");
+            tool_button(ui, app, EditorTool::Move, "W Move");
+            tool_button(ui, app, EditorTool::Rotate, "E Rotate");
+            tool_button(ui, app, EditorTool::Scale, "R Scale");
+            ui.separator();
+            ui.label(format!("View: {}", app.debug_view.name()));
+            ui.label(format!("Style: {}", app.style.name()));
+        });
+    });
+
+    egui::SidePanel::left("outliner")
+        .default_width(260.0)
+        .show(ctx, |ui| {
+            ui.heading("Outliner");
+            ui.separator();
+            ui.collapsing("Objects", |ui| {
+                let mut groups = Vec::<(u32, String, usize)>::new();
+                for object in &app.scene.objects {
+                    if let Some((_, _, count)) =
+                        groups.iter_mut().find(|(id, _, _)| *id == object.group_id)
+                    {
+                        *count += 1;
+                    } else {
+                        groups.push((object.group_id, object.name.clone(), 1));
+                    }
+                }
+                for (group_id, name, count) in groups {
+                    let selected =
+                        app.scene.selected_light.is_none() && app.scene.selected_group == group_id;
+                    let label = if count > 1 {
+                        format!("{name} ({count} meshes)")
+                    } else {
+                        name
+                    };
+                    if ui.selectable_label(selected, label).clicked() {
+                        app.scene.select_group(group_id);
+                    }
+                }
+            });
+            ui.collapsing("Lights", |ui| {
+                for index in 0..app.scene.lights.len() {
+                    let light = &app.scene.lights[index];
+                    let selected = app.scene.selected_light == Some(index);
+                    if ui
+                        .selectable_label(
+                            selected,
+                            format!("{} [{}]", light.name, light.kind.name()),
+                        )
+                        .clicked()
+                    {
+                        app.scene.select_light(index);
+                    }
+                }
+            });
+        });
+
+    egui::SidePanel::right("details")
+        .default_width(320.0)
+        .show(ctx, |ui| {
+            ui.heading("Details");
+            ui.separator();
+            if let Some(light_index) = app.scene.selected_light {
+                light_details(ui, &mut app.scene.lights[light_index]);
+            } else {
+                object_details(ui, &mut app.scene);
+            }
+            ui.separator();
+            camera_details(ui, &mut app.camera);
+        });
+}
+
+fn tool_button(ui: &mut egui::Ui, app: &mut App, tool: EditorTool, label: &str) {
+    if ui
+        .selectable_label(app.editor_tool == tool, label)
+        .on_hover_text(tool.name())
+        .clicked()
+    {
+        app.editor_tool = tool;
+    }
+}
+
+fn object_details(ui: &mut egui::Ui, scene: &mut Scene) {
+    ui.label(format!("Selected group: {}", scene.selected_group));
+    let count = scene
+        .objects
+        .iter()
+        .filter(|object| object.group_id == scene.selected_group)
+        .count();
+    ui.label(format!("Meshes: {count}"));
+    if let Some(transform) = scene
+        .selected_group()
+        .first()
+        .map(|object| object.transform)
+    {
+        let mut transform = transform;
+        let mut changed = false;
+        ui.separator();
+        ui.label("Transform");
+        changed |= vec3_drag(ui, "Position", &mut transform.translation, 0.05);
+        let mut rotation_degrees = transform.rotation_y.to_degrees();
+        changed |= ui
+            .add(
+                egui::DragValue::new(&mut rotation_degrees)
+                    .speed(0.4)
+                    .prefix("Y Rotation "),
+            )
+            .changed();
+        transform.rotation_y = rotation_degrees.to_radians();
+        changed |= vec3_drag(ui, "Scale", &mut transform.scale, 0.02);
+        if changed {
+            for object in scene.selected_group_mut() {
+                object.transform = transform;
+            }
+        }
+    }
+}
+
+fn light_details(ui: &mut egui::Ui, light: &mut Light) {
+    ui.label(format!("Light: {}", light.name));
+    ui.label(format!("Type: {}", light.kind.name()));
+    ui.checkbox(&mut light.enabled, "Enabled");
+    let mut color = [light.color.x, light.color.y, light.color.z];
+    if ui.color_edit_button_rgb(&mut color).changed() {
+        light.color = Vec3::new(color[0], color[1], color[2]);
+    }
+    ui.add(egui::Slider::new(&mut light.intensity, 0.0..=4.0).text("Intensity"));
+    if !matches!(light.kind, LightKind::Directional) {
+        vec3_drag(ui, "Position", &mut light.position, 0.05);
+        ui.add(egui::Slider::new(&mut light.range, 0.1..=20.0).text("Range"));
+    }
+    if matches!(light.kind, LightKind::Directional | LightKind::Spot) {
+        vec3_drag(ui, "Direction", &mut light.direction, 0.02);
+        light.direction = light.direction.normalize_or_zero();
+    }
+    if matches!(light.kind, LightKind::Spot) {
+        let mut angle = light.spot_angle_radians.to_degrees();
+        if ui
+            .add(egui::Slider::new(&mut angle, 5.0..=90.0).text("Spot angle"))
+            .changed()
+        {
+            light.spot_angle_radians = angle.to_radians();
+        }
+    }
+}
+
+fn camera_details(ui: &mut egui::Ui, camera: &mut EditorCamera) {
+    ui.label("Camera");
+    ui.label("RMB orbit/look, MMB pan, wheel zoom");
+    vec3_drag(ui, "Target", &mut camera.target, 0.05);
+    ui.add(egui::Slider::new(&mut camera.distance, 1.2..=30.0).text("Distance"));
+}
+
+fn vec3_drag(ui: &mut egui::Ui, label: &str, value: &mut Vec3, speed: f64) -> bool {
+    let mut changed = false;
+    ui.label(label);
+    ui.horizontal(|ui| {
+        changed |= ui
+            .add(egui::DragValue::new(&mut value.x).speed(speed).prefix("X "))
+            .changed();
+        changed |= ui
+            .add(egui::DragValue::new(&mut value.y).speed(speed).prefix("Y "))
+            .changed();
+        changed |= ui
+            .add(egui::DragValue::new(&mut value.z).speed(speed).prefix("Z "))
+            .changed();
+    });
+    changed
+}
+
 impl App {
-    unsafe fn new(gl: Rc<glow::Context>, viewport: PhysicalSize<u32>) -> Result<Self, String> {
+    unsafe fn new(gl: Arc<glow::Context>, viewport: PhysicalSize<u32>) -> Result<Self, String> {
         gl.enable(glow::DEPTH_TEST);
         gl.enable(glow::CULL_FACE);
         gl.clear_color(0.075, 0.085, 0.08, 1.0);
@@ -191,10 +472,15 @@ impl App {
             viewport,
             cursor: Vec2::ZERO,
             dragging: false,
+            orbiting_camera: false,
+            panning_camera: false,
+            last_cursor: Vec2::ZERO,
             drag_offset: Vec3::ZERO,
             start_time: Instant::now(),
             style: StylePreset::Street,
             debug_view: DebugView::Final,
+            editor_tool: EditorTool::Move,
+            camera: EditorCamera::default(),
             status: "Drop a Sketchfab-style .glb/.gltf/.obj to import".to_string(),
         })
     }
@@ -232,6 +518,7 @@ impl App {
                 if imported > 0 {
                     self.scene.selected = self.scene.objects.len().saturating_sub(1);
                     self.scene.selected_group = group_id;
+                    self.scene.selected_light = None;
                     self.status = format!("Imported {imported} mesh(es) from {}", path.display());
                 }
             }
@@ -244,20 +531,60 @@ impl App {
     }
 
     fn cursor_moved(&mut self, position: PhysicalPosition<f64>) {
+        let previous = self.cursor;
         self.cursor = Vec2::new(position.x as f32, position.y as f32);
+        let delta = self.cursor - previous;
+        self.last_cursor = previous;
+        if self.orbiting_camera {
+            self.camera.orbit(delta);
+            return;
+        }
+        if self.panning_camera {
+            self.camera.pan(delta);
+            return;
+        }
         if self.dragging {
-            if let Some(point) = self.cursor_ground_point() {
-                let translation = point + self.drag_offset;
-                for object in self.scene.selected_group_mut() {
-                    object.transform.translation = translation;
+            match self.editor_tool {
+                EditorTool::Select | EditorTool::Move => {
+                    if let Some(point) = self.cursor_ground_point() {
+                        let translation = point + self.drag_offset;
+                        for object in self.scene.selected_group_mut() {
+                            object.transform.translation = translation;
+                        }
+                    }
+                }
+                EditorTool::Rotate => {
+                    for object in self.scene.selected_group_mut() {
+                        object.transform.rotation_y += delta.x * 0.01;
+                    }
+                }
+                EditorTool::Scale => {
+                    let factor = (1.0 + delta.x * 0.006).clamp(0.05, 20.0);
+                    for object in self.scene.selected_group_mut() {
+                        object.transform.scale = (object.transform.scale * factor)
+                            .clamp(Vec3::splat(0.02), Vec3::splat(50.0));
+                    }
                 }
             }
         }
     }
 
-    fn mouse_left(&mut self, pressed: bool) {
-        self.dragging = pressed;
-        if pressed {
+    fn mouse_button(&mut self, button: MouseButton, pressed: bool) {
+        match button {
+            MouseButton::Left => {
+                self.dragging = pressed;
+                if pressed {
+                    self.begin_tool_drag();
+                }
+            }
+            MouseButton::Right => self.orbiting_camera = pressed,
+            MouseButton::Middle => self.panning_camera = pressed,
+            _ => {}
+        }
+    }
+
+    fn begin_tool_drag(&mut self) {
+        if matches!(self.editor_tool, EditorTool::Select | EditorTool::Move) {
             if let Some(point) = self.cursor_ground_point() {
                 if let Some(object) = self.scene.selected_group().first() {
                     self.drag_offset = object.transform.translation - point;
@@ -266,9 +593,18 @@ impl App {
         }
     }
 
+    fn mouse_wheel(&mut self, delta: MouseScrollDelta) {
+        let amount = match delta {
+            MouseScrollDelta::LineDelta(_, y) => y,
+            MouseScrollDelta::PixelDelta(position) => position.y as f32 * 0.04,
+        };
+        self.camera.zoom(amount);
+    }
+
     fn reset_scene(&mut self) {
         self.scene.selected = 0;
         self.scene.selected_group = 0;
+        self.scene.selected_light = None;
         for (index, object) in self.scene.objects.iter_mut().enumerate() {
             object.transform.translation = if object.group_id == 0 {
                 Vec3::new(0.0, 0.5 + GROUND_CLEARANCE, 0.0)
@@ -281,11 +617,7 @@ impl App {
     }
 
     fn camera(&self) -> Camera {
-        Camera {
-            eye: Vec3::new(3.8, 2.45, 4.6),
-            target: Vec3::new(0.0, 0.72, 0.0),
-            fov_y_radians: 48.0_f32.to_radians(),
-        }
+        self.camera.to_camera()
     }
 
     fn cursor_ground_point(&self) -> Option<Vec3> {
@@ -364,6 +696,25 @@ enum RenderPass {
     Opaque,
     Outlines,
     Gizmos,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum EditorTool {
+    Select,
+    Move,
+    Rotate,
+    Scale,
+}
+
+impl EditorTool {
+    fn name(self) -> &'static str {
+        match self {
+            Self::Select => "select",
+            Self::Move => "move",
+            Self::Rotate => "rotate",
+            Self::Scale => "scale",
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -519,6 +870,16 @@ enum LightKind {
     Directional,
     Point,
     Spot,
+}
+
+impl LightKind {
+    fn name(&self) -> &'static str {
+        match self {
+            Self::Directional => "directional",
+            Self::Point => "point",
+            Self::Spot => "spot",
+        }
+    }
 }
 
 struct Light {
@@ -677,6 +1038,56 @@ struct Camera {
     fov_y_radians: f32,
 }
 
+struct EditorCamera {
+    target: Vec3,
+    yaw: f32,
+    pitch: f32,
+    distance: f32,
+    fov_y_radians: f32,
+}
+
+impl Default for EditorCamera {
+    fn default() -> Self {
+        Self {
+            target: Vec3::new(0.0, 0.72, 0.0),
+            yaw: 42.0_f32.to_radians(),
+            pitch: 18.0_f32.to_radians(),
+            distance: 6.3,
+            fov_y_radians: 48.0_f32.to_radians(),
+        }
+    }
+}
+
+impl EditorCamera {
+    fn to_camera(&self) -> Camera {
+        let cp = self.pitch.cos();
+        let direction = Vec3::new(self.yaw.sin() * cp, self.pitch.sin(), self.yaw.cos() * cp);
+        Camera {
+            eye: self.target + direction * self.distance,
+            target: self.target,
+            fov_y_radians: self.fov_y_radians,
+        }
+    }
+
+    fn orbit(&mut self, delta: Vec2) {
+        self.yaw -= delta.x * 0.006;
+        self.pitch = (self.pitch + delta.y * 0.006).clamp(-1.15, 1.15);
+    }
+
+    fn pan(&mut self, delta: Vec2) {
+        let camera = self.to_camera();
+        let forward = (camera.target - camera.eye).normalize_or_zero();
+        let right = forward.cross(Vec3::Y).normalize_or_zero();
+        let up = right.cross(forward).normalize_or_zero();
+        let scale = self.distance * 0.0014;
+        self.target += (-right * delta.x + up * delta.y) * scale;
+    }
+
+    fn zoom(&mut self, amount: f32) {
+        self.distance = (self.distance * (1.0 - amount * 0.08)).clamp(1.2, 30.0);
+    }
+}
+
 impl Camera {
     fn view(&self) -> Mat4 {
         Mat4::look_at_rh(self.eye, self.target, Vec3::Y)
@@ -718,6 +1129,7 @@ struct Scene {
     lights: Vec<Light>,
     selected: usize,
     selected_group: u32,
+    selected_light: Option<usize>,
     next_group_id: u32,
 }
 
@@ -789,6 +1201,24 @@ impl Scene {
         self.objects
             .iter_mut()
             .filter(move |object| object.group_id == selected_group)
+    }
+
+    fn select_group(&mut self, group_id: u32) {
+        self.selected_group = group_id;
+        self.selected_light = None;
+        if let Some(index) = self
+            .objects
+            .iter()
+            .position(|object| object.group_id == group_id)
+        {
+            self.selected = index;
+        }
+    }
+
+    fn select_light(&mut self, index: usize) {
+        if index < self.lights.len() {
+            self.selected_light = Some(index);
+        }
     }
 }
 
@@ -1123,7 +1553,7 @@ struct MeshGpu {
 }
 
 impl MeshGpu {
-    unsafe fn from_cpu(gl: Rc<glow::Context>, mesh: &MeshCpu) -> Result<Self, String> {
+    unsafe fn from_cpu(gl: Arc<glow::Context>, mesh: &MeshCpu) -> Result<Self, String> {
         let vertex_array = gl
             .create_vertex_array()
             .map_err(|error| error.to_string())?;
@@ -1206,7 +1636,7 @@ impl MeshGpu {
 }
 
 struct Renderer {
-    gl: Rc<glow::Context>,
+    gl: Arc<glow::Context>,
     object_program: glow::NativeProgram,
     outline_program: glow::NativeProgram,
     showroom_program: glow::NativeProgram,
@@ -1218,7 +1648,7 @@ struct Renderer {
 }
 
 impl Renderer {
-    unsafe fn new(gl: Rc<glow::Context>) -> Result<Self, String> {
+    unsafe fn new(gl: Arc<glow::Context>) -> Result<Self, String> {
         let object_program = compile_program(&gl, OBJECT_VERTEX, OBJECT_FRAGMENT)?;
         let outline_program = compile_program(&gl, OUTLINE_VERTEX, OUTLINE_FRAGMENT)?;
         let showroom_program = compile_program(&gl, SHOWROOM_VERTEX, SHOWROOM_FRAGMENT)?;
