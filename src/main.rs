@@ -173,6 +173,7 @@ impl App {
         let renderer = Renderer::new(gl.clone())?;
         let mut scene = Scene::default();
         scene.next_group_id = 1;
+        scene.lights = default_showroom_lights();
         scene.objects.push(SceneObject {
             name: "Starter cube".to_string(),
             mesh: MeshGpu::from_cpu(gl.clone(), &MeshCpu::cube())?,
@@ -312,7 +313,7 @@ impl App {
 
     fn update_title(&self, window: &Window) {
         window.set_title(&format!(
-            "{WINDOW_TITLE} | style: {} | view: {} | selected: {} | objects: {} | {}",
+            "{WINDOW_TITLE} | style: {} | view: {} | selected: {} | objects: {} | lights: {} | key: {} | {}",
             self.style.name(),
             self.debug_view.name(),
             self.scene
@@ -321,6 +322,8 @@ impl App {
                 .map(|object| object.name.as_str())
                 .unwrap_or("none"),
             self.scene.objects.len(),
+            self.scene.lights.len(),
+            self.scene.key_light_name(),
             self.status
         ));
     }
@@ -339,8 +342,8 @@ impl App {
             projection: camera.projection(width as f32 / height as f32),
             viewport: Vec2::new(width as f32, height as f32),
             camera_position: camera.eye,
-            light_direction: Vec3::new(-0.35, -0.82, -0.45).normalize(),
-            point_lights: showroom_lights(elapsed),
+            light_direction: self.scene.primary_directional_light_direction(),
+            point_lights: self.scene.point_light_packet(elapsed),
             elapsed,
             style: self.style,
             debug_view: self.debug_view,
@@ -349,8 +352,7 @@ impl App {
         for object in &mut self.scene.objects {
             object.transform.rotation_y += 0.002;
         }
-        self.renderer
-            .render_scene(&self.scene.objects, self.scene.selected_group, &frame);
+        self.renderer.render_scene(&self.scene, &frame);
     }
 }
 
@@ -487,21 +489,21 @@ struct FrameData {
     viewport: Vec2,
     camera_position: Vec3,
     light_direction: Vec3,
-    point_lights: [PointLight; MAX_POINT_LIGHTS],
+    point_lights: [GpuPointLight; MAX_POINT_LIGHTS],
     elapsed: f32,
     style: StylePreset,
     debug_view: DebugView,
 }
 
 #[derive(Clone, Copy)]
-struct PointLight {
+struct GpuPointLight {
     position: Vec3,
     color: Vec3,
     range: f32,
     intensity: f32,
 }
 
-impl Default for PointLight {
+impl Default for GpuPointLight {
     fn default() -> Self {
         Self {
             position: Vec3::ZERO,
@@ -512,57 +514,159 @@ impl Default for PointLight {
     }
 }
 
-fn showroom_lights(time: f32) -> [PointLight; MAX_POINT_LIGHTS] {
-    let pulse = 0.92 + time.sin() * 0.04;
-    [
-        PointLight {
-            position: Vec3::new(0.0, 3.65, 0.0),
-            color: Vec3::new(1.0, 0.96, 0.82),
-            range: 8.5,
-            intensity: 0.92,
-        },
-        PointLight {
-            position: Vec3::new(3.8, 3.25, 2.6),
-            color: Vec3::new(0.95, 0.98, 1.0),
-            range: 5.8,
-            intensity: 0.62,
-        },
-        PointLight {
-            position: Vec3::new(-3.8, 3.25, 2.6),
-            color: Vec3::new(0.95, 0.98, 1.0),
-            range: 5.8,
-            intensity: 0.62,
-        },
-        PointLight {
-            position: Vec3::new(4.8, 0.45, 0.2),
-            color: Vec3::new(0.0, 0.95, 0.88),
-            range: 4.3,
-            intensity: 0.95 * pulse,
-        },
-        PointLight {
-            position: Vec3::new(-4.8, 0.45, 0.2),
-            color: Vec3::new(0.0, 0.95, 0.88),
-            range: 4.3,
-            intensity: 0.95 * pulse,
-        },
-        PointLight {
-            position: Vec3::new(2.7, 0.45, -4.0),
-            color: Vec3::new(1.0, 0.45, 0.12),
-            range: 4.0,
-            intensity: 0.82,
-        },
-        PointLight {
-            position: Vec3::new(-2.7, 0.45, -4.0),
-            color: Vec3::new(1.0, 0.45, 0.12),
-            range: 4.0,
-            intensity: 0.82,
-        },
-        PointLight {
-            position: Vec3::new(0.0, 2.8, -5.5),
-            color: Vec3::new(1.0, 0.88, 0.45),
-            range: 5.2,
-            intensity: 0.48,
-        },
+enum LightKind {
+    Directional,
+    Point,
+    Spot,
+}
+
+struct Light {
+    name: String,
+    kind: LightKind,
+    position: Vec3,
+    direction: Vec3,
+    color: Vec3,
+    intensity: f32,
+    range: f32,
+    spot_angle_radians: f32,
+    enabled: bool,
+    pulse: f32,
+}
+
+impl Light {
+    fn directional(name: &str, direction: Vec3, color: Vec3, intensity: f32) -> Self {
+        Self {
+            name: name.to_string(),
+            kind: LightKind::Directional,
+            position: Vec3::ZERO,
+            direction: direction.normalize_or_zero(),
+            color,
+            intensity,
+            range: 1.0,
+            spot_angle_radians: 0.0,
+            enabled: true,
+            pulse: 0.0,
+        }
+    }
+
+    fn point(name: &str, position: Vec3, color: Vec3, range: f32, intensity: f32) -> Self {
+        Self {
+            name: name.to_string(),
+            kind: LightKind::Point,
+            position,
+            direction: Vec3::NEG_Y,
+            color,
+            intensity,
+            range,
+            spot_angle_radians: 0.0,
+            enabled: true,
+            pulse: 0.0,
+        }
+    }
+
+    fn spot(
+        name: &str,
+        position: Vec3,
+        direction: Vec3,
+        color: Vec3,
+        range: f32,
+        intensity: f32,
+        spot_angle_radians: f32,
+    ) -> Self {
+        Self {
+            name: name.to_string(),
+            kind: LightKind::Spot,
+            position,
+            direction: direction.normalize_or_zero(),
+            color,
+            intensity,
+            range,
+            spot_angle_radians,
+            enabled: true,
+            pulse: 0.0,
+        }
+    }
+
+    fn pulsing(mut self, amount: f32) -> Self {
+        self.pulse = amount;
+        self
+    }
+
+    fn animated_intensity(&self, time: f32) -> f32 {
+        self.intensity * (1.0 + self.pulse * time.sin())
+    }
+}
+
+fn default_showroom_lights() -> Vec<Light> {
+    vec![
+        Light::directional(
+            "Key Directional",
+            Vec3::new(-0.35, -0.82, -0.45),
+            Vec3::new(1.0, 0.96, 0.88),
+            1.0,
+        ),
+        Light::point(
+            "Ceiling Warm",
+            Vec3::new(0.0, 3.65, 0.0),
+            Vec3::new(1.0, 0.96, 0.82),
+            8.5,
+            0.92,
+        ),
+        Light::point(
+            "Ceiling Cool Right",
+            Vec3::new(3.8, 3.25, 2.6),
+            Vec3::new(0.95, 0.98, 1.0),
+            5.8,
+            0.62,
+        ),
+        Light::point(
+            "Ceiling Cool Left",
+            Vec3::new(-3.8, 3.25, 2.6),
+            Vec3::new(0.95, 0.98, 1.0),
+            5.8,
+            0.62,
+        ),
+        Light::point(
+            "Floor Cyan Right",
+            Vec3::new(4.8, 0.45, 0.2),
+            Vec3::new(0.0, 0.95, 0.88),
+            4.3,
+            0.95,
+        )
+        .pulsing(0.04),
+        Light::point(
+            "Floor Cyan Left",
+            Vec3::new(-4.8, 0.45, 0.2),
+            Vec3::new(0.0, 0.95, 0.88),
+            4.3,
+            0.95,
+        )
+        .pulsing(0.04),
+        Light::spot(
+            "Amber Spot Right",
+            Vec3::new(2.7, 0.45, -4.0),
+            Vec3::new(-0.35, 0.9, 0.35),
+            Vec3::new(1.0, 0.45, 0.12),
+            4.0,
+            0.82,
+            36.0_f32.to_radians(),
+        ),
+        Light::spot(
+            "Amber Spot Left",
+            Vec3::new(-2.7, 0.45, -4.0),
+            Vec3::new(0.35, 0.9, 0.35),
+            Vec3::new(1.0, 0.45, 0.12),
+            4.0,
+            0.82,
+            36.0_f32.to_radians(),
+        ),
+        Light::point(
+            "Rear Gold",
+            Vec3::new(0.0, 2.8, -5.5),
+            Vec3::new(1.0, 0.88, 0.45),
+            5.2,
+            0.48,
+        ),
     ]
 }
 
@@ -610,6 +714,7 @@ impl Transform {
 #[derive(Default)]
 struct Scene {
     objects: Vec<SceneObject>,
+    lights: Vec<Light>,
     selected: usize,
     selected_group: u32,
     next_group_id: u32,
@@ -623,6 +728,54 @@ struct SceneObject {
 }
 
 impl Scene {
+    fn primary_directional_light_direction(&self) -> Vec3 {
+        self.lights
+            .iter()
+            .find(|light| light.enabled && matches!(light.kind, LightKind::Directional))
+            .map(|light| light.direction)
+            .unwrap_or(Vec3::new(-0.35, -0.82, -0.45).normalize())
+    }
+
+    fn point_light_packet(&self, time: f32) -> [GpuPointLight; MAX_POINT_LIGHTS] {
+        let mut packet = [GpuPointLight::default(); MAX_POINT_LIGHTS];
+        let mut count = 0;
+        for light in &self.lights {
+            if !light.enabled || matches!(light.kind, LightKind::Directional) {
+                continue;
+            }
+            if count == MAX_POINT_LIGHTS {
+                break;
+            }
+            let spot_focus = if matches!(light.kind, LightKind::Spot) {
+                0.84 + light.spot_angle_radians.cos().abs() * 0.08
+            } else {
+                1.0
+            };
+            packet[count] = GpuPointLight {
+                position: light.position,
+                color: light.color,
+                range: light.range,
+                intensity: light.animated_intensity(time) * spot_focus,
+            };
+            count += 1;
+        }
+        packet
+    }
+
+    fn visible_gizmo_lights(&self) -> impl Iterator<Item = &Light> {
+        self.lights
+            .iter()
+            .filter(|light| light.enabled && !matches!(light.kind, LightKind::Directional))
+    }
+
+    fn key_light_name(&self) -> &str {
+        self.lights
+            .iter()
+            .find(|light| light.enabled && matches!(light.kind, LightKind::Directional))
+            .map(|light| light.name.as_str())
+            .unwrap_or("none")
+    }
+
     fn selected_group(&self) -> Vec<&SceneObject> {
         self.objects
             .iter()
@@ -1087,27 +1240,27 @@ impl Renderer {
         })
     }
 
-    unsafe fn render_scene(&self, objects: &[SceneObject], selected_group: u32, frame: &FrameData) {
+    unsafe fn render_scene(&self, scene: &Scene, frame: &FrameData) {
         self.begin_pass(RenderPass::Environment);
         self.draw_showroom(frame);
 
         self.begin_pass(RenderPass::Decals);
-        for object in objects {
+        for object in &scene.objects {
             self.draw_contact_shadow(object, frame);
         }
 
         self.begin_pass(RenderPass::Outlines);
-        for object in objects {
-            self.draw_object_outline(object, object.group_id == selected_group, frame);
+        for object in &scene.objects {
+            self.draw_object_outline(object, object.group_id == scene.selected_group, frame);
         }
 
         self.begin_pass(RenderPass::Opaque);
-        for object in objects {
-            self.draw_object_surface(object, object.group_id == selected_group, frame);
+        for object in &scene.objects {
+            self.draw_object_surface(object, object.group_id == scene.selected_group, frame);
         }
 
         self.begin_pass(RenderPass::Gizmos);
-        self.draw_light_gizmos(frame);
+        self.draw_light_gizmos(scene, frame);
         self.end_frame_state();
     }
 
@@ -1160,7 +1313,7 @@ impl Renderer {
         self.gl.bind_vertex_array(None);
     }
 
-    unsafe fn draw_light_gizmos(&self, frame: &FrameData) {
+    unsafe fn draw_light_gizmos(&self, scene: &Scene, frame: &FrameData) {
         self.gl.use_program(Some(self.unlit_program));
         set_mat4(&self.gl, self.unlit_program, "u_view", frame.view);
         set_mat4(
@@ -1171,10 +1324,13 @@ impl Renderer {
         );
         self.gl
             .bind_vertex_array(Some(self.light_gizmo.vertex_array));
-        for light in frame.point_lights {
-            let scale = 0.055 + light.intensity * 0.045;
-            let model =
-                Mat4::from_translation(light.position) * Mat4::from_scale(Vec3::splat(scale));
+        for light in scene.visible_gizmo_lights() {
+            let type_scale = match light.kind {
+                LightKind::Point => Vec3::splat(0.055 + light.intensity * 0.045),
+                LightKind::Spot => Vec3::new(0.07, 0.12, 0.07),
+                LightKind::Directional => Vec3::splat(0.08),
+            };
+            let model = Mat4::from_translation(light.position) * Mat4::from_scale(type_scale);
             set_mat4(&self.gl, self.unlit_program, "u_model", model);
             set_vec3(
                 &self.gl,
@@ -1554,7 +1710,7 @@ unsafe fn set_vec2(gl: &glow::Context, program: glow::NativeProgram, name: &str,
 unsafe fn set_point_lights(
     gl: &glow::Context,
     program: glow::NativeProgram,
-    lights: &[PointLight; MAX_POINT_LIGHTS],
+    lights: &[GpuPointLight; MAX_POINT_LIGHTS],
 ) {
     let mut positions = [0.0; MAX_POINT_LIGHTS * 3];
     let mut colors = [0.0; MAX_POINT_LIGHTS * 3];

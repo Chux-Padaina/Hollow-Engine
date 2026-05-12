@@ -35,6 +35,13 @@ Current debug views:
 - Add per-light intensity, color, range, and enabled state.
 - Add ambient light controls and a simple environment color.
 
+Current status:
+
+- Scene owns `Light` data.
+- Directional, point, and spot variants exist.
+- Directional and point lights actively affect object shading.
+- Spotlights currently reuse the point-light shader path until cone falloff is added.
+
 ## Phase 2: Shadows
 
 - Add a depth-only shadow map pass for the main directional light.

@@ -22,8 +22,9 @@ Do not copy proprietary ZZZ models, environments, UI, logos, or exact assets. Th
   4. Opaque objects
   5. Gizmos/debug overlays
 - Basic forward lighting:
-  - directional light
-  - fixed set of point lights with position, color, range, intensity
+  - scene-owned directional lights
+  - scene-owned point lights with position, color, range, intensity
+  - scene-owned spot light data prepared for cone shading
 - Stylized object shader:
   - toon-like smooth ramp
   - colored shadow/rim palette
@@ -50,6 +51,7 @@ Do not copy proprietary ZZZ models, environments, UI, logos, or exact assets. Th
 - No HDR framebuffer or real post-processing yet.
 - No bloom despite emissive-looking showroom panels.
 - No spotlights or area lights.
+- Spotlights are represented as scene data, but the shader still treats them like focused point lights until cone falloff is implemented.
 - No reflection probes.
 - No normal/emissive/roughness/metallic texture support yet.
 - No editor panels, transform gizmos, hierarchy, inspector, or material UI.
@@ -61,7 +63,7 @@ Do not copy proprietary ZZZ models, environments, UI, logos, or exact assets. Th
 Finish Phase 0 render correctness by using the debug views with the cube, Porsche, and mech test assets. Once the current passes look stable in final/albedo/normals/lighting-only, move into Phase 1:
 
 1. Turn hardcoded showroom lights into scene `Light` data.
-2. Add directional, point, and spot light variants.
+2. Add true spotlight cone falloff and range visualization.
 3. Add light range gizmos.
 4. Prepare for the first shadow-map pass.
 
