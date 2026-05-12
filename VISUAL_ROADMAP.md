@@ -14,9 +14,11 @@ Current pass order:
 
 1. Environment/showroom
 2. Decals/contact shadows
-3. Opaque objects
-4. Object outlines
+3. Object outlines
+4. Opaque objects
 5. Gizmos/debug overlays
+
+The current outline implementation uses an inverted hull, so it renders before opaque objects. A later screen-space outline pass can move after opaque rendering once framebuffer/depth texture infrastructure exists.
 
 ## Phase 1: Scene Lighting Foundation
 

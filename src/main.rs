@@ -1057,14 +1057,14 @@ impl Renderer {
             self.draw_contact_shadow(object, frame);
         }
 
-        self.begin_pass(RenderPass::Opaque);
-        for object in objects {
-            self.draw_object_surface(object, object.group_id == selected_group, frame);
-        }
-
         self.begin_pass(RenderPass::Outlines);
         for object in objects {
             self.draw_object_outline(object, object.group_id == selected_group, frame);
+        }
+
+        self.begin_pass(RenderPass::Opaque);
+        for object in objects {
+            self.draw_object_surface(object, object.group_id == selected_group, frame);
         }
 
         self.begin_pass(RenderPass::Gizmos);
