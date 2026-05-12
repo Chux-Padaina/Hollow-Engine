@@ -83,7 +83,8 @@ Current status:
 - Details panel exists for transforms and light properties.
 - Toolbar supports select/move/rotate/scale modes.
 - Camera supports orbit, pan, and zoom.
-- True 3D axis gizmos are still pending.
+- Basic 3D tool gizmo visuals exist for select, move, rotate, and scale.
+- True interactive axis handles are still pending.
 
 ## Phase 7: Stylized Rendering Identity
 

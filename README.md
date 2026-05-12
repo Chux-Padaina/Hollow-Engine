@@ -8,7 +8,7 @@ Small native Rust/OpenGL editor prototype for importing meshes and rendering the
 - Drag and drop `.glb`, `.gltf`, or `.obj` files into the window.
 - Basic CPU import path for mesh positions, normals, indices, and base material color.
 - GPU mesh upload with a toon ramp shader, rim light, and backface-expanded outline pass.
-- Ground grid, starter cube, and left-mouse drag to move the selected object on the ground plane.
+- Editor grid, two default cubes, and left-mouse drag to use the active transform tool.
 - Style presets:
   - `1`: character-biased palette
   - `2`: street palette

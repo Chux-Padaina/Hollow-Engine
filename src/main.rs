@@ -455,16 +455,27 @@ impl App {
         let renderer = Renderer::new(gl.clone())?;
         let mut scene = Scene::default();
         scene.next_group_id = 1;
-        scene.lights = default_showroom_lights();
+        scene.lights = default_editor_lights();
         scene.objects.push(SceneObject {
-            name: "Starter cube".to_string(),
+            name: "Cube A".to_string(),
             mesh: MeshGpu::from_cpu(gl.clone(), &MeshCpu::cube())?,
             group_id: 0,
             transform: Transform {
-                translation: Vec3::new(0.0, 0.5 + GROUND_CLEARANCE, 0.0),
+                translation: Vec3::new(-1.2, 0.5 + GROUND_CLEARANCE, 0.0),
                 ..Transform::default()
             },
         });
+        scene.objects.push(SceneObject {
+            name: "Cube B".to_string(),
+            mesh: MeshGpu::from_cpu(gl.clone(), &MeshCpu::cube())?,
+            group_id: 1,
+            transform: Transform {
+                translation: Vec3::new(1.2, 0.5 + GROUND_CLEARANCE, 0.0),
+                scale: Vec3::splat(0.8),
+                ..Transform::default()
+            },
+        });
+        scene.next_group_id = 2;
         Ok(Self {
             gl,
             renderer,
@@ -607,7 +618,9 @@ impl App {
         self.scene.selected_light = None;
         for (index, object) in self.scene.objects.iter_mut().enumerate() {
             object.transform.translation = if object.group_id == 0 {
-                Vec3::new(0.0, 0.5 + GROUND_CLEARANCE, 0.0)
+                Vec3::new(-1.2, 0.5 + GROUND_CLEARANCE, 0.0)
+            } else if object.group_id == 1 {
+                Vec3::new(1.2, 0.5 + GROUND_CLEARANCE, 0.0)
             } else {
                 Vec3::new(index as f32 * 0.02, GROUND_CLEARANCE, 0.0)
             };
@@ -680,11 +693,9 @@ impl App {
             elapsed,
             style: self.style,
             debug_view: self.debug_view,
+            editor_tool: self.editor_tool,
         };
 
-        for object in &mut self.scene.objects {
-            object.transform.rotation_y += 0.002;
-        }
         self.renderer.render_scene(&self.scene, &frame);
     }
 }
@@ -845,6 +856,7 @@ struct FrameData {
     elapsed: f32,
     style: StylePreset,
     debug_view: DebugView,
+    editor_tool: EditorTool,
 }
 
 #[derive(Clone, Copy)]
@@ -866,6 +878,7 @@ impl Default for GpuPointLight {
     }
 }
 
+#[allow(dead_code)]
 enum LightKind {
     Directional,
     Point,
@@ -926,6 +939,7 @@ impl Light {
         }
     }
 
+    #[allow(dead_code)]
     fn spot(
         name: &str,
         position: Vec3,
@@ -949,6 +963,7 @@ impl Light {
         }
     }
 
+    #[allow(dead_code)]
     fn pulsing(mut self, amount: f32) -> Self {
         self.pulse = amount;
         self
@@ -959,7 +974,7 @@ impl Light {
     }
 }
 
-fn default_showroom_lights() -> Vec<Light> {
+fn default_editor_lights() -> Vec<Light> {
     vec![
         Light::directional(
             "Key Directional",
@@ -968,66 +983,18 @@ fn default_showroom_lights() -> Vec<Light> {
             1.0,
         ),
         Light::point(
-            "Ceiling Warm",
-            Vec3::new(0.0, 3.65, 0.0),
-            Vec3::new(1.0, 0.96, 0.82),
-            8.5,
-            0.92,
+            "Warm Fill",
+            Vec3::new(-2.8, 3.2, 2.4),
+            Vec3::new(1.0, 0.83, 0.55),
+            7.0,
+            0.85,
         ),
         Light::point(
-            "Ceiling Cool Right",
-            Vec3::new(3.8, 3.25, 2.6),
-            Vec3::new(0.95, 0.98, 1.0),
-            5.8,
-            0.62,
-        ),
-        Light::point(
-            "Ceiling Cool Left",
-            Vec3::new(-3.8, 3.25, 2.6),
-            Vec3::new(0.95, 0.98, 1.0),
-            5.8,
-            0.62,
-        ),
-        Light::point(
-            "Floor Cyan Right",
-            Vec3::new(4.8, 0.45, 0.2),
-            Vec3::new(0.0, 0.95, 0.88),
-            4.3,
-            0.95,
-        )
-        .pulsing(0.04),
-        Light::point(
-            "Floor Cyan Left",
-            Vec3::new(-4.8, 0.45, 0.2),
-            Vec3::new(0.0, 0.95, 0.88),
-            4.3,
-            0.95,
-        )
-        .pulsing(0.04),
-        Light::spot(
-            "Amber Spot Right",
-            Vec3::new(2.7, 0.45, -4.0),
-            Vec3::new(-0.35, 0.9, 0.35),
-            Vec3::new(1.0, 0.45, 0.12),
-            4.0,
-            0.82,
-            36.0_f32.to_radians(),
-        ),
-        Light::spot(
-            "Amber Spot Left",
-            Vec3::new(-2.7, 0.45, -4.0),
-            Vec3::new(0.35, 0.9, 0.35),
-            Vec3::new(1.0, 0.45, 0.12),
-            4.0,
-            0.82,
-            36.0_f32.to_radians(),
-        ),
-        Light::point(
-            "Rear Gold",
-            Vec3::new(0.0, 2.8, -5.5),
-            Vec3::new(1.0, 0.88, 0.45),
-            5.2,
-            0.48,
+            "Cool Rim",
+            Vec3::new(3.2, 2.4, -2.6),
+            Vec3::new(0.25, 0.85, 1.0),
+            6.0,
+            0.72,
         ),
     ]
 }
@@ -1692,6 +1659,7 @@ impl Renderer {
 
         self.begin_pass(RenderPass::Gizmos);
         self.draw_light_gizmos(scene, frame);
+        self.draw_transform_gizmo(scene, frame);
         self.end_frame_state();
     }
 
@@ -1777,6 +1745,106 @@ impl Renderer {
             );
         }
         self.gl.bind_vertex_array(None);
+    }
+
+    unsafe fn draw_transform_gizmo(&self, scene: &Scene, frame: &FrameData) {
+        let Some(origin) = scene
+            .selected_group()
+            .first()
+            .map(|object| object.transform.translation)
+        else {
+            return;
+        };
+        self.gl.use_program(Some(self.unlit_program));
+        set_mat4(&self.gl, self.unlit_program, "u_view", frame.view);
+        set_mat4(
+            &self.gl,
+            self.unlit_program,
+            "u_projection",
+            frame.projection,
+        );
+        self.gl
+            .bind_vertex_array(Some(self.light_gizmo.vertex_array));
+
+        match frame.editor_tool {
+            EditorTool::Select => {
+                self.draw_gizmo_cube(origin, Vec3::splat(0.14), Vec3::new(1.0, 0.92, 0.2));
+            }
+            EditorTool::Move => {
+                self.draw_axis_bar(origin, Vec3::X, Vec3::new(1.0, 0.15, 0.12));
+                self.draw_axis_bar(origin, Vec3::Y, Vec3::new(0.2, 1.0, 0.25));
+                self.draw_axis_bar(origin, Vec3::Z, Vec3::new(0.2, 0.45, 1.0));
+            }
+            EditorTool::Scale => {
+                self.draw_axis_bar(origin, Vec3::X, Vec3::new(1.0, 0.25, 0.18));
+                self.draw_axis_bar(origin, Vec3::Y, Vec3::new(0.35, 1.0, 0.35));
+                self.draw_axis_bar(origin, Vec3::Z, Vec3::new(0.25, 0.5, 1.0));
+                self.draw_gizmo_cube(
+                    origin + Vec3::X * 1.05,
+                    Vec3::splat(0.12),
+                    Vec3::new(1.0, 0.25, 0.18),
+                );
+                self.draw_gizmo_cube(
+                    origin + Vec3::Y * 1.05,
+                    Vec3::splat(0.12),
+                    Vec3::new(0.35, 1.0, 0.35),
+                );
+                self.draw_gizmo_cube(
+                    origin + Vec3::Z * 1.05,
+                    Vec3::splat(0.12),
+                    Vec3::new(0.25, 0.5, 1.0),
+                );
+            }
+            EditorTool::Rotate => {
+                self.draw_rotation_ring(origin, Vec3::X, Vec3::new(1.0, 0.2, 0.18));
+                self.draw_rotation_ring(origin, Vec3::Y, Vec3::new(0.25, 1.0, 0.25));
+                self.draw_rotation_ring(origin, Vec3::Z, Vec3::new(0.25, 0.55, 1.0));
+            }
+        }
+        self.gl.bind_vertex_array(None);
+    }
+
+    unsafe fn draw_axis_bar(&self, origin: Vec3, axis: Vec3, color: Vec3) {
+        let center = origin + axis * 0.55;
+        let scale = if axis.x.abs() > 0.5 {
+            Vec3::new(1.1, 0.035, 0.035)
+        } else if axis.y.abs() > 0.5 {
+            Vec3::new(0.035, 1.1, 0.035)
+        } else {
+            Vec3::new(0.035, 0.035, 1.1)
+        };
+        self.draw_gizmo_cube(center, scale, color);
+    }
+
+    unsafe fn draw_rotation_ring(&self, origin: Vec3, axis: Vec3, color: Vec3) {
+        let segments = 32;
+        let radius = 0.92;
+        for index in 0..segments {
+            let t = index as f32 / segments as f32 * std::f32::consts::TAU;
+            let next = (index + 1) as f32 / segments as f32 * std::f32::consts::TAU;
+            let a = ring_point(axis, t, radius);
+            let b = ring_point(axis, next, radius);
+            let center = origin + (a + b) * 0.5;
+            let delta = b - a;
+            let scale = Vec3::splat(0.035) + delta.abs();
+            self.draw_gizmo_cube(center, scale, color);
+        }
+    }
+
+    unsafe fn draw_gizmo_cube(&self, position: Vec3, scale: Vec3, color: Vec3) {
+        set_mat4(
+            &self.gl,
+            self.unlit_program,
+            "u_model",
+            Mat4::from_translation(position) * Mat4::from_scale(scale),
+        );
+        set_vec3(&self.gl, self.unlit_program, "u_color", color);
+        self.gl.draw_elements(
+            glow::TRIANGLES,
+            self.light_gizmo.index_count,
+            glow::UNSIGNED_INT,
+            0,
+        );
     }
 
     unsafe fn draw_contact_shadow(&self, object: &SceneObject, frame: &FrameData) {
@@ -1934,8 +2002,6 @@ impl Renderer {
 fn showroom_mesh() -> MeshCpu {
     let mut vertices = Vec::new();
     let mut indices = Vec::new();
-    let ceiling_center = Vec3::ZERO;
-    let ceiling_color = [0.92, 0.94, 0.9, 1.0];
 
     let mut push_quad = |a: Vec3, b: Vec3, c: Vec3, d: Vec3, color: [f32; 4]| {
         let base = vertices.len() as u32;
@@ -1967,86 +2033,33 @@ fn showroom_mesh() -> MeshCpu {
         indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
     };
 
-    let segments = 96;
-    let radius = 7.2;
-    let wall_height = 4.2;
-    for segment in 0..segments {
-        let a0 = segment as f32 / segments as f32 * std::f32::consts::TAU;
-        let a1 = (segment + 1) as f32 / segments as f32 * std::f32::consts::TAU;
-        let p0 = Vec3::new(a0.cos() * radius, 0.0, a0.sin() * radius);
-        let p1 = Vec3::new(a1.cos() * radius, 0.0, a1.sin() * radius);
-        let tint = if segment % 12 < 6 { 0.03 } else { 0.0 };
-        push_quad(
-            Vec3::ZERO,
-            p1,
-            p0,
-            Vec3::ZERO,
-            [0.17 + tint, 0.18 + tint, 0.17 + tint, 1.0],
-        );
-        push_quad(
-            p0,
-            p1,
-            p1 + Vec3::Y * wall_height,
-            p0 + Vec3::Y * wall_height,
-            [0.24, 0.25, 0.23, 1.0],
-        );
-    }
-
-    for segment in 0..segments {
-        let a0 = segment as f32 / segments as f32 * std::f32::consts::TAU;
-        let a1 = (segment + 1) as f32 / segments as f32 * std::f32::consts::TAU;
-        let p0 = Vec3::new(a0.cos() * radius, wall_height, a0.sin() * radius);
-        let p1 = Vec3::new(a1.cos() * radius, wall_height, a1.sin() * radius);
-        push_quad(
-            ceiling_center + Vec3::Y * wall_height,
-            p0,
-            p1,
-            ceiling_center + Vec3::Y * wall_height,
-            ceiling_color,
-        );
-    }
-
-    for ring in 0..16 {
-        let angle = ring as f32 / 16.0 * std::f32::consts::TAU;
-        let dir = Vec3::new(angle.cos(), 0.0, angle.sin());
-        let side = Vec3::new(-angle.sin(), 0.0, angle.cos());
-        let center = dir * 4.9 + Vec3::Y * 3.72;
-        let color = match ring % 4 {
-            0 => [1.00, 0.92, 0.72, 1.0],
-            1 => [0.60, 0.92, 1.00, 1.0],
-            2 => [1.00, 0.68, 0.42, 1.0],
-            _ => [0.88, 1.00, 0.84, 1.0],
+    let size = 12;
+    let half_width = 0.01;
+    for i in -size..=size {
+        let f = i as f32;
+        let color = if i == 0 {
+            [0.95, 0.78, 0.28, 1.0]
+        } else {
+            [0.22, 0.34, 0.31, 0.82]
         };
         push_quad(
-            center - side * 0.42 - dir * 0.12,
-            center + side * 0.42 - dir * 0.12,
-            center + side * 0.42 + dir * 0.12,
-            center - side * 0.42 + dir * 0.12,
+            Vec3::new(f - half_width, 0.0, -size as f32),
+            Vec3::new(f + half_width, 0.0, -size as f32),
+            Vec3::new(f + half_width, 0.0, size as f32),
+            Vec3::new(f - half_width, 0.0, size as f32),
             color,
         );
-    }
-
-    for ring in 0..10 {
-        let angle = (ring as f32 + 0.5) / 10.0 * std::f32::consts::TAU;
-        let dir = Vec3::new(angle.cos(), 0.0, angle.sin());
-        let side = Vec3::new(-angle.sin(), 0.0, angle.cos());
-        let center = dir * 6.35 + Vec3::Y * 0.004;
-        let color = if ring % 2 == 0 {
-            [0.18, 0.95, 0.82, 1.0]
-        } else {
-            [1.0, 0.46, 0.18, 1.0]
-        };
         push_quad(
-            center - side * 0.14 - dir * 0.28,
-            center + side * 0.14 - dir * 0.28,
-            center + side * 0.14 + dir * 0.28,
-            center - side * 0.14 + dir * 0.28,
+            Vec3::new(-size as f32, 0.0, f - half_width),
+            Vec3::new(size as f32, 0.0, f - half_width),
+            Vec3::new(size as f32, 0.0, f + half_width),
+            Vec3::new(-size as f32, 0.0, f + half_width),
             color,
         );
     }
 
     MeshCpu {
-        name: "circular showroom".to_string(),
+        name: "editor grid".to_string(),
         vertices,
         indices,
         texture: None,
@@ -2085,6 +2098,17 @@ fn contact_shadow_mesh() -> MeshCpu {
         vertices,
         indices: vec![0, 1, 2, 0, 2, 3],
         texture: None,
+    }
+}
+
+fn ring_point(axis: Vec3, angle: f32, radius: f32) -> Vec3 {
+    let (s, c) = angle.sin_cos();
+    if axis.x.abs() > 0.5 {
+        Vec3::new(0.0, c * radius, s * radius)
+    } else if axis.y.abs() > 0.5 {
+        Vec3::new(c * radius, 0.0, s * radius)
+    } else {
+        Vec3::new(c * radius, s * radius, 0.0)
     }
 }
 

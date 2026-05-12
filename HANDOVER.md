@@ -14,7 +14,7 @@ Do not copy proprietary ZZZ models, environments, UI, logos, or exact assets. Th
 - glTF node transforms are applied so multi-part models stay assembled.
 - glTF base color factors, vertex colors, UVs, and base color textures are preserved.
 - Imported primitives are grouped so dragging moves the whole imported asset.
-- Circular showroom scene with floor, curved wall, ceiling panels, colored floor lights, and simple light gizmos.
+- Default editor test scene with two cubes, an editor grid, and two lights.
 - Explicit render passes:
   1. Environment/showroom
   2. Decals/contact shadows
@@ -41,6 +41,7 @@ Do not copy proprietary ZZZ models, environments, UI, logos, or exact assets. Th
   - details panel for object transforms and light properties
   - toolbar for select/move/rotate/scale tools
   - orbit/pan/zoom editor camera controls
+  - simple tool-specific 3D gizmo visuals for select/move/rotate/scale
 
 ## Recent Fixes
 
@@ -49,7 +50,7 @@ Do not copy proprietary ZZZ models, environments, UI, logos, or exact assets. Th
 - Fixed oversized outlines by switching outline expansion to a pixel-based clip-space offset.
 - Fixed abrupt ramp changes by replacing hard `step()` bands with smooth stylized bands.
 - Fixed render ordering and hidden OpenGL state dependencies after pass refactor.
-- Reduced floor/object intersection artifacts by adding ground clearance, flattening/repositioning floor emitters, and clipping outline hull fragments below the floor threshold.
+- Replaced showroom with a simpler grid-based default scene so editor work and scene-building tests are easier to read.
 
 ## Known Limitations
 
