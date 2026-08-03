@@ -927,8 +927,9 @@ impl App {
             projection: camera.projection(width as f32 / height as f32),
             viewport: Vec2::new(width as f32, height as f32),
             camera_position: camera.eye,
-            light_direction: self.scene.primary_directional_light_direction(),
-            point_lights: self.scene.point_light_packet(elapsed),
+            directional_light: self.scene.primary_directional_light(),
+            local_lights: self.scene.local_light_packet(elapsed),
+            local_light_count: self.scene.local_light_count(),
             elapsed,
             style: self.style,
             debug_view: self.debug_view,
@@ -1223,8 +1224,9 @@ struct FrameData {
     projection: Mat4,
     viewport: Vec2,
     camera_position: Vec3,
-    light_direction: Vec3,
-    point_lights: [GpuPointLight; MAX_POINT_LIGHTS],
+    directional_light: GpuDirectionalLight,
+    local_lights: [GpuLocalLight; MAX_POINT_LIGHTS],
+    local_light_count: i32,
     elapsed: f32,
     style: StylePreset,
     debug_view: DebugView,
@@ -1234,20 +1236,43 @@ struct FrameData {
 }
 
 #[derive(Clone, Copy)]
-struct GpuPointLight {
-    position: Vec3,
+struct GpuDirectionalLight {
+    direction: Vec3,
     color: Vec3,
-    range: f32,
     intensity: f32,
 }
 
-impl Default for GpuPointLight {
+impl Default for GpuDirectionalLight {
+    fn default() -> Self {
+        Self {
+            direction: Vec3::new(-0.35, -0.82, -0.45).normalize(),
+            color: Vec3::new(1.0, 0.96, 0.88),
+            intensity: 1.0,
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+struct GpuLocalLight {
+    position: Vec3,
+    color: Vec3,
+    direction: Vec3,
+    range: f32,
+    intensity: f32,
+    inner_cos: f32,
+    outer_cos: f32,
+}
+
+impl Default for GpuLocalLight {
     fn default() -> Self {
         Self {
             position: Vec3::ZERO,
             color: Vec3::ZERO,
+            direction: Vec3::NEG_Y,
             range: 1.0,
             intensity: 0.0,
+            inner_cos: -2.0,
+            outer_cos: -2.0,
         }
     }
 }
@@ -1487,16 +1512,20 @@ struct SceneObject {
 }
 
 impl Scene {
-    fn primary_directional_light_direction(&self) -> Vec3 {
+    fn primary_directional_light(&self) -> GpuDirectionalLight {
         self.lights
             .iter()
             .find(|light| light.enabled && matches!(light.kind, LightKind::Directional))
-            .map(|light| light.direction)
-            .unwrap_or(Vec3::new(-0.35, -0.82, -0.45).normalize())
+            .map(|light| GpuDirectionalLight {
+                direction: light.direction.normalize_or_zero(),
+                color: light.color,
+                intensity: light.intensity,
+            })
+            .unwrap_or_default()
     }
 
-    fn point_light_packet(&self, time: f32) -> [GpuPointLight; MAX_POINT_LIGHTS] {
-        let mut packet = [GpuPointLight::default(); MAX_POINT_LIGHTS];
+    fn local_light_packet(&self, time: f32) -> [GpuLocalLight; MAX_POINT_LIGHTS] {
+        let mut packet = [GpuLocalLight::default(); MAX_POINT_LIGHTS];
         let mut count = 0;
         for light in &self.lights {
             if !light.enabled || matches!(light.kind, LightKind::Directional) {
@@ -1505,20 +1534,33 @@ impl Scene {
             if count == MAX_POINT_LIGHTS {
                 break;
             }
-            let spot_focus = if matches!(light.kind, LightKind::Spot) {
-                0.84 + light.spot_angle_radians.cos().abs() * 0.08
+            let (inner_cos, outer_cos) = if matches!(light.kind, LightKind::Spot) {
+                let outer = light.spot_angle_radians.max(0.01).cos();
+                let inner = (light.spot_angle_radians * 0.62).max(0.01).cos();
+                (inner, outer)
             } else {
-                1.0
+                (-2.0, -2.0)
             };
-            packet[count] = GpuPointLight {
+            packet[count] = GpuLocalLight {
                 position: light.position,
                 color: light.color,
+                direction: light.direction.normalize_or_zero(),
                 range: light.range,
-                intensity: light.animated_intensity(time) * spot_focus,
+                intensity: light.animated_intensity(time),
+                inner_cos,
+                outer_cos,
             };
             count += 1;
         }
         packet
+    }
+
+    fn local_light_count(&self) -> i32 {
+        self.lights
+            .iter()
+            .filter(|light| light.enabled && !matches!(light.kind, LightKind::Directional))
+            .take(MAX_POINT_LIGHTS)
+            .count() as i32
     }
 
     fn visible_gizmo_lights(&self) -> impl Iterator<Item = &Light> {
@@ -2407,8 +2449,20 @@ impl Renderer {
         set_vec3(
             &self.gl,
             self.object_program,
-            "u_light_direction",
-            frame.light_direction,
+            "u_directional_light_direction",
+            frame.directional_light.direction,
+        );
+        set_vec3(
+            &self.gl,
+            self.object_program,
+            "u_directional_light_color",
+            frame.directional_light.color,
+        );
+        set_f32(
+            &self.gl,
+            self.object_program,
+            "u_directional_light_intensity",
+            frame.directional_light.intensity,
         );
         set_vec3(&self.gl, self.object_program, "u_shadow", palette.shadow);
         set_vec3(&self.gl, self.object_program, "u_mid", palette.mid);
@@ -2417,8 +2471,8 @@ impl Renderer {
         set_i32(
             &self.gl,
             self.object_program,
-            "u_point_light_count",
-            frame.point_lights.len() as i32,
+            "u_local_light_count",
+            frame.local_light_count,
         );
         set_i32(
             &self.gl,
@@ -2426,7 +2480,7 @@ impl Renderer {
             "u_debug_view",
             frame.debug_view.shader_id(),
         );
-        set_point_lights(&self.gl, self.object_program, &frame.point_lights);
+        set_local_lights(&self.gl, self.object_program, &frame.local_lights);
         set_i32(&self.gl, self.object_program, "u_base_texture", 0);
         set_f32(
             &self.gl,
@@ -2724,14 +2778,15 @@ unsafe fn set_vec2(gl: &glow::Context, program: glow::NativeProgram, name: &str,
     }
 }
 
-unsafe fn set_point_lights(
+unsafe fn set_local_lights(
     gl: &glow::Context,
     program: glow::NativeProgram,
-    lights: &[GpuPointLight; MAX_POINT_LIGHTS],
+    lights: &[GpuLocalLight; MAX_POINT_LIGHTS],
 ) {
     let mut positions = [0.0; MAX_POINT_LIGHTS * 3];
     let mut colors = [0.0; MAX_POINT_LIGHTS * 3];
-    let mut params = [0.0; MAX_POINT_LIGHTS * 2];
+    let mut directions = [0.0; MAX_POINT_LIGHTS * 3];
+    let mut params = [0.0; MAX_POINT_LIGHTS * 4];
     for (index, light) in lights.iter().enumerate() {
         positions[index * 3] = light.position.x;
         positions[index * 3 + 1] = light.position.y;
@@ -2739,17 +2794,25 @@ unsafe fn set_point_lights(
         colors[index * 3] = light.color.x;
         colors[index * 3 + 1] = light.color.y;
         colors[index * 3 + 2] = light.color.z;
-        params[index * 2] = light.range;
-        params[index * 2 + 1] = light.intensity;
+        directions[index * 3] = light.direction.x;
+        directions[index * 3 + 1] = light.direction.y;
+        directions[index * 3 + 2] = light.direction.z;
+        params[index * 4] = light.range;
+        params[index * 4 + 1] = light.intensity;
+        params[index * 4 + 2] = light.inner_cos;
+        params[index * 4 + 3] = light.outer_cos;
     }
-    if let Some(location) = gl.get_uniform_location(program, "u_point_light_positions") {
+    if let Some(location) = gl.get_uniform_location(program, "u_local_light_positions") {
         gl.uniform_3_f32_slice(Some(&location), &positions);
     }
-    if let Some(location) = gl.get_uniform_location(program, "u_point_light_colors") {
+    if let Some(location) = gl.get_uniform_location(program, "u_local_light_colors") {
         gl.uniform_3_f32_slice(Some(&location), &colors);
     }
-    if let Some(location) = gl.get_uniform_location(program, "u_point_light_params") {
-        gl.uniform_2_f32_slice(Some(&location), &params);
+    if let Some(location) = gl.get_uniform_location(program, "u_local_light_directions") {
+        gl.uniform_3_f32_slice(Some(&location), &directions);
+    }
+    if let Some(location) = gl.get_uniform_location(program, "u_local_light_params") {
+        gl.uniform_4_f32_slice(Some(&location), &params);
     }
 }
 
@@ -2797,7 +2860,9 @@ in vec4 v_color;
 in vec2 v_tex_coord;
 
 uniform vec3 u_camera_position;
-uniform vec3 u_light_direction;
+uniform vec3 u_directional_light_direction;
+uniform vec3 u_directional_light_color;
+uniform float u_directional_light_intensity;
 uniform vec3 u_shadow;
 uniform vec3 u_mid;
 uniform vec3 u_light;
@@ -2806,50 +2871,77 @@ uniform float u_selected;
 uniform float u_has_texture;
 uniform sampler2D u_base_texture;
 uniform int u_debug_view;
-uniform int u_point_light_count;
-uniform vec3 u_point_light_positions[8];
-uniform vec3 u_point_light_colors[8];
-uniform vec2 u_point_light_params[8];
+uniform int u_local_light_count;
+uniform vec3 u_local_light_positions[8];
+uniform vec3 u_local_light_colors[8];
+uniform vec3 u_local_light_directions[8];
+uniform vec4 u_local_light_params[8];
 
 out vec4 out_color;
 
+float toonBand(float ndl) {
+    float wrapped = clamp(ndl * 0.68 + 0.32, 0.0, 1.0);
+    float mid_band = smoothstep(0.22, 0.38, wrapped);
+    float high_band = smoothstep(0.58, 0.78, wrapped);
+    return mix(0.34, 0.72, mid_band) + high_band * 0.34;
+}
+
 void main() {
     vec3 normal = normalize(v_normal);
-    float ndl = dot(normal, normalize(-u_light_direction));
-    float wrapped = clamp(ndl * 0.72 + 0.36, 0.0, 1.0);
-    float mid_band = smoothstep(0.24, 0.42, wrapped);
-    float high_band = smoothstep(0.62, 0.82, wrapped);
+    vec3 view_dir = normalize(u_camera_position - v_world_position);
+    vec3 key_dir = normalize(-u_directional_light_direction);
+    float key_ndl = dot(normal, key_dir);
+    float wrapped = clamp(key_ndl * 0.68 + 0.32, 0.0, 1.0);
+    float mid_band = smoothstep(0.22, 0.38, wrapped);
+    float high_band = smoothstep(0.58, 0.78, wrapped);
     vec3 ramp_color = mix(u_shadow, u_mid, mid_band);
     ramp_color = mix(ramp_color, u_light, high_band);
+    ramp_color *= u_directional_light_color * max(u_directional_light_intensity, 0.0);
 
     vec3 warm_floor = vec3(1.0, 0.48, 0.16) * smoothstep(0.0, 1.8, v_world_position.y) * 0.06;
     vec3 cool_side = vec3(0.12, 0.78, 0.95) * (0.5 + 0.5 * normal.x) * 0.07;
     ramp_color += warm_floor + cool_side;
 
-    vec3 point_light = vec3(0.0);
+    vec3 local_light = vec3(0.0);
+    vec3 stylized_specular = vec3(0.0);
     for (int i = 0; i < 8; ++i) {
-        if (i >= u_point_light_count) {
+        if (i >= u_local_light_count) {
             break;
         }
-        vec3 to_light = u_point_light_positions[i] - v_world_position;
+        vec3 to_light = u_local_light_positions[i] - v_world_position;
         float distance_to_light = length(to_light);
         vec3 light_dir = to_light / max(distance_to_light, 0.001);
-        float range = u_point_light_params[i].x;
-        float intensity = u_point_light_params[i].y;
-        float attenuation = smoothstep(range, 0.0, distance_to_light);
-        float facing = smoothstep(-0.25, 0.72, dot(normal, light_dir));
-        point_light += u_point_light_colors[i] * attenuation * facing * intensity;
+        vec4 params = u_local_light_params[i];
+        float attenuation = 1.0 - smoothstep(params.x * 0.18, params.x, distance_to_light);
+        float cone = 1.0;
+        if (params.w > -1.5) {
+            float spot_dot = dot(normalize(u_local_light_directions[i]), -light_dir);
+            cone = smoothstep(params.w, params.z, spot_dot);
+        }
+        float ndl = dot(normal, light_dir);
+        float visibility = attenuation * cone * params.y;
+        local_light += u_local_light_colors[i] * toonBand(ndl) * visibility;
+
+        vec3 half_dir = normalize(light_dir + view_dir);
+        float raw_spec = pow(max(dot(normal, half_dir), 0.0), 48.0);
+        float spec_band = smoothstep(0.42, 0.74, raw_spec) * smoothstep(0.12, 0.58, ndl);
+        stylized_specular += u_local_light_colors[i] * spec_band * visibility;
     }
 
-    vec3 view_dir = normalize(u_camera_position - v_world_position);
     float rim = pow(1.0 - max(dot(view_dir, normal), 0.0), 3.0);
     rim = smoothstep(0.34, 0.88, rim);
+    float key_spec = smoothstep(0.36, 0.70, pow(max(dot(normal, normalize(key_dir + view_dir)), 0.0), 42.0));
+    stylized_specular += u_directional_light_color * key_spec * high_band * u_directional_light_intensity * 0.55;
 
     vec3 sampled = u_has_texture > 0.5 ? texture(u_base_texture, v_tex_coord).rgb : vec3(1.0);
     vec3 albedo = clamp(v_color.rgb * sampled, 0.0, 8.0);
     vec3 base = pow(albedo, vec3(0.85));
-    vec3 lighting = ramp_color + point_light * 0.48;
-    vec3 color = base * lighting + u_rim * rim * 0.42;
+    float saturation_hint = max(max(base.r, base.g), base.b) - min(min(base.r, base.g), base.b);
+    vec3 ambient = u_shadow * 0.34 + u_mid * 0.16;
+    vec3 lighting = ambient + ramp_color * 0.82 + local_light * 0.82;
+    vec3 color = base * lighting;
+    color += stylized_specular * (0.12 + saturation_hint * 0.18);
+    color += u_rim * rim * (0.32 + high_band * 0.18);
     color += vec3(1.0, 0.82, 0.18) * u_selected * 0.08;
 
     if (u_debug_view == 1) {
@@ -2861,7 +2953,7 @@ void main() {
         return;
     }
     if (u_debug_view == 3) {
-        vec3 lighting_only = clamp(lighting + u_rim * rim * 0.24, 0.0, 4.0);
+        vec3 lighting_only = clamp(lighting + stylized_specular * 0.5 + u_rim * rim * 0.24, 0.0, 6.0);
         lighting_only = lighting_only / (lighting_only + vec3(1.0));
         out_color = vec4(pow(lighting_only, vec3(0.82)) * 1.25, 1.0);
         return;

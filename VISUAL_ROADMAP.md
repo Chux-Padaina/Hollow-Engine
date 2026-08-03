@@ -39,8 +39,9 @@ Current status:
 
 - Scene owns `Light` data.
 - Directional, point, and spot variants exist.
-- Directional and point lights actively affect object shading.
-- Spotlights currently reuse the point-light shader path until cone falloff is added.
+- Directional, point, and spot lights actively affect object shading.
+- Spotlights use cone falloff in the object shader.
+- The current lighting model is stylized forward shading: imported albedo is preserved, while diffuse bands, rim, and specular response are art-directed rather than physically strict.
 
 ## Phase 2: Shadows
 

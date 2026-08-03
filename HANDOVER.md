@@ -22,13 +22,14 @@ Do not copy proprietary ZZZ models, environments, UI, logos, or exact assets. Th
   4. Opaque objects
   5. Gizmos/debug overlays
 - Basic forward lighting:
-  - scene-owned directional lights
+  - scene-owned directional lights with color/intensity
   - scene-owned point lights with position, color, range, intensity
-  - scene-owned spot light data prepared for cone shading
+  - scene-owned spot lights with cone falloff
 - Stylized object shader:
   - toon-like smooth ramp
   - colored shadow/rim palette
-  - point light contribution
+  - directional, point, and spot light contribution
+  - graphic specular highlights from the active lights
   - simple fog and tonemapping
   - inverted-hull outline
 - Debug object views:
@@ -57,14 +58,14 @@ Do not copy proprietary ZZZ models, environments, UI, logos, or exact assets. Th
 - Replaced showroom with a simpler grid-based default scene so editor work and scene-building tests are easier to read.
 - Added Unreal-like transform affordances: move arrows, rotate rings, scale endpoint boxes, two-axis plane handles, and visible hover/active feedback.
 - Replaced pixelated box-built rotation rings with a generated torus mesh and fixed rotation drags so rings can rotate through larger angles intuitively.
+- Reworked object lighting into stylized forward shading so directional, point, and spot light controls visibly affect toon bands, rim, and specular accents.
 
 ## Known Limitations
 
 - No shadow maps yet.
 - No HDR framebuffer or real post-processing yet.
 - No bloom despite emissive-looking showroom panels.
-- No spotlights or area lights.
-- Spotlights are represented as scene data, but the shader still treats them like focused point lights until cone falloff is implemented.
+- No area lights.
 - No reflection probes.
 - No normal/emissive/roughness/metallic texture support yet.
 - Editor panels and clickable transform gizmos exist. Gizmo behavior covers the core Unreal-style center/axis/plane/ring workflow, but move/scale visuals still use cube/bar primitives rather than proper arrow/cone meshes.
@@ -76,7 +77,7 @@ Do not copy proprietary ZZZ models, environments, UI, logos, or exact assets. Th
 Finish the editor interaction foundation by checking cube, Porsche, and mech transforms with select/move/rotate/scale tools. Once the gizmo behavior feels reliable, move into the next visual-engine layer:
 
 1. Add proper gizmo meshes and depth-aware selection outlines.
-2. Add true spotlight cone falloff and light range visualization.
+2. Add light range/cone visualization in the viewport.
 3. Prepare scene save/load so test compositions can persist.
 4. Prepare for the first shadow-map pass.
 
