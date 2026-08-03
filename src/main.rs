@@ -483,7 +483,16 @@ impl App {
                 ..Transform::default()
             },
         });
-        scene.next_group_id = 2;
+        scene.objects.push(SceneObject {
+            name: "Lighting Plane".to_string(),
+            mesh: MeshGpu::from_cpu(gl.clone(), &MeshCpu::lighting_plane())?,
+            group_id: 2,
+            transform: Transform {
+                translation: Vec3::ZERO,
+                ..Transform::default()
+            },
+        });
+        scene.next_group_id = 3;
         Ok(Self {
             gl,
             renderer,
@@ -765,6 +774,8 @@ impl App {
                 Vec3::new(-1.2, 0.5 + GROUND_CLEARANCE, 0.0)
             } else if object.group_id == 1 {
                 Vec3::new(1.2, 0.5 + GROUND_CLEARANCE, 0.0)
+            } else if object.is_floor() {
+                Vec3::ZERO
             } else {
                 Vec3::new(index as f32 * 0.02, GROUND_CLEARANCE, 0.0)
             };
@@ -840,6 +851,7 @@ impl App {
         self.scene
             .objects
             .iter()
+            .filter(|object| !object.is_floor())
             .filter_map(|object| {
                 let scale = object.transform.scale.max_element().max(0.001);
                 let radius = object.mesh.bounds_radius * scale;
@@ -1140,7 +1152,7 @@ impl RenderPass {
     fn state(self) -> RenderState {
         match self {
             Self::Environment => RenderState {
-                depth_write: true,
+                depth_write: false,
                 blend: false,
                 cull_face: None,
             },
@@ -1211,6 +1223,7 @@ impl StylePreset {
     }
 }
 
+#[allow(dead_code)]
 struct Palette {
     shadow: Vec3,
     mid: Vec3,
@@ -1377,23 +1390,16 @@ fn default_editor_lights() -> Vec<Light> {
     vec![
         Light::directional(
             "Key Directional",
-            Vec3::new(-0.35, -0.82, -0.45),
-            Vec3::new(1.0, 0.96, 0.88),
-            1.0,
+            Vec3::new(-0.45, -0.9, -0.35),
+            Vec3::new(1.0, 1.0, 0.96),
+            1.15,
         ),
         Light::point(
-            "Warm Fill",
-            Vec3::new(-2.8, 3.2, 2.4),
-            Vec3::new(1.0, 0.83, 0.55),
-            7.0,
-            0.85,
-        ),
-        Light::point(
-            "Cool Rim",
-            Vec3::new(3.2, 2.4, -2.6),
-            Vec3::new(0.25, 0.85, 1.0),
-            6.0,
-            0.72,
+            "Test Point",
+            Vec3::new(0.0, 2.4, 2.2),
+            Vec3::new(1.0, 0.74, 0.42),
+            5.0,
+            1.35,
         ),
     ]
 }
@@ -1509,6 +1515,12 @@ struct SceneObject {
     mesh: MeshGpu,
     group_id: u32,
     transform: Transform,
+}
+
+impl SceneObject {
+    fn is_floor(&self) -> bool {
+        self.name == "Lighting Plane"
+    }
 }
 
 impl Scene {
@@ -1721,6 +1733,43 @@ impl MeshCpu {
             name: "Starter cube".to_string(),
             vertices,
             indices,
+            texture: None,
+        }
+    }
+
+    fn lighting_plane() -> Self {
+        let size = 8.0;
+        let color = [0.58, 0.60, 0.56, 1.0];
+        let vertices = vec![
+            Vertex {
+                position: [-size, 0.0, -size],
+                normal: [0.0, 1.0, 0.0],
+                color,
+                tex_coord: [0.0, 0.0],
+            },
+            Vertex {
+                position: [size, 0.0, -size],
+                normal: [0.0, 1.0, 0.0],
+                color,
+                tex_coord: [1.0, 0.0],
+            },
+            Vertex {
+                position: [size, 0.0, size],
+                normal: [0.0, 1.0, 0.0],
+                color,
+                tex_coord: [1.0, 1.0],
+            },
+            Vertex {
+                position: [-size, 0.0, size],
+                normal: [0.0, 1.0, 0.0],
+                color,
+                tex_coord: [0.0, 1.0],
+            },
+        ];
+        Self {
+            name: "Lighting Plane".to_string(),
+            vertices,
+            indices: vec![0, 1, 2, 0, 2, 3],
             texture: None,
         }
     }
@@ -2068,12 +2117,16 @@ impl Renderer {
 
         self.begin_pass(RenderPass::Decals);
         for object in &scene.objects {
-            self.draw_contact_shadow(object, frame);
+            if !object.is_floor() {
+                self.draw_contact_shadow(object, frame);
+            }
         }
 
         self.begin_pass(RenderPass::Outlines);
         for object in &scene.objects {
-            self.draw_object_outline(object, object.group_id == scene.selected_group, frame);
+            if !object.is_floor() {
+                self.draw_object_outline(object, object.group_id == scene.selected_group, frame);
+            }
         }
 
         self.begin_pass(RenderPass::Opaque);
@@ -2348,14 +2401,18 @@ impl Renderer {
 
     unsafe fn draw_contact_shadow(&self, object: &SceneObject, frame: &FrameData) {
         let radius = object.mesh.bounds_radius.clamp(0.35, 2.4);
-        let position = Vec3::new(
-            object.transform.translation.x,
-            0.014,
-            object.transform.translation.z,
-        );
+        let light_ray = frame.directional_light.direction.normalize_or_zero();
+        let object_height = object.transform.translation.y.max(0.12);
+        let ray_y = light_ray.y.min(-0.08);
+        let projected =
+            object.transform.translation + light_ray * ((0.016 - object_height) / ray_y);
+        let horizontal = Vec2::new(light_ray.x, light_ray.z);
+        let stretch = 1.0 + horizontal.length() * 1.4;
+        let yaw = horizontal.y.atan2(horizontal.x);
+        let position = Vec3::new(projected.x, 0.018, projected.z);
         let model = Mat4::from_translation(position)
-            * Mat4::from_rotation_y(object.transform.rotation.y)
-            * Mat4::from_scale(Vec3::new(radius * 1.2, 1.0, radius * 0.78));
+            * Mat4::from_rotation_y(-yaw)
+            * Mat4::from_scale(Vec3::new(radius * 0.88 * stretch, 1.0, radius * 0.54));
 
         self.gl.use_program(Some(self.contact_shadow_program));
         set_mat4(&self.gl, self.contact_shadow_program, "u_model", model);
@@ -2370,7 +2427,7 @@ impl Renderer {
             &self.gl,
             self.contact_shadow_program,
             "u_strength",
-            (0.36 / radius.sqrt()).clamp(0.12, 0.34),
+            (0.34 * frame.directional_light.intensity / radius.sqrt()).clamp(0.1, 0.42),
         );
         self.gl
             .bind_vertex_array(Some(self.contact_shadow.vertex_array));
@@ -2427,8 +2484,6 @@ impl Renderer {
 
     unsafe fn draw_object_surface(&self, object: &SceneObject, selected: bool, frame: &FrameData) {
         let model = object.transform.matrix();
-        let palette = frame.style.palette();
-
         self.gl.use_program(Some(self.object_program));
         self.gl.active_texture(glow::TEXTURE0);
         self.gl.bind_texture(glow::TEXTURE_2D, object.mesh.texture);
@@ -2464,10 +2519,6 @@ impl Renderer {
             "u_directional_light_intensity",
             frame.directional_light.intensity,
         );
-        set_vec3(&self.gl, self.object_program, "u_shadow", palette.shadow);
-        set_vec3(&self.gl, self.object_program, "u_mid", palette.mid);
-        set_vec3(&self.gl, self.object_program, "u_light", palette.light);
-        set_vec3(&self.gl, self.object_program, "u_rim", palette.rim);
         set_i32(
             &self.gl,
             self.object_program,
@@ -2863,10 +2914,6 @@ uniform vec3 u_camera_position;
 uniform vec3 u_directional_light_direction;
 uniform vec3 u_directional_light_color;
 uniform float u_directional_light_intensity;
-uniform vec3 u_shadow;
-uniform vec3 u_mid;
-uniform vec3 u_light;
-uniform vec3 u_rim;
 uniform float u_selected;
 uniform float u_has_texture;
 uniform sampler2D u_base_texture;
@@ -2879,31 +2926,20 @@ uniform vec4 u_local_light_params[8];
 
 out vec4 out_color;
 
-float toonBand(float ndl) {
-    float wrapped = clamp(ndl * 0.68 + 0.32, 0.0, 1.0);
-    float mid_band = smoothstep(0.22, 0.38, wrapped);
-    float high_band = smoothstep(0.58, 0.78, wrapped);
-    return mix(0.34, 0.72, mid_band) + high_band * 0.34;
-}
-
 void main() {
     vec3 normal = normalize(v_normal);
     vec3 view_dir = normalize(u_camera_position - v_world_position);
     vec3 key_dir = normalize(-u_directional_light_direction);
-    float key_ndl = dot(normal, key_dir);
-    float wrapped = clamp(key_ndl * 0.68 + 0.32, 0.0, 1.0);
-    float mid_band = smoothstep(0.22, 0.38, wrapped);
-    float high_band = smoothstep(0.58, 0.78, wrapped);
-    vec3 ramp_color = mix(u_shadow, u_mid, mid_band);
-    ramp_color = mix(ramp_color, u_light, high_band);
-    ramp_color *= u_directional_light_color * max(u_directional_light_intensity, 0.0);
+    vec3 sampled = u_has_texture > 0.5 ? texture(u_base_texture, v_tex_coord).rgb : vec3(1.0);
+    vec3 albedo = clamp(v_color.rgb * sampled, 0.0, 4.0);
 
-    vec3 warm_floor = vec3(1.0, 0.48, 0.16) * smoothstep(0.0, 1.8, v_world_position.y) * 0.06;
-    vec3 cool_side = vec3(0.12, 0.78, 0.95) * (0.5 + 0.5 * normal.x) * 0.07;
-    ramp_color += warm_floor + cool_side;
+    float key_diffuse = max(dot(normal, key_dir), 0.0);
+    vec3 key_light = u_directional_light_color * key_diffuse * max(u_directional_light_intensity, 0.0);
+    vec3 key_half = normalize(key_dir + view_dir);
+    float key_spec = pow(max(dot(normal, key_half), 0.0), 48.0) * key_diffuse;
+    vec3 specular = u_directional_light_color * key_spec * u_directional_light_intensity * 0.45;
 
     vec3 local_light = vec3(0.0);
-    vec3 stylized_specular = vec3(0.0);
     for (int i = 0; i < 8; ++i) {
         if (i >= u_local_light_count) {
             break;
@@ -2920,28 +2956,17 @@ void main() {
         }
         float ndl = dot(normal, light_dir);
         float visibility = attenuation * cone * params.y;
-        local_light += u_local_light_colors[i] * toonBand(ndl) * visibility;
+        float diffuse = max(ndl, 0.0);
+        local_light += u_local_light_colors[i] * diffuse * visibility;
 
         vec3 half_dir = normalize(light_dir + view_dir);
-        float raw_spec = pow(max(dot(normal, half_dir), 0.0), 48.0);
-        float spec_band = smoothstep(0.42, 0.74, raw_spec) * smoothstep(0.12, 0.58, ndl);
-        stylized_specular += u_local_light_colors[i] * spec_band * visibility;
+        float point_spec = pow(max(dot(normal, half_dir), 0.0), 56.0) * diffuse;
+        specular += u_local_light_colors[i] * point_spec * visibility * 0.55;
     }
 
-    float rim = pow(1.0 - max(dot(view_dir, normal), 0.0), 3.0);
-    rim = smoothstep(0.34, 0.88, rim);
-    float key_spec = smoothstep(0.36, 0.70, pow(max(dot(normal, normalize(key_dir + view_dir)), 0.0), 42.0));
-    stylized_specular += u_directional_light_color * key_spec * high_band * u_directional_light_intensity * 0.55;
-
-    vec3 sampled = u_has_texture > 0.5 ? texture(u_base_texture, v_tex_coord).rgb : vec3(1.0);
-    vec3 albedo = clamp(v_color.rgb * sampled, 0.0, 8.0);
-    vec3 base = pow(albedo, vec3(0.85));
-    float saturation_hint = max(max(base.r, base.g), base.b) - min(min(base.r, base.g), base.b);
-    vec3 ambient = u_shadow * 0.34 + u_mid * 0.16;
-    vec3 lighting = ambient + ramp_color * 0.82 + local_light * 0.82;
-    vec3 color = base * lighting;
-    color += stylized_specular * (0.12 + saturation_hint * 0.18);
-    color += u_rim * rim * (0.32 + high_band * 0.18);
+    vec3 ambient = vec3(0.12);
+    vec3 lighting = ambient + key_light + local_light;
+    vec3 color = albedo * lighting + specular;
     color += vec3(1.0, 0.82, 0.18) * u_selected * 0.08;
 
     if (u_debug_view == 1) {
@@ -2953,17 +2978,16 @@ void main() {
         return;
     }
     if (u_debug_view == 3) {
-        vec3 lighting_only = clamp(lighting + stylized_specular * 0.5 + u_rim * rim * 0.24, 0.0, 6.0);
-        lighting_only = lighting_only / (lighting_only + vec3(1.0));
-        out_color = vec4(pow(lighting_only, vec3(0.82)) * 1.25, 1.0);
+        vec3 lighting_only = clamp(lighting + specular, 0.0, 4.0);
+        out_color = vec4(pow(lighting_only / (lighting_only + vec3(1.0)), vec3(0.4545)), 1.0);
         return;
     }
 
     float camera_distance = length(u_camera_position - v_world_position);
-    vec3 fog_color = vec3(0.17, 0.19, 0.17);
-    color = mix(color, fog_color, smoothstep(12.0, 28.0, camera_distance) * 0.42);
+    vec3 fog_color = vec3(0.10, 0.11, 0.10);
+    color = mix(color, fog_color, smoothstep(18.0, 38.0, camera_distance) * 0.25);
     color = color / (color + vec3(1.0));
-    color = pow(color, vec3(0.82)) * 1.18;
+    color = pow(color, vec3(0.4545));
     out_color = vec4(color, v_color.a);
 }
 "#;

@@ -39,16 +39,17 @@ Current status:
 
 - Scene owns `Light` data.
 - Directional, point, and spot variants exist.
-- Directional, point, and spot lights actively affect object shading.
-- Spotlights use cone falloff in the object shader.
-- The current lighting model is stylized forward shading: imported albedo is preserved, while diffuse bands, rim, and specular response are art-directed rather than physically strict.
+- The default scene currently uses one directional light and one point light.
+- The active shader is temporarily generic diffuse/specular lighting so light behavior is easy to inspect.
+- The default scene includes a lit floor plane and simple planar projected shadows.
+- Spot light data/cone support is retained for a later pass, but the next checkpoint should validate the simpler one-directional/one-point setup first.
 
 ## Phase 2: Shadows
 
 - Add a depth-only shadow map pass for the main directional light.
 - Sample the shadow map in the toon shader.
 - Add bias controls, softening, and cascade planning.
-- Add contact shadows as a cheap local fallback.
+- Keep planar/contact shadows as a cheap local fallback.
 
 ## Phase 3: Camera And Post-Processing
 

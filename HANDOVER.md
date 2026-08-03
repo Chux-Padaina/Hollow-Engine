@@ -14,22 +14,22 @@ Do not copy proprietary ZZZ models, environments, UI, logos, or exact assets. Th
 - glTF node transforms are applied so multi-part models stay assembled.
 - glTF base color factors, vertex colors, UVs, and base color textures are preserved.
 - Imported primitives are grouped so dragging moves the whole imported asset.
-- Default editor test scene with two cubes, an editor grid, and two lights.
+- Default editor test scene with two cubes, a lit floor plane, an editor grid, one directional light, and one point light.
 - Explicit render passes:
   1. Environment/grid
   2. Decals/contact shadows
   3. Object outlines
   4. Opaque objects
   5. Gizmos/debug overlays
-- Basic forward lighting:
+- Generic lighting foundation:
   - scene-owned directional lights with color/intensity
   - scene-owned point lights with position, color, range, intensity
-  - scene-owned spot lights with cone falloff
-- Stylized object shader:
-  - toon-like smooth ramp
-  - colored shadow/rim palette
-  - directional, point, and spot light contribution
-  - graphic specular highlights from the active lights
+  - spot light data/cone support retained for later, but the default scene currently uses one directional and one point light
+- Generic object shader:
+  - ambient term
+  - directional Lambert diffuse and Blinn specular
+  - point-light Lambert diffuse and Blinn specular
+  - simple planar projected shadows onto the floor plane
   - simple fog and tonemapping
   - inverted-hull outline
 - Debug object views:
@@ -58,11 +58,11 @@ Do not copy proprietary ZZZ models, environments, UI, logos, or exact assets. Th
 - Replaced showroom with a simpler grid-based default scene so editor work and scene-building tests are easier to read.
 - Added Unreal-like transform affordances: move arrows, rotate rings, scale endpoint boxes, two-axis plane handles, and visible hover/active feedback.
 - Replaced pixelated box-built rotation rings with a generated torus mesh and fixed rotation drags so rings can rotate through larger angles intuitively.
-- Reworked object lighting into stylized forward shading so directional, point, and spot light controls visibly affect toon bands, rim, and specular accents.
+- Temporarily reset object lighting to a generic diffuse/specular shader, added a lit floor plane, simplified the default scene to one directional and one point light, and made shadow decals project from the directional light.
 
 ## Known Limitations
 
-- No shadow maps yet.
+- No shadow maps yet; current shadows are simple planar projected decals for lighting validation.
 - No HDR framebuffer or real post-processing yet.
 - No bloom despite emissive-looking showroom panels.
 - No area lights.
@@ -77,10 +77,10 @@ Do not copy proprietary ZZZ models, environments, UI, logos, or exact assets. Th
 Finish the editor interaction foundation by checking cube, Porsche, and mech transforms with select/move/rotate/scale tools. Once the gizmo behavior feels reliable, move into the next visual-engine layer:
 
 1. Add proper gizmo meshes and depth-aware selection outlines.
-2. Add light range/cone visualization in the viewport.
+2. Add light range visualization in the viewport.
 3. Prepare scene save/load so test compositions can persist.
 4. Prepare for the first shadow-map pass.
 
 ## Project Taste Direction
 
-Favor a crisp, confident, stylized viewport over physically perfect realism. The end result should feel like a custom engine demo with strong art direction: graphic silhouettes, controlled color palettes, responsive imported assets, clear debug tooling, and a showroom that can evolve into a flashy ZZZ-adjacent presentation scene.
+Favor a crisp, confident, stylized viewport over physically perfect realism. The current shader is intentionally generic so lighting and shadows can be validated clearly before reintroducing ZZZ-adjacent toon bands, colored shadows, graphic rim light, and post-processing.
