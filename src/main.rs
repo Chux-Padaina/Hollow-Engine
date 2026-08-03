@@ -484,11 +484,15 @@ impl App {
             },
         });
         scene.objects.push(SceneObject {
-            name: "Lighting Plane".to_string(),
-            mesh: MeshGpu::from_cpu(gl.clone(), &MeshCpu::lighting_plane())?,
+            name: "Floor".to_string(),
+            mesh: MeshGpu::from_cpu(
+                gl.clone(),
+                &MeshCpu::cube_with_color("Floor", [0.48, 0.49, 0.47, 1.0]),
+            )?,
             group_id: 2,
             transform: Transform {
-                translation: Vec3::ZERO,
+                translation: Vec3::new(0.0, -0.04, 0.0),
+                scale: Vec3::new(8.0, 0.08, 8.0),
                 ..Transform::default()
             },
         });
@@ -775,7 +779,7 @@ impl App {
             } else if object.group_id == 1 {
                 Vec3::new(1.2, 0.5 + GROUND_CLEARANCE, 0.0)
             } else if object.is_floor() {
-                Vec3::ZERO
+                Vec3::new(0.0, -0.04, 0.0)
             } else {
                 Vec3::new(index as f32 * 0.02, GROUND_CLEARANCE, 0.0)
             };
@@ -1153,7 +1157,7 @@ impl RenderPass {
         match self {
             Self::Environment => RenderState {
                 depth_write: false,
-                blend: false,
+                blend: true,
                 cull_face: None,
             },
             Self::Decals => RenderState {
@@ -1519,7 +1523,7 @@ struct SceneObject {
 
 impl SceneObject {
     fn is_floor(&self) -> bool {
-        self.name == "Lighting Plane"
+        self.name == "Floor"
     }
 }
 
@@ -1697,6 +1701,10 @@ impl ImportedModel {
 
 impl MeshCpu {
     fn cube() -> Self {
+        Self::cube_with_color("Starter cube", [0.82, 0.86, 0.76, 1.0])
+    }
+
+    fn cube_with_color(name: &str, color: [f32; 4]) -> Self {
         let mut vertices = Vec::new();
         let mut indices = Vec::new();
         let faces = [
@@ -1723,53 +1731,16 @@ impl MeshCpu {
                 vertices.push(Vertex {
                     position: corners[corner_index].to_array(),
                     normal: face.to_array(),
-                    color: [0.82, 0.86, 0.76, 1.0],
+                    color,
                     tex_coord: [0.0, 0.0],
                 });
             }
             indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
         }
         Self {
-            name: "Starter cube".to_string(),
+            name: name.to_string(),
             vertices,
             indices,
-            texture: None,
-        }
-    }
-
-    fn lighting_plane() -> Self {
-        let size = 8.0;
-        let color = [0.58, 0.60, 0.56, 1.0];
-        let vertices = vec![
-            Vertex {
-                position: [-size, 0.0, -size],
-                normal: [0.0, 1.0, 0.0],
-                color,
-                tex_coord: [0.0, 0.0],
-            },
-            Vertex {
-                position: [size, 0.0, -size],
-                normal: [0.0, 1.0, 0.0],
-                color,
-                tex_coord: [1.0, 0.0],
-            },
-            Vertex {
-                position: [size, 0.0, size],
-                normal: [0.0, 1.0, 0.0],
-                color,
-                tex_coord: [1.0, 1.0],
-            },
-            Vertex {
-                position: [-size, 0.0, size],
-                normal: [0.0, 1.0, 0.0],
-                color,
-                tex_coord: [0.0, 1.0],
-            },
-        ];
-        Self {
-            name: "Lighting Plane".to_string(),
-            vertices,
-            indices: vec![0, 1, 2, 0, 2, 3],
             texture: None,
         }
     }
@@ -2076,10 +2047,10 @@ struct Renderer {
     gl: Arc<glow::Context>,
     object_program: glow::NativeProgram,
     outline_program: glow::NativeProgram,
-    showroom_program: glow::NativeProgram,
+    editor_grid_program: glow::NativeProgram,
     unlit_program: glow::NativeProgram,
     contact_shadow_program: glow::NativeProgram,
-    showroom: MeshGpu,
+    editor_grid: MeshGpu,
     light_gizmo: MeshGpu,
     rotation_gizmo: MeshGpu,
     contact_shadow: MeshGpu,
@@ -2089,11 +2060,11 @@ impl Renderer {
     unsafe fn new(gl: Arc<glow::Context>) -> Result<Self, String> {
         let object_program = compile_program(&gl, OBJECT_VERTEX, OBJECT_FRAGMENT)?;
         let outline_program = compile_program(&gl, OUTLINE_VERTEX, OUTLINE_FRAGMENT)?;
-        let showroom_program = compile_program(&gl, SHOWROOM_VERTEX, SHOWROOM_FRAGMENT)?;
+        let editor_grid_program = compile_program(&gl, EDITOR_GRID_VERTEX, EDITOR_GRID_FRAGMENT)?;
         let unlit_program = compile_program(&gl, UNLIT_VERTEX, UNLIT_FRAGMENT)?;
         let contact_shadow_program =
             compile_program(&gl, CONTACT_SHADOW_VERTEX, CONTACT_SHADOW_FRAGMENT)?;
-        let showroom = MeshGpu::from_cpu(gl.clone(), &showroom_mesh())?;
+        let editor_grid = MeshGpu::from_cpu(gl.clone(), &editor_grid_mesh())?;
         let light_gizmo = MeshGpu::from_cpu(gl.clone(), &MeshCpu::cube())?;
         let rotation_gizmo = MeshGpu::from_cpu(gl.clone(), &rotation_gizmo_mesh())?;
         let contact_shadow = MeshGpu::from_cpu(gl.clone(), &contact_shadow_mesh())?;
@@ -2101,10 +2072,10 @@ impl Renderer {
             gl,
             object_program,
             outline_program,
-            showroom_program,
+            editor_grid_program,
             unlit_program,
             contact_shadow_program,
-            showroom,
+            editor_grid,
             light_gizmo,
             rotation_gizmo,
             contact_shadow,
@@ -2112,16 +2083,6 @@ impl Renderer {
     }
 
     unsafe fn render_scene(&self, scene: &Scene, frame: &FrameData) {
-        self.begin_pass(RenderPass::Environment);
-        self.draw_showroom(frame);
-
-        self.begin_pass(RenderPass::Decals);
-        for object in &scene.objects {
-            if !object.is_floor() {
-                self.draw_contact_shadow(object, frame);
-            }
-        }
-
         self.begin_pass(RenderPass::Outlines);
         for object in &scene.objects {
             if !object.is_floor() {
@@ -2133,6 +2094,16 @@ impl Renderer {
         for object in &scene.objects {
             self.draw_object_surface(object, object.group_id == scene.selected_group, frame);
         }
+
+        self.begin_pass(RenderPass::Decals);
+        for object in &scene.objects {
+            if !object.is_floor() {
+                self.draw_contact_shadow(object, frame);
+            }
+        }
+
+        self.begin_pass(RenderPass::Environment);
+        self.draw_editor_grid(frame);
 
         self.begin_pass(RenderPass::Gizmos);
         self.draw_light_gizmos(scene, frame);
@@ -2168,21 +2139,27 @@ impl Renderer {
         self.gl.use_program(None);
     }
 
-    unsafe fn draw_showroom(&self, frame: &FrameData) {
-        self.gl.use_program(Some(self.showroom_program));
-        set_mat4(&self.gl, self.showroom_program, "u_model", Mat4::IDENTITY);
-        set_mat4(&self.gl, self.showroom_program, "u_view", frame.view);
+    unsafe fn draw_editor_grid(&self, frame: &FrameData) {
+        self.gl.use_program(Some(self.editor_grid_program));
         set_mat4(
             &self.gl,
-            self.showroom_program,
+            self.editor_grid_program,
+            "u_model",
+            Mat4::IDENTITY,
+        );
+        set_mat4(&self.gl, self.editor_grid_program, "u_view", frame.view);
+        set_mat4(
+            &self.gl,
+            self.editor_grid_program,
             "u_projection",
             frame.projection,
         );
-        set_f32(&self.gl, self.showroom_program, "u_time", frame.elapsed);
-        self.gl.bind_vertex_array(Some(self.showroom.vertex_array));
+        set_f32(&self.gl, self.editor_grid_program, "u_time", frame.elapsed);
+        self.gl
+            .bind_vertex_array(Some(self.editor_grid.vertex_array));
         self.gl.draw_elements(
             glow::TRIANGLES,
-            self.showroom.index_count,
+            self.editor_grid.index_count,
             glow::UNSIGNED_INT,
             0,
         );
@@ -2405,11 +2382,11 @@ impl Renderer {
         let object_height = object.transform.translation.y.max(0.12);
         let ray_y = light_ray.y.min(-0.08);
         let projected =
-            object.transform.translation + light_ray * ((0.016 - object_height) / ray_y);
+            object.transform.translation + light_ray * ((0.012 - object_height) / ray_y);
         let horizontal = Vec2::new(light_ray.x, light_ray.z);
         let stretch = 1.0 + horizontal.length() * 1.4;
         let yaw = horizontal.y.atan2(horizontal.x);
-        let position = Vec3::new(projected.x, 0.018, projected.z);
+        let position = Vec3::new(projected.x, 0.012, projected.z);
         let model = Mat4::from_translation(position)
             * Mat4::from_rotation_y(-yaw)
             * Mat4::from_scale(Vec3::new(radius * 0.88 * stretch, 1.0, radius * 0.54));
@@ -2561,7 +2538,7 @@ impl Renderer {
     }
 }
 
-fn showroom_mesh() -> MeshCpu {
+fn editor_grid_mesh() -> MeshCpu {
     let mut vertices = Vec::new();
     let mut indices = Vec::new();
 
@@ -2597,6 +2574,7 @@ fn showroom_mesh() -> MeshCpu {
 
     let size = 12;
     let half_width = 0.01;
+    let grid_y = 0.018;
     for i in -size..=size {
         let f = i as f32;
         let color = if i == 0 {
@@ -2605,23 +2583,23 @@ fn showroom_mesh() -> MeshCpu {
             [0.22, 0.34, 0.31, 0.82]
         };
         push_quad(
-            Vec3::new(f - half_width, 0.0, -size as f32),
-            Vec3::new(f + half_width, 0.0, -size as f32),
-            Vec3::new(f + half_width, 0.0, size as f32),
-            Vec3::new(f - half_width, 0.0, size as f32),
+            Vec3::new(f - half_width, grid_y, -size as f32),
+            Vec3::new(f + half_width, grid_y, -size as f32),
+            Vec3::new(f + half_width, grid_y, size as f32),
+            Vec3::new(f - half_width, grid_y, size as f32),
             color,
         );
         push_quad(
-            Vec3::new(-size as f32, 0.0, f - half_width),
-            Vec3::new(size as f32, 0.0, f - half_width),
-            Vec3::new(size as f32, 0.0, f + half_width),
-            Vec3::new(-size as f32, 0.0, f + half_width),
+            Vec3::new(-size as f32, grid_y, f - half_width),
+            Vec3::new(size as f32, grid_y, f - half_width),
+            Vec3::new(size as f32, grid_y, f + half_width),
+            Vec3::new(-size as f32, grid_y, f + half_width),
             color,
         );
     }
 
     MeshCpu {
-        name: "editor grid".to_string(),
+        name: "world editor grid".to_string(),
         vertices,
         indices,
         texture: None,
@@ -3081,7 +3059,7 @@ void main() {
 }
 "#;
 
-const SHOWROOM_VERTEX: &str = r#"#version 330 core
+const EDITOR_GRID_VERTEX: &str = r#"#version 330 core
 layout (location = 0) in vec3 a_position;
 layout (location = 2) in vec4 a_color;
 
@@ -3098,7 +3076,7 @@ void main() {
 }
 "#;
 
-const SHOWROOM_FRAGMENT: &str = r#"#version 330 core
+const EDITOR_GRID_FRAGMENT: &str = r#"#version 330 core
 in vec4 v_color;
 out vec4 out_color;
 

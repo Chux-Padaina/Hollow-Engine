@@ -14,12 +14,12 @@ Do not copy proprietary ZZZ models, environments, UI, logos, or exact assets. Th
 - glTF node transforms are applied so multi-part models stay assembled.
 - glTF base color factors, vertex colors, UVs, and base color textures are preserved.
 - Imported primitives are grouped so dragging moves the whole imported asset.
-- Default editor test scene with two cubes, a lit floor plane, an editor grid, one directional light, and one point light.
+- Default editor test scene with two cubes, a flattened gray cube floor, a non-scene editor/world grid overlay, one directional light, and one point light.
 - Explicit render passes:
-  1. Environment/grid
-  2. Decals/contact shadows
-  3. Object outlines
-  4. Opaque objects
+  1. Object outlines
+  2. Opaque objects
+  3. Decals/contact shadows
+  4. Editor/world grid overlay
   5. Gizmos/debug overlays
 - Generic lighting foundation:
   - scene-owned directional lights with color/intensity
@@ -29,7 +29,7 @@ Do not copy proprietary ZZZ models, environments, UI, logos, or exact assets. Th
   - ambient term
   - directional Lambert diffuse and Blinn specular
   - point-light Lambert diffuse and Blinn specular
-  - simple planar projected shadows onto the floor plane
+  - simple planar projected shadows onto the floor cube
   - simple fog and tonemapping
   - inverted-hull outline
 - Debug object views:
@@ -58,7 +58,7 @@ Do not copy proprietary ZZZ models, environments, UI, logos, or exact assets. Th
 - Replaced showroom with a simpler grid-based default scene so editor work and scene-building tests are easier to read.
 - Added Unreal-like transform affordances: move arrows, rotate rings, scale endpoint boxes, two-axis plane handles, and visible hover/active feedback.
 - Replaced pixelated box-built rotation rings with a generated torus mesh and fixed rotation drags so rings can rotate through larger angles intuitively.
-- Temporarily reset object lighting to a generic diffuse/specular shader, added a lit floor plane, simplified the default scene to one directional and one point light, and made shadow decals project from the directional light.
+- Temporarily reset object lighting to a generic diffuse/specular shader, added a flattened gray cube floor, simplified the default scene to one directional and one point light, made shadow decals project from the directional light, and moved the grid into a non-scene world overlay.
 
 ## Known Limitations
 

@@ -12,10 +12,10 @@ This roadmap is intentionally step-by-step. The goal is to build the visual stac
 
 Current pass order:
 
-1. Environment/grid
-2. Decals/contact shadows
-3. Object outlines
-4. Opaque objects
+1. Object outlines
+2. Opaque objects
+3. Decals/contact shadows
+4. Editor/world grid overlay
 5. Gizmos/debug overlays
 
 The current outline implementation uses an inverted hull, so it renders before opaque objects. A later screen-space outline pass can move after opaque rendering once framebuffer/depth texture infrastructure exists.
@@ -41,7 +41,7 @@ Current status:
 - Directional, point, and spot variants exist.
 - The default scene currently uses one directional light and one point light.
 - The active shader is temporarily generic diffuse/specular lighting so light behavior is easy to inspect.
-- The default scene includes a lit floor plane and simple planar projected shadows.
+- The default scene includes a flattened gray cube floor, simple planar projected shadows, and a non-scene editor/world grid overlay.
 - Spot light data/cone support is retained for a later pass, but the next checkpoint should validate the simpler one-directional/one-point setup first.
 
 ## Phase 2: Shadows
