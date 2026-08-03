@@ -1153,6 +1153,7 @@ impl DebugView {
 
 #[derive(Clone, Copy)]
 struct RenderState {
+    depth_test: bool,
     depth_write: bool,
     blend: bool,
     cull_face: Option<u32>,
@@ -1162,26 +1163,31 @@ impl RenderPass {
     fn state(self) -> RenderState {
         match self {
             Self::Environment => RenderState {
+                depth_test: true,
                 depth_write: false,
                 blend: true,
                 cull_face: None,
             },
             Self::Decals => RenderState {
+                depth_test: true,
                 depth_write: false,
                 blend: true,
                 cull_face: None,
             },
             Self::Opaque => RenderState {
+                depth_test: true,
                 depth_write: true,
                 blend: false,
                 cull_face: Some(glow::BACK),
             },
             Self::Outlines => RenderState {
+                depth_test: true,
                 depth_write: false,
                 blend: false,
                 cull_face: Some(glow::FRONT),
             },
             Self::Gizmos => RenderState {
+                depth_test: false,
                 depth_write: false,
                 blend: false,
                 cull_face: None,
@@ -2119,8 +2125,12 @@ impl Renderer {
 
     unsafe fn begin_pass(&self, pass: RenderPass) {
         let state = pass.state();
-        self.gl.enable(glow::DEPTH_TEST);
-        self.gl.depth_func(glow::LEQUAL);
+        if state.depth_test {
+            self.gl.enable(glow::DEPTH_TEST);
+            self.gl.depth_func(glow::LEQUAL);
+        } else {
+            self.gl.disable(glow::DEPTH_TEST);
+        }
         self.gl.depth_mask(state.depth_write);
         if state.blend {
             self.gl.enable(glow::BLEND);
