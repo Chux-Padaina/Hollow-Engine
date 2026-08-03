@@ -2089,6 +2089,9 @@ impl Renderer {
     }
 
     unsafe fn render_scene(&self, scene: &Scene, frame: &FrameData) {
+        self.begin_pass(RenderPass::Environment);
+        self.draw_editor_grid(frame);
+
         self.begin_pass(RenderPass::Outlines);
         for object in &scene.objects {
             if !object.is_floor() {
@@ -2107,9 +2110,6 @@ impl Renderer {
                 self.draw_contact_shadow(object, frame);
             }
         }
-
-        self.begin_pass(RenderPass::Environment);
-        self.draw_editor_grid(frame);
 
         self.begin_pass(RenderPass::Gizmos);
         self.draw_light_gizmos(scene, frame);

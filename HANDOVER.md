@@ -16,10 +16,10 @@ Do not copy proprietary ZZZ models, environments, UI, logos, or exact assets. Th
 - Imported primitives are grouped so dragging moves the whole imported asset.
 - Default editor test scene with warm/cool colored cubes, a darker flattened gray cube floor, a non-scene editor/world grid overlay, one directional light, and one point light.
 - Explicit render passes:
-  1. Object outlines
-  2. Opaque objects
-  3. Decals/contact shadows
-  4. Editor/world grid overlay
+  1. Editor/world grid guide
+  2. Object outlines
+  3. Opaque objects
+  4. Decals/contact shadows
   5. Gizmos/debug overlays
 - Generic lighting foundation:
   - scene-owned directional lights with color/intensity

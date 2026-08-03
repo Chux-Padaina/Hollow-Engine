@@ -12,10 +12,10 @@ This roadmap is intentionally step-by-step. The goal is to build the visual stac
 
 Current pass order:
 
-1. Object outlines
-2. Opaque objects
-3. Decals/contact shadows
-4. Editor/world grid overlay
+1. Editor/world grid guide
+2. Object outlines
+3. Opaque objects
+4. Decals/contact shadows
 5. Gizmos/debug overlays
 
 The current outline implementation uses an inverted hull, so it renders before opaque objects. A later screen-space outline pass can move after opaque rendering once framebuffer/depth texture infrastructure exists.
