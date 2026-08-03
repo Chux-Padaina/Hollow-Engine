@@ -41,7 +41,7 @@ Current status:
 - Directional, point, and spot variants exist.
 - The default scene currently uses one directional light and one point light.
 - The active shader is temporarily generic diffuse/specular lighting so light behavior is easy to inspect.
-- The default scene includes a flattened gray cube floor, simple planar projected shadows, and a non-scene editor/world grid overlay.
+- The default scene includes warm/cool colored test cubes, a darker flattened gray cube floor, simple planar projected shadows, and a non-scene editor/world grid overlay.
 - Spot light data/cone support is retained for a later pass, but the next checkpoint should validate the simpler one-directional/one-point setup first.
 
 ## Phase 2: Shadows

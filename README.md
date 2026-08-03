@@ -8,7 +8,7 @@ Small native Rust/OpenGL editor prototype for importing meshes and rendering the
 - Drag and drop `.glb`, `.gltf`, or `.obj` files into the window.
 - Basic CPU import path for mesh positions, normals, indices, and base material color.
 - GPU mesh upload with a generic diffuse/specular lighting shader and a backface-expanded outline pass.
-- Default lighting test scene with two cubes, a flattened gray cube floor, one directional light, one point light, simple planar projected shadows, and a non-scene editor/world grid overlay.
+- Default lighting test scene with warm/cool colored cubes, a darker flattened gray cube floor, one directional light, one point light, simple planar projected shadows, and a non-scene editor/world grid overlay.
 - Scene-owned lights affect object shading through the details panel.
 - Viewport outliner/details panels for scene objects, transforms, and lights.
 - Click selection plus active 3D transform gizmos:

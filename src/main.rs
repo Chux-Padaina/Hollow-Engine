@@ -466,7 +466,10 @@ impl App {
         scene.lights = default_editor_lights();
         scene.objects.push(SceneObject {
             name: "Cube A".to_string(),
-            mesh: MeshGpu::from_cpu(gl.clone(), &MeshCpu::cube())?,
+            mesh: MeshGpu::from_cpu(
+                gl.clone(),
+                &MeshCpu::cube_with_color("Cube A", [0.82, 0.66, 0.42, 1.0]),
+            )?,
             group_id: 0,
             transform: Transform {
                 translation: Vec3::new(-1.2, 0.5 + GROUND_CLEARANCE, 0.0),
@@ -475,7 +478,10 @@ impl App {
         });
         scene.objects.push(SceneObject {
             name: "Cube B".to_string(),
-            mesh: MeshGpu::from_cpu(gl.clone(), &MeshCpu::cube())?,
+            mesh: MeshGpu::from_cpu(
+                gl.clone(),
+                &MeshCpu::cube_with_color("Cube B", [0.42, 0.58, 0.76, 1.0]),
+            )?,
             group_id: 1,
             transform: Transform {
                 translation: Vec3::new(1.2, 0.5 + GROUND_CLEARANCE, 0.0),
@@ -487,7 +493,7 @@ impl App {
             name: "Floor".to_string(),
             mesh: MeshGpu::from_cpu(
                 gl.clone(),
-                &MeshCpu::cube_with_color("Floor", [0.48, 0.49, 0.47, 1.0]),
+                &MeshCpu::cube_with_color("Floor", [0.34, 0.35, 0.33, 1.0]),
             )?,
             group_id: 2,
             transform: Transform {
