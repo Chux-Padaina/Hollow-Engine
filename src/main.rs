@@ -617,6 +617,7 @@ impl App {
 
     fn begin_tool_drag(&mut self) {
         self.drag_start_cursor = self.cursor;
+        self.drag_offset = Vec3::ZERO;
         self.drag_start_transform = self
             .scene
             .selected_group()
@@ -647,13 +648,19 @@ impl App {
             self.rotate_drag_amount = 0.0;
         }
 
-        if matches!(
-            (self.editor_tool, self.active_gizmo),
-            (EditorTool::Select, _) | (EditorTool::Move, Some(GizmoHandle::Center))
-        ) {
-            if let Some(point) = self.cursor_ground_point() {
-                if let Some(object) = self.scene.selected_group().first() {
-                    self.drag_offset = object.transform.translation - point;
+        if matches!(self.editor_tool, EditorTool::Select | EditorTool::Move) {
+            if let Some(object) = self.scene.selected_group().first() {
+                let origin = object.transform.translation;
+                let hit_point = match self.active_gizmo {
+                    Some(GizmoHandle::Plane(plane)) => self
+                        .cursor_ray()
+                        .and_then(|ray| ray.intersect_plane(origin, plane.normal().vector())),
+                    Some(GizmoHandle::Axis(Axis::Y)) => None,
+                    Some(GizmoHandle::Ring(_)) => None,
+                    _ => self.cursor_ground_point(),
+                };
+                if let Some(point) = hit_point {
+                    self.drag_offset = origin - point;
                 }
             }
         }
