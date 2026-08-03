@@ -86,7 +86,8 @@ Current status:
 - Basic 3D tool gizmo visuals exist for select, move, rotate, and scale.
 - Click selection and interactive center/axis/plane/ring handles exist.
 - Gizmo handles now provide hover and active highlighting.
-- Polished Unreal-style arrow/cone/torus handle meshes are still pending.
+- Rotate rings use a smooth torus mesh and angle-based drag accumulation.
+- Polished Unreal-style arrow/cone handle meshes are still pending for move/scale.
 
 ## Phase 7: Stylized Rendering Identity
 

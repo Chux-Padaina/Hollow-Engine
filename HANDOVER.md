@@ -45,6 +45,7 @@ Do not copy proprietary ZZZ models, environments, UI, logos, or exact assets. Th
   - object click-selection in the viewport
   - clickable transform gizmo handles for center, axis, plane, and ring manipulation
   - hover/active highlighting on targeted gizmo handles
+  - smooth torus rotation rings with cursor-angle-based drag accumulation
 
 ## Recent Fixes
 
@@ -55,6 +56,7 @@ Do not copy proprietary ZZZ models, environments, UI, logos, or exact assets. Th
 - Fixed render ordering and hidden OpenGL state dependencies after pass refactor.
 - Replaced showroom with a simpler grid-based default scene so editor work and scene-building tests are easier to read.
 - Added Unreal-like transform affordances: move arrows, rotate rings, scale endpoint boxes, two-axis plane handles, and visible hover/active feedback.
+- Replaced pixelated box-built rotation rings with a generated torus mesh and fixed rotation drags so rings can rotate through larger angles intuitively.
 
 ## Known Limitations
 
@@ -65,7 +67,7 @@ Do not copy proprietary ZZZ models, environments, UI, logos, or exact assets. Th
 - Spotlights are represented as scene data, but the shader still treats them like focused point lights until cone falloff is implemented.
 - No reflection probes.
 - No normal/emissive/roughness/metallic texture support yet.
-- Editor panels and clickable transform gizmos exist. Gizmo behavior covers the core Unreal-style center/axis/plane/ring workflow, but visuals still use cube/bar/ring primitives rather than proper arrow/cone/torus meshes.
+- Editor panels and clickable transform gizmos exist. Gizmo behavior covers the core Unreal-style center/axis/plane/ring workflow, but move/scale visuals still use cube/bar primitives rather than proper arrow/cone meshes.
 - Inverted-hull outlines can still be imperfect on thin/open geometry; screen-space outlines should come later.
 - Scene save/load is not implemented yet, so editor changes are session-only.
 

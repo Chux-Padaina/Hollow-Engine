@@ -202,6 +202,8 @@ struct App {
     hovered_gizmo: Option<GizmoHandle>,
     drag_start_cursor: Vec2,
     drag_start_transform: Option<Transform>,
+    rotate_drag_last_angle: Option<f32>,
+    rotate_drag_amount: f32,
     start_time: Instant,
     style: StylePreset,
     debug_view: DebugView,
@@ -497,6 +499,8 @@ impl App {
             hovered_gizmo: None,
             drag_start_cursor: Vec2::ZERO,
             drag_start_transform: None,
+            rotate_drag_last_angle: None,
+            rotate_drag_amount: 0.0,
             start_time: Instant::now(),
             style: StylePreset::Street,
             debug_view: DebugView::Final,
@@ -581,6 +585,8 @@ impl App {
                 } else {
                     self.active_gizmo = None;
                     self.drag_start_transform = None;
+                    self.rotate_drag_last_angle = None;
+                    self.rotate_drag_amount = 0.0;
                     self.hovered_gizmo = self.cursor_ray().and_then(|ray| self.hit_test_gizmo(ray));
                 }
             }
@@ -617,6 +623,11 @@ impl App {
             }
         }
 
+        if matches!(self.editor_tool, EditorTool::Rotate) && self.active_gizmo.is_some() {
+            self.rotate_drag_last_angle = self.cursor_angle_around_selected();
+            self.rotate_drag_amount = 0.0;
+        }
+
         if matches!(
             (self.editor_tool, self.active_gizmo),
             (EditorTool::Select, _) | (EditorTool::Move, Some(GizmoHandle::Center))
@@ -629,7 +640,7 @@ impl App {
         }
     }
 
-    fn drag_active_gizmo(&mut self, delta: Vec2) {
+    fn drag_active_gizmo(&mut self, _delta: Vec2) {
         let Some(handle) = self.active_gizmo else {
             return;
         };
@@ -689,7 +700,16 @@ impl App {
                     GizmoHandle::Plane(plane) => plane.normal(),
                     GizmoHandle::Center => Axis::Y,
                 };
-                let amount = (delta.x - delta.y) * 0.012;
+                let amount = if let Some(angle) = self.cursor_angle_around_selected() {
+                    let previous = self.rotate_drag_last_angle.unwrap_or(angle);
+                    let delta_angle = wrap_angle(angle - previous);
+                    self.rotate_drag_last_angle = Some(angle);
+                    self.rotate_drag_amount += delta_angle
+                        * self.rotate_axis_screen_sign(axis, start_transform.translation);
+                    self.rotate_drag_amount
+                } else {
+                    (total_delta.x - total_delta.y) * 0.012
+                };
                 let current = axis.component(transform.rotation);
                 axis.set_component(&mut transform.rotation, current + amount);
             }
@@ -782,6 +802,38 @@ impl App {
             origin: ray_origin,
             direction: ray_dir,
         })
+    }
+
+    fn cursor_angle_around_selected(&self) -> Option<f32> {
+        let origin = self.scene.selected_group().first()?.transform.translation;
+        let screen_origin = self.project_world_to_screen(origin)?;
+        let offset = self.cursor - screen_origin;
+        (offset.length_squared() > 16.0).then_some(offset.y.atan2(offset.x))
+    }
+
+    fn project_world_to_screen(&self, world: Vec3) -> Option<Vec2> {
+        let width = self.viewport.width.max(1) as f32;
+        let height = self.viewport.height.max(1) as f32;
+        let camera = self.camera();
+        let clip = camera.projection(width / height) * camera.view() * world.extend(1.0);
+        if clip.w.abs() < 0.0001 {
+            return None;
+        }
+        let ndc = clip.truncate() / clip.w;
+        Some(Vec2::new(
+            (ndc.x + 1.0) * 0.5 * width,
+            (1.0 - ndc.y) * 0.5 * height,
+        ))
+    }
+
+    fn rotate_axis_screen_sign(&self, axis: Axis, origin: Vec3) -> f32 {
+        let camera = self.camera();
+        let view_to_object = (origin - camera.eye).normalize_or_zero();
+        if axis.vector().dot(view_to_object) >= 0.0 {
+            1.0
+        } else {
+            -1.0
+        }
     }
 
     fn pick_object(&self, ray: Ray) -> Option<u32> {
@@ -1938,6 +1990,7 @@ struct Renderer {
     contact_shadow_program: glow::NativeProgram,
     showroom: MeshGpu,
     light_gizmo: MeshGpu,
+    rotation_gizmo: MeshGpu,
     contact_shadow: MeshGpu,
 }
 
@@ -1951,6 +2004,7 @@ impl Renderer {
             compile_program(&gl, CONTACT_SHADOW_VERTEX, CONTACT_SHADOW_FRAGMENT)?;
         let showroom = MeshGpu::from_cpu(gl.clone(), &showroom_mesh())?;
         let light_gizmo = MeshGpu::from_cpu(gl.clone(), &MeshCpu::cube())?;
+        let rotation_gizmo = MeshGpu::from_cpu(gl.clone(), &rotation_gizmo_mesh())?;
         let contact_shadow = MeshGpu::from_cpu(gl.clone(), &contact_shadow_mesh())?;
         Ok(Self {
             gl,
@@ -1961,6 +2015,7 @@ impl Renderer {
             contact_shadow_program,
             showroom,
             light_gizmo,
+            rotation_gizmo,
             contact_shadow,
         })
     }
@@ -2199,26 +2254,27 @@ impl Renderer {
     }
 
     unsafe fn draw_rotation_ring(&self, origin: Vec3, axis: Axis, color: Vec3, frame: &FrameData) {
-        let segments = 32;
-        let radius = 0.92;
         let handle = GizmoHandle::Ring(axis);
         let color = gizmo_color(color, handle, frame);
-        for index in 0..segments {
-            let t = index as f32 / segments as f32 * std::f32::consts::TAU;
-            let next = (index + 1) as f32 / segments as f32 * std::f32::consts::TAU;
-            let a = ring_point(axis.vector(), t, radius);
-            let b = ring_point(axis.vector(), next, radius);
-            let center = origin + (a + b) * 0.5;
-            let delta = b - a;
-            let thickness =
-                if frame.active_gizmo == Some(handle) || frame.hovered_gizmo == Some(handle) {
-                    0.052
-                } else {
-                    0.035
-                };
-            let scale = Vec3::splat(thickness) + delta.abs();
-            self.draw_gizmo_cube(center, scale, color);
-        }
+        let emphasis = if frame.active_gizmo == Some(handle) || frame.hovered_gizmo == Some(handle)
+        {
+            1.055
+        } else {
+            1.0
+        };
+        let model = Mat4::from_translation(origin)
+            * ring_axis_model(axis)
+            * Mat4::from_scale(Vec3::splat(emphasis));
+        self.gl
+            .bind_vertex_array(Some(self.rotation_gizmo.vertex_array));
+        set_mat4(&self.gl, self.unlit_program, "u_model", model);
+        set_vec3(&self.gl, self.unlit_program, "u_color", color);
+        self.gl.draw_elements(
+            glow::TRIANGLES,
+            self.rotation_gizmo.index_count,
+            glow::UNSIGNED_INT,
+            0,
+        );
     }
 
     unsafe fn draw_gizmo_handle_cube(
@@ -2502,14 +2558,51 @@ fn contact_shadow_mesh() -> MeshCpu {
     }
 }
 
-fn ring_point(axis: Vec3, angle: f32, radius: f32) -> Vec3 {
-    let (s, c) = angle.sin_cos();
-    if axis.x.abs() > 0.5 {
-        Vec3::new(0.0, c * radius, s * radius)
-    } else if axis.y.abs() > 0.5 {
-        Vec3::new(c * radius, 0.0, s * radius)
-    } else {
-        Vec3::new(c * radius, s * radius, 0.0)
+fn rotation_gizmo_mesh() -> MeshCpu {
+    let ring_segments = 128;
+    let tube_segments = 10;
+    let major_radius = 0.92;
+    let tube_radius = 0.018;
+    let mut vertices = Vec::new();
+    let mut indices = Vec::new();
+
+    for ring in 0..ring_segments {
+        let ring_angle = ring as f32 / ring_segments as f32 * std::f32::consts::TAU;
+        let (ring_sin, ring_cos) = ring_angle.sin_cos();
+        let radial = Vec3::new(ring_cos, ring_sin, 0.0);
+        let center = radial * major_radius;
+
+        for tube in 0..tube_segments {
+            let tube_angle = tube as f32 / tube_segments as f32 * std::f32::consts::TAU;
+            let (tube_sin, tube_cos) = tube_angle.sin_cos();
+            let normal = (radial * tube_cos + Vec3::Z * tube_sin).normalize();
+            let position = center + normal * tube_radius;
+            vertices.push(Vertex {
+                position: position.to_array(),
+                normal: normal.to_array(),
+                color: [1.0, 1.0, 1.0, 1.0],
+                tex_coord: [0.0, 0.0],
+            });
+        }
+    }
+
+    for ring in 0..ring_segments {
+        let next_ring = (ring + 1) % ring_segments;
+        for tube in 0..tube_segments {
+            let next_tube = (tube + 1) % tube_segments;
+            let a = (ring * tube_segments + tube) as u32;
+            let b = (next_ring * tube_segments + tube) as u32;
+            let c = (next_ring * tube_segments + next_tube) as u32;
+            let d = (ring * tube_segments + next_tube) as u32;
+            indices.extend_from_slice(&[a, b, c, a, c, d]);
+        }
+    }
+
+    MeshCpu {
+        name: "rotation gizmo".to_string(),
+        vertices,
+        indices,
+        texture: None,
     }
 }
 
@@ -2526,6 +2619,25 @@ fn hit_ring(ray: Ray, origin: Vec3, axis: Axis) -> bool {
     let hit = ray.origin + ray.direction * t;
     let distance = (hit - origin).length();
     (distance - 0.92).abs() < 0.16
+}
+
+fn ring_axis_model(axis: Axis) -> Mat4 {
+    match axis {
+        Axis::X => Mat4::from_rotation_y(std::f32::consts::FRAC_PI_2),
+        Axis::Y => Mat4::from_rotation_x(-std::f32::consts::FRAC_PI_2),
+        Axis::Z => Mat4::IDENTITY,
+    }
+}
+
+fn wrap_angle(angle: f32) -> f32 {
+    let mut wrapped = angle;
+    while wrapped > std::f32::consts::PI {
+        wrapped -= std::f32::consts::TAU;
+    }
+    while wrapped < -std::f32::consts::PI {
+        wrapped += std::f32::consts::TAU;
+    }
+    wrapped
 }
 
 fn hit_plane_handle(ray: Ray, origin: Vec3, plane: AxisPlane) -> bool {

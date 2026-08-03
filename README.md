@@ -12,7 +12,7 @@ Small native Rust/OpenGL editor prototype for importing meshes and rendering the
 - Viewport outliner/details panels for scene objects, transforms, and lights.
 - Click selection plus active 3D transform gizmos:
   - move arrows, center free-move, and two-axis plane handles
-  - rotate axis rings
+  - smooth rotate axis rings with angle-based drag
   - scale axis boxes, center uniform scale, and two-axis plane handles
   - hover/active highlighting for the handle being targeted
 - Style presets:
@@ -79,7 +79,7 @@ cargo run -- "C:\path\to\model.glb"
 
 1. Split `src/main.rs` into `renderer`, `assets`, `scene`, and `editor` modules.
 2. Add texture import and OpenGL texture binding for glTF base color, normal, and emissive maps.
-3. Replace cube/bar gizmo primitives with proper arrow, cone, torus, and planar handle meshes.
+3. Replace cube/bar gizmo primitives with proper arrow, cone, and planar handle meshes.
 4. Add multi-object selection and grouped transform pivots.
 5. Add a post-processing framebuffer for bloom and color grading.
 6. Add a small `.scene.json` format so imported objects and style settings persist.
