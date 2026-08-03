@@ -2119,6 +2119,8 @@ impl Renderer {
 
     unsafe fn begin_pass(&self, pass: RenderPass) {
         let state = pass.state();
+        self.gl.enable(glow::DEPTH_TEST);
+        self.gl.depth_func(glow::LEQUAL);
         self.gl.depth_mask(state.depth_write);
         if state.blend {
             self.gl.enable(glow::BLEND);
@@ -2136,6 +2138,8 @@ impl Renderer {
     }
 
     unsafe fn end_frame_state(&self) {
+        self.gl.enable(glow::DEPTH_TEST);
+        self.gl.depth_func(glow::LEQUAL);
         self.gl.depth_mask(true);
         self.gl.disable(glow::BLEND);
         self.gl.enable(glow::CULL_FACE);
