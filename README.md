@@ -16,6 +16,7 @@ Small native Rust/OpenGL editor prototype for importing meshes and rendering the
   - smooth rotate axis rings with angle-based drag
   - scale axis boxes, center uniform scale, and two-axis plane handles
   - hover/active highlighting for the handle being targeted
+  - toolbar toggle for Global/Local transform space
 - Style presets:
   - `1`: character-biased palette
   - `2`: street palette
@@ -28,6 +29,7 @@ Small native Rust/OpenGL editor prototype for importing meshes and rendering the
   - `W`: move tool
   - `E`: rotate tool
   - `R`: scale tool
+  - `Global`/`Local` toolbar button: toggle transform space
   - `Home`: reset scene
   - Right mouse drag: orbit camera
   - Middle mouse drag: pan camera

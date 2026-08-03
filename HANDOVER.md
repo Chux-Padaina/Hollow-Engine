@@ -45,6 +45,7 @@ Do not copy proprietary ZZZ models, environments, UI, logos, or exact assets. Th
   - simple tool-specific 3D gizmo visuals for select/move/rotate/scale
   - object click-selection in the viewport
   - clickable transform gizmo handles for center, axis, plane, and ring manipulation
+  - Global/Local transform-space toggle for gizmo orientation and constrained handles
   - hover/active highlighting on targeted gizmo handles
   - smooth torus rotation rings with cursor-angle-based drag accumulation
 
@@ -59,6 +60,7 @@ Do not copy proprietary ZZZ models, environments, UI, logos, or exact assets. Th
 - Added Unreal-like transform affordances: move arrows, rotate rings, scale endpoint boxes, two-axis plane handles, and visible hover/active feedback.
 - Replaced pixelated box-built rotation rings with a generated torus mesh and fixed rotation drags so rings can rotate through larger angles intuitively.
 - Temporarily reset object lighting to a generic diffuse/specular shader, added warm/cool test cubes and a darker flattened gray cube floor, simplified the default scene to one directional and one point light, made shadow decals project from the directional light, and moved the grid into a non-scene world overlay.
+- Added a Global/Local transform-space toggle; constrained gizmo handles now draw, pick, and move in the selected space, while clicking the selected object body uses the active tool's free transform behavior.
 
 ## Known Limitations
 

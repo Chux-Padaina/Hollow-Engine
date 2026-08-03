@@ -208,6 +208,7 @@ struct App {
     style: StylePreset,
     debug_view: DebugView,
     editor_tool: EditorTool,
+    transform_space: TransformSpace,
     camera: EditorCamera,
     status: String,
 }
@@ -288,6 +289,10 @@ fn editor_ui(ctx: &egui::Context, app: &mut App) {
             tool_button(ui, app, EditorTool::Move, "W Move");
             tool_button(ui, app, EditorTool::Rotate, "E Rotate");
             tool_button(ui, app, EditorTool::Scale, "R Scale");
+            ui.separator();
+            if ui.button(app.transform_space.name()).clicked() {
+                app.transform_space = app.transform_space.toggle();
+            }
             ui.separator();
             ui.label(format!("View: {}", app.debug_view.name()));
             ui.label(format!("Style: {}", app.style.name()));
@@ -524,6 +529,7 @@ impl App {
             style: StylePreset::Street,
             debug_view: DebugView::Final,
             editor_tool: EditorTool::Move,
+            transform_space: TransformSpace::Global,
             camera: EditorCamera::default(),
             status: "Drop a Sketchfab-style .glb/.gltf/.obj to import".to_string(),
         })
@@ -652,9 +658,10 @@ impl App {
             if let Some(object) = self.scene.selected_group().first() {
                 let origin = object.transform.translation;
                 let hit_point = match self.active_gizmo {
-                    Some(GizmoHandle::Plane(plane)) => self
-                        .cursor_ray()
-                        .and_then(|ray| ray.intersect_plane(origin, plane.normal().vector())),
+                    Some(GizmoHandle::Plane(plane)) => self.cursor_ray().and_then(|ray| {
+                        let (a, b) = self.gizmo_plane_axes(plane, object.transform);
+                        ray.intersect_plane(origin, a.cross(b).normalize_or_zero())
+                    }),
                     Some(GizmoHandle::Axis(Axis::Y)) => None,
                     Some(GizmoHandle::Ring(_)) => None,
                     _ => self.cursor_ground_point(),
@@ -690,37 +697,41 @@ impl App {
                     }
                 }
                 GizmoHandle::Axis(axis) => {
-                    if axis == Axis::Y {
-                        let mut translation = start_transform.translation;
-                        translation.y =
-                            (translation.y - total_delta.y * 0.01).max(GROUND_CLEARANCE);
-                        transform.translation = translation;
-                    } else if let Some(point) = self.cursor_ground_point() {
-                        let mut translation = start_transform.translation;
-                        axis.set_component(
-                            &mut translation,
-                            axis.component(point + self.drag_offset),
-                        );
-                        transform.translation = translation;
+                    let axis_vec = self.gizmo_axis_vector(axis, start_transform);
+                    let amount = self.screen_axis_drag_amount(
+                        start_transform.translation,
+                        axis_vec,
+                        total_delta,
+                    );
+                    transform.translation = start_transform.translation + axis_vec * amount;
+                    if matches!(self.transform_space, TransformSpace::Global) && axis == Axis::Y {
+                        transform.translation.y = transform.translation.y.max(GROUND_CLEARANCE);
                     }
                 }
                 GizmoHandle::Plane(plane) => {
-                    let normal = plane.normal().vector();
+                    let (a, b) = self.gizmo_plane_axes(plane, start_transform);
+                    let normal = a.cross(b).normalize_or_zero();
                     if let Some(point) = self
                         .cursor_ray()
                         .and_then(|ray| ray.intersect_plane(start_transform.translation, normal))
                     {
-                        let mut translation = start_transform.translation;
                         let target = point + self.drag_offset;
-                        let (a, b) = plane.axes();
-                        a.set_component(&mut translation, a.component(target));
-                        b.set_component(&mut translation, b.component(target));
-                        transform.translation = translation;
+                        let delta = target - start_transform.translation;
+                        transform.translation =
+                            start_transform.translation + a * delta.dot(a) + b * delta.dot(b);
                     }
                 }
                 GizmoHandle::Ring(_) => {}
             },
             EditorTool::Rotate => {
+                if matches!(handle, GizmoHandle::Center) {
+                    transform.rotation = start_transform.rotation
+                        + Vec3::new(total_delta.y * 0.01, total_delta.x * 0.01, 0.0);
+                    for object in self.scene.selected_group_mut() {
+                        object.transform = transform;
+                    }
+                    return;
+                }
                 let axis = match handle {
                     GizmoHandle::Ring(axis) | GizmoHandle::Axis(axis) => axis,
                     GizmoHandle::Plane(plane) => plane.normal(),
@@ -857,10 +868,44 @@ impl App {
     fn rotate_axis_screen_sign(&self, axis: Axis, origin: Vec3) -> f32 {
         let camera = self.camera();
         let view_to_object = (origin - camera.eye).normalize_or_zero();
-        if axis.vector().dot(view_to_object) >= 0.0 {
+        let axis_vec = self.gizmo_axis_vector(axis, self.drag_start_transform.unwrap_or_default());
+        if axis_vec.dot(view_to_object) >= 0.0 {
             1.0
         } else {
             -1.0
+        }
+    }
+
+    fn gizmo_axis_vector(&self, axis: Axis, transform: Transform) -> Vec3 {
+        match self.transform_space {
+            TransformSpace::Global => axis.vector(),
+            TransformSpace::Local => transform
+                .rotation_matrix()
+                .transform_vector3(axis.vector())
+                .normalize_or_zero(),
+        }
+    }
+
+    fn gizmo_plane_axes(&self, plane: AxisPlane, transform: Transform) -> (Vec3, Vec3) {
+        let (a, b) = plane.axes();
+        (
+            self.gizmo_axis_vector(a, transform),
+            self.gizmo_axis_vector(b, transform),
+        )
+    }
+
+    fn screen_axis_drag_amount(&self, origin: Vec3, axis_vec: Vec3, total_delta: Vec2) -> f32 {
+        let Some(start) = self.project_world_to_screen(origin) else {
+            return 0.0;
+        };
+        let Some(end) = self.project_world_to_screen(origin + axis_vec.normalize_or_zero()) else {
+            return 0.0;
+        };
+        let screen_axis = (end - start).normalize_or_zero();
+        if screen_axis.length_squared() < 0.001 {
+            0.0
+        } else {
+            total_delta.dot(screen_axis) * self.camera.distance * 0.0022
         }
     }
 
@@ -880,7 +925,8 @@ impl App {
     }
 
     fn hit_test_gizmo(&self, ray: Ray) -> Option<GizmoHandle> {
-        let origin = self.scene.selected_group().first()?.transform.translation;
+        let transform = self.scene.selected_group().first()?.transform;
+        let origin = transform.translation;
         if ray.intersect_sphere(origin, 0.22).is_some() {
             return Some(GizmoHandle::Center);
         }
@@ -889,12 +935,13 @@ impl App {
             EditorTool::Move | EditorTool::Scale => {
                 let mut best = None;
                 for plane in [AxisPlane::Xy, AxisPlane::Xz, AxisPlane::Yz] {
-                    if hit_plane_handle(ray, origin, plane) {
+                    let (a, b) = self.gizmo_plane_axes(plane, transform);
+                    if hit_plane_handle(ray, origin, a, b) {
                         return Some(GizmoHandle::Plane(plane));
                     }
                 }
                 for axis in [Axis::X, Axis::Y, Axis::Z] {
-                    let axis_vec = axis.vector();
+                    let axis_vec = self.gizmo_axis_vector(axis, transform);
                     let start = origin + axis_vec * 0.16;
                     let end = origin + axis_vec * 1.18;
                     let distance = ray.distance_to_segment(start, end);
@@ -916,7 +963,7 @@ impl App {
             }
             EditorTool::Rotate => {
                 for axis in [Axis::X, Axis::Y, Axis::Z] {
-                    if hit_ring(ray, origin, axis) {
+                    if hit_ring(ray, origin, self.gizmo_axis_vector(axis, transform)) {
                         return Some(GizmoHandle::Ring(axis));
                     }
                 }
@@ -963,6 +1010,7 @@ impl App {
             style: self.style,
             debug_view: self.debug_view,
             editor_tool: self.editor_tool,
+            transform_space: self.transform_space,
             hovered_gizmo: self.hovered_gizmo,
             active_gizmo: self.active_gizmo,
         };
@@ -986,6 +1034,28 @@ enum EditorTool {
     Move,
     Rotate,
     Scale,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum TransformSpace {
+    Global,
+    Local,
+}
+
+impl TransformSpace {
+    fn name(self) -> &'static str {
+        match self {
+            Self::Global => "Global",
+            Self::Local => "Local",
+        }
+    }
+
+    fn toggle(self) -> Self {
+        match self {
+            Self::Global => Self::Local,
+            Self::Local => Self::Global,
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -1267,6 +1337,7 @@ struct FrameData {
     style: StylePreset,
     debug_view: DebugView,
     editor_tool: EditorTool,
+    transform_space: TransformSpace,
     hovered_gizmo: Option<GizmoHandle>,
     active_gizmo: Option<GizmoHandle>,
 }
@@ -1513,13 +1584,17 @@ impl Default for Transform {
 impl Transform {
     fn matrix(self) -> Mat4 {
         Mat4::from_translation(self.translation)
-            * Mat4::from_euler(
-                glam::EulerRot::XYZ,
-                self.rotation.x,
-                self.rotation.y,
-                self.rotation.z,
-            )
+            * self.rotation_matrix()
             * Mat4::from_scale(self.scale)
+    }
+
+    fn rotation_matrix(self) -> Mat4 {
+        Mat4::from_euler(
+            glam::EulerRot::XYZ,
+            self.rotation.x,
+            self.rotation.y,
+            self.rotation.z,
+        )
     }
 }
 
@@ -2229,13 +2304,15 @@ impl Renderer {
     }
 
     unsafe fn draw_transform_gizmo(&self, scene: &Scene, frame: &FrameData) {
-        let Some(origin) = scene
+        let Some(transform) = scene
             .selected_group()
             .first()
-            .map(|object| object.transform.translation)
+            .map(|object| object.transform)
         else {
             return;
         };
+        let origin = transform.translation;
+        let basis = gizmo_basis(frame.transform_space, transform);
         self.gl.use_program(Some(self.unlit_program));
         set_mat4(&self.gl, self.unlit_program, "u_view", frame.view);
         set_mat4(
@@ -2258,11 +2335,29 @@ impl Renderer {
                 );
             }
             EditorTool::Move => {
-                self.draw_plane_handle(origin, AxisPlane::Xy, Vec3::new(1.0, 0.82, 0.18), frame);
-                self.draw_plane_handle(origin, AxisPlane::Xz, Vec3::new(1.0, 0.38, 0.18), frame);
-                self.draw_plane_handle(origin, AxisPlane::Yz, Vec3::new(0.18, 0.82, 1.0), frame);
+                self.draw_plane_handle(
+                    origin,
+                    basis,
+                    AxisPlane::Xy,
+                    Vec3::new(1.0, 0.82, 0.18),
+                    frame,
+                );
+                self.draw_plane_handle(
+                    origin,
+                    basis,
+                    AxisPlane::Xz,
+                    Vec3::new(1.0, 0.38, 0.18),
+                    frame,
+                );
+                self.draw_plane_handle(
+                    origin,
+                    basis,
+                    AxisPlane::Yz,
+                    Vec3::new(0.18, 0.82, 1.0),
+                    frame,
+                );
                 for axis in [Axis::X, Axis::Y, Axis::Z] {
-                    self.draw_axis_bar(origin, axis, axis_color(axis), true, frame);
+                    self.draw_axis_bar(origin, basis, axis, axis_color(axis), true, frame);
                 }
                 self.draw_gizmo_handle_cube(
                     origin,
@@ -2273,13 +2368,32 @@ impl Renderer {
                 );
             }
             EditorTool::Scale => {
-                self.draw_plane_handle(origin, AxisPlane::Xy, Vec3::new(1.0, 0.82, 0.18), frame);
-                self.draw_plane_handle(origin, AxisPlane::Xz, Vec3::new(1.0, 0.38, 0.18), frame);
-                self.draw_plane_handle(origin, AxisPlane::Yz, Vec3::new(0.18, 0.82, 1.0), frame);
+                self.draw_plane_handle(
+                    origin,
+                    basis,
+                    AxisPlane::Xy,
+                    Vec3::new(1.0, 0.82, 0.18),
+                    frame,
+                );
+                self.draw_plane_handle(
+                    origin,
+                    basis,
+                    AxisPlane::Xz,
+                    Vec3::new(1.0, 0.38, 0.18),
+                    frame,
+                );
+                self.draw_plane_handle(
+                    origin,
+                    basis,
+                    AxisPlane::Yz,
+                    Vec3::new(0.18, 0.82, 1.0),
+                    frame,
+                );
                 for axis in [Axis::X, Axis::Y, Axis::Z] {
-                    self.draw_axis_bar(origin, axis, axis_color(axis), false, frame);
-                    self.draw_gizmo_handle_cube(
-                        origin + axis.vector() * 1.08,
+                    self.draw_axis_bar(origin, basis, axis, axis_color(axis), false, frame);
+                    self.draw_gizmo_handle_box(
+                        origin + basis_axis(basis, axis) * 1.08,
+                        basis,
                         Vec3::splat(0.14),
                         axis_color(axis),
                         GizmoHandle::Axis(axis),
@@ -2296,7 +2410,7 @@ impl Renderer {
             }
             EditorTool::Rotate => {
                 for axis in [Axis::X, Axis::Y, Axis::Z] {
-                    self.draw_rotation_ring(origin, axis, axis_color(axis), frame);
+                    self.draw_rotation_ring(origin, basis, axis, axis_color(axis), frame);
                 }
             }
         }
@@ -2306,12 +2420,13 @@ impl Renderer {
     unsafe fn draw_axis_bar(
         &self,
         origin: Vec3,
+        basis: Mat4,
         axis: Axis,
         color: Vec3,
         arrow_head: bool,
         frame: &FrameData,
     ) {
-        let axis_vec = axis.vector();
+        let axis_vec = basis_axis(basis, axis);
         let handle = GizmoHandle::Axis(axis);
         let center = origin + axis_vec * 0.55;
         let scale = if axis == Axis::X {
@@ -2321,7 +2436,7 @@ impl Renderer {
         } else {
             Vec3::new(0.035, 0.035, 1.05)
         };
-        self.draw_gizmo_handle_cube(center, scale, color, handle, frame);
+        self.draw_gizmo_handle_box(center, basis, scale, color, handle, frame);
         if arrow_head {
             let tip = origin + axis_vec * 1.14;
             let tip_scale = if axis == Axis::X {
@@ -2331,28 +2446,43 @@ impl Renderer {
             } else {
                 Vec3::new(0.09, 0.09, 0.2)
             };
-            self.draw_gizmo_handle_cube(tip, tip_scale, color, handle, frame);
+            self.draw_gizmo_handle_box(tip, basis, tip_scale, color, handle, frame);
         }
     }
 
     unsafe fn draw_plane_handle(
         &self,
         origin: Vec3,
+        basis: Mat4,
         plane: AxisPlane,
         color: Vec3,
         frame: &FrameData,
     ) {
         let (a, b) = plane.axes();
-        let center = origin + a.vector() * 0.38 + b.vector() * 0.38;
+        let center = origin + basis_axis(basis, a) * 0.38 + basis_axis(basis, b) * 0.38;
         let scale = match plane {
             AxisPlane::Xy => Vec3::new(0.24, 0.24, 0.018),
             AxisPlane::Xz => Vec3::new(0.24, 0.018, 0.24),
             AxisPlane::Yz => Vec3::new(0.018, 0.24, 0.24),
         };
-        self.draw_gizmo_handle_cube(center, scale, color, GizmoHandle::Plane(plane), frame);
+        self.draw_gizmo_handle_box(
+            center,
+            basis,
+            scale,
+            color,
+            GizmoHandle::Plane(plane),
+            frame,
+        );
     }
 
-    unsafe fn draw_rotation_ring(&self, origin: Vec3, axis: Axis, color: Vec3, frame: &FrameData) {
+    unsafe fn draw_rotation_ring(
+        &self,
+        origin: Vec3,
+        basis: Mat4,
+        axis: Axis,
+        color: Vec3,
+        frame: &FrameData,
+    ) {
         let handle = GizmoHandle::Ring(axis);
         let color = gizmo_color(color, handle, frame);
         let emphasis = if frame.active_gizmo == Some(handle) || frame.hovered_gizmo == Some(handle)
@@ -2362,6 +2492,7 @@ impl Renderer {
             1.0
         };
         let model = Mat4::from_translation(origin)
+            * basis
             * ring_axis_model(axis)
             * Mat4::from_scale(Vec3::splat(emphasis));
         self.gl
@@ -2387,12 +2518,28 @@ impl Renderer {
         self.draw_gizmo_cube(position, scale, gizmo_color(color, handle, frame));
     }
 
+    unsafe fn draw_gizmo_handle_box(
+        &self,
+        position: Vec3,
+        basis: Mat4,
+        scale: Vec3,
+        color: Vec3,
+        handle: GizmoHandle,
+        frame: &FrameData,
+    ) {
+        self.draw_gizmo_box(position, basis, scale, gizmo_color(color, handle, frame));
+    }
+
     unsafe fn draw_gizmo_cube(&self, position: Vec3, scale: Vec3, color: Vec3) {
+        self.draw_gizmo_box(position, Mat4::IDENTITY, scale, color);
+    }
+
+    unsafe fn draw_gizmo_box(&self, position: Vec3, basis: Mat4, scale: Vec3, color: Vec3) {
         set_mat4(
             &self.gl,
             self.unlit_program,
             "u_model",
-            Mat4::from_translation(position) * Mat4::from_scale(scale),
+            Mat4::from_translation(position) * basis * Mat4::from_scale(scale),
         );
         set_vec3(&self.gl, self.unlit_program, "u_color", color);
         self.gl.draw_elements(
@@ -2716,8 +2863,8 @@ fn rotation_gizmo_mesh() -> MeshCpu {
     }
 }
 
-fn hit_ring(ray: Ray, origin: Vec3, axis: Axis) -> bool {
-    let normal = axis.vector();
+fn hit_ring(ray: Ray, origin: Vec3, axis_vec: Vec3) -> bool {
+    let normal = axis_vec.normalize_or_zero();
     let denom = ray.direction.dot(normal);
     if denom.abs() < 0.0001 {
         return false;
@@ -2750,14 +2897,13 @@ fn wrap_angle(angle: f32) -> f32 {
     wrapped
 }
 
-fn hit_plane_handle(ray: Ray, origin: Vec3, plane: AxisPlane) -> bool {
-    let (a, b) = plane.axes();
-    let center = origin + a.vector() * 0.38 + b.vector() * 0.38;
-    let Some(hit) = ray.intersect_plane(center, plane.normal().vector()) else {
+fn hit_plane_handle(ray: Ray, origin: Vec3, a: Vec3, b: Vec3) -> bool {
+    let center = origin + a * 0.38 + b * 0.38;
+    let Some(hit) = ray.intersect_plane(center, a.cross(b).normalize_or_zero()) else {
         return false;
     };
     let rel = hit - center;
-    rel.dot(a.vector()).abs() <= 0.2 && rel.dot(b.vector()).abs() <= 0.2
+    rel.dot(a).abs() <= 0.2 && rel.dot(b).abs() <= 0.2
 }
 
 fn axis_color(axis: Axis) -> Vec3 {
@@ -2766,6 +2912,17 @@ fn axis_color(axis: Axis) -> Vec3 {
         Axis::Y => Vec3::new(0.26, 1.0, 0.3),
         Axis::Z => Vec3::new(0.2, 0.52, 1.0),
     }
+}
+
+fn gizmo_basis(space: TransformSpace, transform: Transform) -> Mat4 {
+    match space {
+        TransformSpace::Global => Mat4::IDENTITY,
+        TransformSpace::Local => transform.rotation_matrix(),
+    }
+}
+
+fn basis_axis(basis: Mat4, axis: Axis) -> Vec3 {
+    basis.transform_vector3(axis.vector()).normalize_or_zero()
 }
 
 fn gizmo_color(base: Vec3, handle: GizmoHandle, frame: &FrameData) -> Vec3 {
