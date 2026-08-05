@@ -1,8 +1,23 @@
 # ZZZ Style Engine Prototype
 
-Small native Rust/OpenGL editor prototype for importing meshes and rendering them with a stylized anime/urban look inspired by the broad rendering ingredients in games like Zenless Zone Zero. This project should not copy proprietary models, environments, UI, or exact assets. The goal is a reusable pipeline for user-provided Sketchfab-style assets.
+Native C++/OpenGL engine-editor prototype for importing meshes and rendering them with a stylized anime/urban look inspired by the broad rendering ingredients in games like Zenless Zone Zero. This project should not copy proprietary models, environments, UI, or exact assets. The goal is a reusable pipeline for user-provided Sketchfab-style assets.
+
+The project originally started as a Rust prototype. The active implementation is now moving to C++ so the engine code is easier for the project owner to read, debug, and extend.
 
 ## Current Milestone
+
+- New C++ source tree under `cpp/`.
+- CMake build using Visual Studio C++ build tools.
+- Native Win32 OpenGL window.
+- Component-driven scene skeleton:
+  - every placeable item is an actor
+  - actors own root scene transforms
+  - active components currently include static meshes and lights
+  - placeholders exist for future engine/game systems
+- Default C++ scene with two cube actors, one directional light actor, and one point light actor.
+- Initial C++ renderer draws the world grid, actors, light icons, and a selected actor gizmo.
+
+Legacy Rust reference still contains:
 
 - OpenGL window and render loop.
 - Drag and drop `.glb`, `.gltf`, or `.obj` files into the window.
@@ -51,7 +66,23 @@ Small native Rust/OpenGL editor prototype for importing meshes and rendering the
   - Click active gizmo center/axis/plane/ring handles to move, rotate, or scale
   - `Esc`: quit
 
-## Run
+## Build And Run C++
+
+From PowerShell in this folder:
+
+```powershell
+.\build_cpp.bat
+```
+
+Then run:
+
+```powershell
+.\cpp\build-msvc\ForgeEngine.exe
+```
+
+The build script opens the Visual Studio developer environment for you, configures CMake, and builds `ForgeEngine.exe`.
+
+## Run Legacy Rust Prototype
 
 ```powershell
 cargo run
@@ -98,8 +129,8 @@ For the long-term engine/editor architecture notes, see [ENGINE_ARCHITECTURE.md]
 
 ## Next Engineering Steps
 
-1. Continue code split: move renderer/shader/import code out of `src/main.rs`.
-2. Import glTF metallic-roughness textures.
-3. Add tangent support and normal mapping.
-4. Replace planar shadows with a directional shadow map.
-5. Add basic environment lighting for more convincing metals.
+1. Bring the C++ editor shell up to feature parity with the Rust prototype.
+2. Move the graphics pipeline into modern OpenGL shader/VBO code.
+3. Add glTF import in C++.
+4. Rebuild the direct-light PBR shader in C++.
+5. Continue the PBR pipeline: metallic-roughness textures, tangent-space normal maps, shadow maps, HDR, and environment lighting.

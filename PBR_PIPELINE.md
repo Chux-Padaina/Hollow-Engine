@@ -8,7 +8,7 @@ Build a practical glTF/Sketchfab-friendly PBR renderer first, then stylize it la
 
 ## Current Baseline
 
-Implemented:
+Implemented in the Rust reference:
 
 - Mesh import for `.glb`, `.gltf`, and `.obj`.
 - glTF hierarchy transform preservation.
@@ -21,7 +21,14 @@ Implemented:
 - Lit floor cube, editor grid, simple planar projected shadows.
 - Albedo, normals, lighting-only, roughness, and metallic debug views.
 
-Not yet implemented:
+Pending in the new C++ implementation:
+
+- Modern OpenGL shader/VBO renderer.
+- glTF/OBJ import.
+- Direct-light Cook-Torrance/GGX PBR shader.
+- Material inspector and debug views.
+
+Not yet implemented in either path:
 
 - Metallic-roughness texture import.
 - Normal maps and tangent-space shading.

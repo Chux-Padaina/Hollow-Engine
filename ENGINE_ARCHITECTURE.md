@@ -2,6 +2,8 @@
 
 This document tracks the long-term engine/editor skeleton. The goal is not to clone Unreal Engine's full scale, but to keep the prototype shaped like a real expandable 3D engine while the current implementation stays small.
 
+The active engine path is now C++/OpenGL under `cpp/`. The original Rust implementation remains a reference during migration.
+
 ## Reference Model
 
 The current architecture follows the broad Unreal-style mental model:
@@ -14,16 +16,16 @@ The current architecture follows the broad Unreal-style mental model:
 
 ## Current Runtime Shape
 
-Implemented now:
+Implemented in the active C++ skeleton:
 
 - `App`
-  - owns window/editor state
+  - owns the native window and frame loop
   - owns `Renderer`
   - owns `Scene`
   - owns an `Engine` subsystem container
 - `Scene`
-  - owns `Vec<Actor>`
-  - tracks the selected actor index
+  - owns `std::vector<std::unique_ptr<Actor>>`
+  - tracks the selected actor id
 - `Actor`
   - owns a name
   - owns a root `SceneComponent`
@@ -51,22 +53,26 @@ Implemented now:
   - `PostProcessVolumeComponent`
   - `NetworkReplicationComponent`
 - Placeholder subsystem slots:
-  - input
-  - assets
-  - audio
-  - animation
-  - scripting
-  - physics
-  - collision
-  - navigation
-  - AI
+  - Asset Registry
+  - Renderer
+  - Editor Selection
+  - Input
+  - Physics
+  - Audio
+  - Animation
+  - Scripting
   - UI
-  - networking
-  - save games
-  - localization
-  - diagnostics
-  - post-processing
-  - settings
+  - Post Processing
+  - Save/Load
+
+Implemented in the Rust reference but pending in C++:
+
+- egui editor panels
+- drag/drop glTF/OBJ import
+- full viewport picking
+- interactive move/rotate/scale gizmos
+- shader-based PBR rendering
+- material debug views
 
 ## Current Editor Shape
 
