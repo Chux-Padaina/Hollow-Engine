@@ -41,15 +41,16 @@ Current status:
 - Scene owns `Light` data.
 - Directional, point, and spot variants exist.
 - The default scene currently uses one directional light and one point light.
-- The active shader is temporarily generic diffuse/specular lighting so light behavior is easy to inspect.
+- The active shader is now direct-light Cook-Torrance/GGX PBR.
+- Meshes carry metallic and roughness factors; glTF metallic/roughness factors are imported.
 - The default scene includes warm/cool colored test cubes, a darker flattened gray cube floor, simple planar projected shadows, and a non-scene editor/world grid overlay.
 - Spot light data/cone support is retained for a later pass, but the next checkpoint should validate the simpler one-directional/one-point setup first.
 
 Next PBR checkpoint:
 
-1. Implement direct-light Cook-Torrance/GGX PBR with uniform metallic and roughness values.
-2. Add material sliders and roughness/metallic debug views.
-3. Import glTF metallic/roughness factors and textures.
+1. Add material sliders and roughness/metallic debug views.
+2. Import glTF metallic-roughness textures.
+3. Add normal maps/tangent support.
 
 ## Phase 2: Shadows
 

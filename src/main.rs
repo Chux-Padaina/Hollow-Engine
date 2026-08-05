@@ -473,7 +473,14 @@ impl App {
             name: "Cube A".to_string(),
             mesh: MeshGpu::from_cpu(
                 gl.clone(),
-                &MeshCpu::cube_with_color("Cube A", [0.82, 0.66, 0.42, 1.0]),
+                &MeshCpu::cube_with_material(
+                    "Cube A",
+                    [0.82, 0.66, 0.42, 1.0],
+                    MaterialProperties {
+                        metallic: 0.0,
+                        roughness: 0.72,
+                    },
+                ),
             )?,
             group_id: 0,
             transform: Transform {
@@ -485,7 +492,14 @@ impl App {
             name: "Cube B".to_string(),
             mesh: MeshGpu::from_cpu(
                 gl.clone(),
-                &MeshCpu::cube_with_color("Cube B", [0.42, 0.58, 0.76, 1.0]),
+                &MeshCpu::cube_with_material(
+                    "Cube B",
+                    [0.42, 0.58, 0.76, 1.0],
+                    MaterialProperties {
+                        metallic: 1.0,
+                        roughness: 0.28,
+                    },
+                ),
             )?,
             group_id: 1,
             transform: Transform {
@@ -498,7 +512,14 @@ impl App {
             name: "Floor".to_string(),
             mesh: MeshGpu::from_cpu(
                 gl.clone(),
-                &MeshCpu::cube_with_color("Floor", [0.34, 0.35, 0.33, 1.0]),
+                &MeshCpu::cube_with_material(
+                    "Floor",
+                    [0.34, 0.35, 0.33, 1.0],
+                    MaterialProperties {
+                        metallic: 0.0,
+                        roughness: 0.88,
+                    },
+                ),
             )?,
             group_id: 2,
             transform: Transform {
@@ -1748,6 +1769,22 @@ struct MeshCpu {
     vertices: Vec<Vertex>,
     indices: Vec<u32>,
     texture: Option<TextureCpu>,
+    material: MaterialProperties,
+}
+
+#[derive(Clone, Copy)]
+struct MaterialProperties {
+    metallic: f32,
+    roughness: f32,
+}
+
+impl Default for MaterialProperties {
+    fn default() -> Self {
+        Self {
+            metallic: 0.0,
+            roughness: 0.55,
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -1810,6 +1847,10 @@ impl MeshCpu {
     }
 
     fn cube_with_color(name: &str, color: [f32; 4]) -> Self {
+        Self::cube_with_material(name, color, MaterialProperties::default())
+    }
+
+    fn cube_with_material(name: &str, color: [f32; 4], material: MaterialProperties) -> Self {
         let mut vertices = Vec::new();
         let mut indices = Vec::new();
         let faces = [
@@ -1847,6 +1888,7 @@ impl MeshCpu {
             vertices,
             indices,
             texture: None,
+            material,
         }
     }
 
@@ -1899,6 +1941,7 @@ impl MeshCpu {
                     vertices,
                     indices: mesh.indices,
                     texture: None,
+                    material: MaterialProperties::default(),
                 })
             })
             .collect()
@@ -1970,6 +2013,10 @@ fn collect_gltf_node(
             let material = primitive.material();
             let pbr = material.pbr_metallic_roughness();
             let factor = pbr.base_color_factor();
+            let material_properties = MaterialProperties {
+                metallic: pbr.metallic_factor().clamp(0.0, 1.0),
+                roughness: pbr.roughness_factor().clamp(0.04, 1.0),
+            };
             let texture = pbr
                 .base_color_texture()
                 .and_then(|info| textures.get(info.texture().source().index()))
@@ -2019,6 +2066,7 @@ fn collect_gltf_node(
                 vertices,
                 indices,
                 texture,
+                material: material_properties,
             });
         }
     }
@@ -2061,6 +2109,7 @@ struct MeshGpu {
     _vertex_buffer: glow::NativeBuffer,
     _index_buffer: glow::NativeBuffer,
     texture: Option<glow::NativeTexture>,
+    material: MaterialProperties,
     bounds_radius: f32,
     index_count: i32,
 }
@@ -2142,6 +2191,7 @@ impl MeshGpu {
             _vertex_buffer: vertex_buffer,
             _index_buffer: index_buffer,
             texture,
+            material: mesh.material,
             bounds_radius,
             index_count: mesh.indices.len() as i32,
         })
@@ -2709,6 +2759,18 @@ impl Renderer {
             "u_directional_light_intensity",
             frame.directional_light.intensity,
         );
+        set_f32(
+            &self.gl,
+            self.object_program,
+            "u_metallic",
+            object.mesh.material.metallic,
+        );
+        set_f32(
+            &self.gl,
+            self.object_program,
+            "u_roughness",
+            object.mesh.material.roughness,
+        );
         set_i32(
             &self.gl,
             self.object_program,
@@ -2816,6 +2878,7 @@ fn editor_grid_mesh() -> MeshCpu {
         vertices,
         indices,
         texture: None,
+        material: MaterialProperties::default(),
     }
 }
 
@@ -2851,6 +2914,7 @@ fn contact_shadow_mesh() -> MeshCpu {
         vertices,
         indices: vec![0, 1, 2, 0, 2, 3],
         texture: None,
+        material: MaterialProperties::default(),
     }
 }
 
@@ -2897,6 +2961,7 @@ fn arrow_gizmo_mesh() -> MeshCpu {
         vertices,
         indices,
         texture: None,
+        material: MaterialProperties::default(),
     }
 }
 
@@ -2945,6 +3010,7 @@ fn rotation_gizmo_mesh() -> MeshCpu {
         vertices,
         indices,
         texture: None,
+        material: MaterialProperties::default(),
     }
 }
 
@@ -3171,6 +3237,8 @@ uniform vec3 u_directional_light_color;
 uniform float u_directional_light_intensity;
 uniform float u_selected;
 uniform float u_has_texture;
+uniform float u_metallic;
+uniform float u_roughness;
 uniform sampler2D u_base_texture;
 uniform int u_debug_view;
 uniform int u_local_light_count;
@@ -3181,20 +3249,83 @@ uniform vec4 u_local_light_params[8];
 
 out vec4 out_color;
 
+const float PI = 3.14159265359;
+
+float distributionGGX(vec3 normal, vec3 half_dir, float roughness) {
+    float a = roughness * roughness;
+    float a2 = a * a;
+    float ndh = max(dot(normal, half_dir), 0.0);
+    float ndh2 = ndh * ndh;
+    float denom = ndh2 * (a2 - 1.0) + 1.0;
+    return a2 / max(PI * denom * denom, 0.0001);
+}
+
+float geometrySchlickGGX(float ndv, float roughness) {
+    float r = roughness + 1.0;
+    float k = (r * r) / 8.0;
+    return ndv / max(ndv * (1.0 - k) + k, 0.0001);
+}
+
+float geometrySmith(vec3 normal, vec3 view_dir, vec3 light_dir, float roughness) {
+    float ndv = max(dot(normal, view_dir), 0.0);
+    float ndl = max(dot(normal, light_dir), 0.0);
+    return geometrySchlickGGX(ndv, roughness) * geometrySchlickGGX(ndl, roughness);
+}
+
+vec3 fresnelSchlick(float cos_theta, vec3 f0) {
+    return f0 + (1.0 - f0) * pow(clamp(1.0 - cos_theta, 0.0, 1.0), 5.0);
+}
+
+vec3 pbrLight(
+    vec3 albedo,
+    float metallic,
+    float roughness,
+    vec3 normal,
+    vec3 view_dir,
+    vec3 light_dir,
+    vec3 radiance
+) {
+    vec3 half_dir = normalize(view_dir + light_dir);
+    float ndl = max(dot(normal, light_dir), 0.0);
+    float ndv = max(dot(normal, view_dir), 0.0);
+    if (ndl <= 0.0 || ndv <= 0.0) {
+        return vec3(0.0);
+    }
+
+    vec3 f0 = mix(vec3(0.04), albedo, metallic);
+    float d = distributionGGX(normal, half_dir, roughness);
+    float g = geometrySmith(normal, view_dir, light_dir, roughness);
+    vec3 f = fresnelSchlick(max(dot(half_dir, view_dir), 0.0), f0);
+
+    vec3 numerator = d * g * f;
+    float denominator = max(4.0 * ndv * ndl, 0.0001);
+    vec3 specular = numerator / denominator;
+
+    vec3 ks = f;
+    vec3 kd = (1.0 - ks) * (1.0 - metallic);
+    vec3 diffuse = kd * albedo / PI;
+
+    return (diffuse + specular) * radiance * ndl;
+}
+
 void main() {
     vec3 normal = normalize(v_normal);
     vec3 view_dir = normalize(u_camera_position - v_world_position);
     vec3 key_dir = normalize(-u_directional_light_direction);
     vec3 sampled = u_has_texture > 0.5 ? texture(u_base_texture, v_tex_coord).rgb : vec3(1.0);
-    vec3 albedo = clamp(v_color.rgb * sampled, 0.0, 4.0);
+    vec3 albedo = pow(clamp(v_color.rgb * sampled, 0.0, 1.0), vec3(2.2));
+    float metallic = clamp(u_metallic, 0.0, 1.0);
+    float roughness = clamp(u_roughness, 0.04, 1.0);
 
-    float key_diffuse = max(dot(normal, key_dir), 0.0);
-    vec3 key_light = u_directional_light_color * key_diffuse * max(u_directional_light_intensity, 0.0);
-    vec3 key_half = normalize(key_dir + view_dir);
-    float key_spec = pow(max(dot(normal, key_half), 0.0), 48.0) * key_diffuse;
-    vec3 specular = u_directional_light_color * key_spec * u_directional_light_intensity * 0.45;
-
-    vec3 local_light = vec3(0.0);
+    vec3 direct_light = pbrLight(
+        albedo,
+        metallic,
+        roughness,
+        normal,
+        view_dir,
+        key_dir,
+        u_directional_light_color * max(u_directional_light_intensity, 0.0) * 3.2
+    );
     for (int i = 0; i < 8; ++i) {
         if (i >= u_local_light_count) {
             break;
@@ -3209,23 +3340,24 @@ void main() {
             float spot_dot = dot(normalize(u_local_light_directions[i]), -light_dir);
             cone = smoothstep(params.w, params.z, spot_dot);
         }
-        float ndl = dot(normal, light_dir);
         float visibility = attenuation * cone * params.y;
-        float diffuse = max(ndl, 0.0);
-        local_light += u_local_light_colors[i] * diffuse * visibility;
-
-        vec3 half_dir = normalize(light_dir + view_dir);
-        float point_spec = pow(max(dot(normal, half_dir), 0.0), 56.0) * diffuse;
-        specular += u_local_light_colors[i] * point_spec * visibility * 0.55;
+        direct_light += pbrLight(
+            albedo,
+            metallic,
+            roughness,
+            normal,
+            view_dir,
+            light_dir,
+            u_local_light_colors[i] * visibility * 14.0
+        );
     }
 
-    vec3 ambient = vec3(0.12);
-    vec3 lighting = ambient + key_light + local_light;
-    vec3 color = albedo * lighting + specular;
+    vec3 ambient = albedo * vec3(0.03) * (1.0 - metallic);
+    vec3 color = ambient + direct_light;
     color += vec3(1.0, 0.82, 0.18) * u_selected * 0.08;
 
     if (u_debug_view == 1) {
-        out_color = vec4(pow(clamp(albedo, 0.0, 1.0), vec3(0.4545)), v_color.a);
+        out_color = vec4(pow(clamp(albedo, 0.0, 1.0), vec3(1.0 / 2.2)), v_color.a);
         return;
     }
     if (u_debug_view == 2) {
@@ -3233,8 +3365,8 @@ void main() {
         return;
     }
     if (u_debug_view == 3) {
-        vec3 lighting_only = clamp(lighting + specular, 0.0, 4.0);
-        out_color = vec4(pow(lighting_only / (lighting_only + vec3(1.0)), vec3(0.4545)), 1.0);
+        vec3 lighting_only = clamp(ambient + direct_light, 0.0, 8.0);
+        out_color = vec4(pow(lighting_only / (lighting_only + vec3(1.0)), vec3(1.0 / 2.2)), 1.0);
         return;
     }
 
@@ -3242,7 +3374,7 @@ void main() {
     vec3 fog_color = vec3(0.10, 0.11, 0.10);
     color = mix(color, fog_color, smoothstep(18.0, 38.0, camera_distance) * 0.25);
     color = color / (color + vec3(1.0));
-    color = pow(color, vec3(0.4545));
+    color = pow(color, vec3(1.0 / 2.2));
     out_color = vec4(color, v_color.a);
 }
 "#;

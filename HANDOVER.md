@@ -26,10 +26,12 @@ Do not copy proprietary ZZZ models, environments, UI, logos, or exact assets. Th
   - scene-owned directional lights with color/intensity
   - scene-owned point lights with position, color, range, intensity
   - spot light data/cone support retained for later, but the default scene currently uses one directional and one point light
-- Generic object shader:
-  - ambient term
-  - directional Lambert diffuse and Blinn specular
-  - point-light Lambert diffuse and Blinn specular
+- Direct-light PBR object shader:
+  - Cook-Torrance/GGX specular BRDF
+  - Smith-Schlick visibility
+  - Schlick Fresnel
+  - Lambert diffuse energy split for non-metals
+  - per-mesh metallic and roughness factors
   - simple planar projected shadows onto the floor cube
   - simple fog and tonemapping
   - inverted-hull outline
@@ -63,6 +65,7 @@ Do not copy proprietary ZZZ models, environments, UI, logos, or exact assets. Th
 - Temporarily reset object lighting to a generic diffuse/specular shader, added warm/cool test cubes and a darker flattened gray cube floor, simplified the default scene to one directional and one point light, made shadow decals project from the directional light, and moved the grid into a non-scene world overlay.
 - Added a Global/Local transform-space toggle; constrained gizmo handles now draw, pick, and move in the selected space, while clicking the selected object body uses the active tool's free transform behavior.
 - Fixed constrained rotation by applying quaternion deltas around the displayed gizmo axis instead of directly editing Euler components; move gizmos now use cone arrowheads.
+- Implemented the first PBR milestone: direct-light Cook-Torrance/GGX shading with per-mesh metallic/roughness factors and glTF metallic/roughness factor import.
 
 ## Known Limitations
 
@@ -80,12 +83,12 @@ Do not copy proprietary ZZZ models, environments, UI, logos, or exact assets. Th
 
 Move into the basic PBR pipeline described in `PBR_PIPELINE.md`:
 
-1. Implement direct-light Cook-Torrance/GGX PBR with uniform material values.
-2. Add material sliders for metallic and roughness.
-3. Add roughness and metallic debug views.
-4. Import glTF metallic/roughness factors and textures.
-5. Add tangent support and normal mapping.
-6. Replace planar shadows with a directional shadow map.
+1. Add material sliders for metallic and roughness.
+2. Add roughness and metallic debug views.
+3. Import glTF metallic-roughness textures.
+4. Add tangent support and normal mapping.
+5. Replace planar shadows with a directional shadow map.
+6. Add basic environment lighting for more convincing metals.
 
 ## Project Taste Direction
 

@@ -14,14 +14,14 @@ Implemented:
 - glTF hierarchy transform preservation.
 - Base color factors, vertex colors, UVs, and base color textures.
 - Scene lights with directional, point, and retained spot data.
-- Generic diffuse/specular shader for clear lighting tests.
+- Direct-light Cook-Torrance/GGX PBR shader.
+- Per-mesh metallic and roughness factors.
+- glTF metallic and roughness factors.
 - Lit floor cube, editor grid, simple planar projected shadows.
 - Albedo, normals, and lighting-only debug views.
 
 Not yet implemented:
 
-- Cook-Torrance/GGX PBR BRDF.
-- Metallic and roughness material properties in the shader.
 - Metallic-roughness texture import.
 - Normal maps and tangent-space shading.
 - Occlusion and emissive texture import.
@@ -56,7 +56,16 @@ Why this matters:
 
 This is the core material model used by modern real-time renderers. It lets roughness and metallic values mean something predictable under lights.
 
-Status: pending.
+Status: implemented for direct lighting using uniform/factor material values.
+
+Implementation notes:
+
+- The shader uses metallic-roughness Cook-Torrance lighting for directional and local lights.
+- The BRDF uses GGX distribution, Smith-Schlick visibility, and Schlick Fresnel.
+- Meshes now carry `MaterialProperties` with `metallic` and `roughness`.
+- glTF `metallicFactor` and `roughnessFactor` are imported.
+- The default test scene uses a rough non-metal cube, a smoother metal cube, and a rough non-metal floor.
+- This is not full engine PBR yet because it does not include normal maps, metallic-roughness textures, real shadow maps, or image-based lighting.
 
 ### 2. Material Properties And Inspector Controls
 
@@ -219,21 +228,20 @@ Possible techniques:
 
 Why this matters:
 
-This is where the renderer moves from “standard PBR” toward the final ZZZ-adjacent identity, while still preserving imported material data.
+This is where the renderer moves from "standard PBR" toward the final ZZZ-adjacent identity, while still preserving imported material data.
 
 Status: pending.
 
 ## Recommended Immediate Next Steps
 
-1. Implement direct-light Cook-Torrance GGX PBR using uniform material values.
-2. Add material sliders to the details panel for metallic and roughness.
-3. Add debug views for roughness and metallic.
-4. Import glTF metallic/roughness factors.
-5. Import glTF metallic-roughness texture.
-6. Add tangent support and normal maps.
-7. Replace planar shadows with a directional shadow map.
+1. Add material sliders to the details panel for metallic and roughness.
+2. Add debug views for roughness and metallic.
+3. Import glTF metallic-roughness texture.
+4. Add tangent support and normal maps.
+5. Replace planar shadows with a directional shadow map.
+6. Add basic environment lighting so metals have something to reflect.
 
-The first milestone should be considered complete when the default cubes can clearly demonstrate:
+Direct-light PBR is now implemented. The next material-control milestone should make it easy to demonstrate:
 
 - plastic: metallic `0`, roughness medium/high
 - shiny plastic: metallic `0`, roughness low
