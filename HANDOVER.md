@@ -10,6 +10,7 @@ Do not copy proprietary ZZZ models, environments, UI, logos, or exact assets. Th
 
 - Rust/OpenGL desktop app.
 - Git repo initialized with incremental commits.
+- `PBR_PIPELINE.md` tracks the render-pipeline learning checklist and implementation plan.
 - Drag/drop import for `.glb`, `.gltf`, and `.obj`.
 - glTF node transforms are applied so multi-part models stay assembled.
 - glTF base color factors, vertex colors, UVs, and base color textures are preserved.
@@ -77,12 +78,14 @@ Do not copy proprietary ZZZ models, environments, UI, logos, or exact assets. Th
 
 ## Next Step
 
-Finish the editor interaction foundation by checking cube, Porsche, and mech transforms with select/move/rotate/scale tools. Once the gizmo behavior feels reliable, move into the next visual-engine layer:
+Move into the basic PBR pipeline described in `PBR_PIPELINE.md`:
 
-1. Add proper gizmo meshes and depth-aware selection outlines.
-2. Add light range visualization in the viewport.
-3. Prepare scene save/load so test compositions can persist.
-4. Prepare for the first shadow-map pass.
+1. Implement direct-light Cook-Torrance/GGX PBR with uniform material values.
+2. Add material sliders for metallic and roughness.
+3. Add roughness and metallic debug views.
+4. Import glTF metallic/roughness factors and textures.
+5. Add tangent support and normal mapping.
+6. Replace planar shadows with a directional shadow map.
 
 ## Project Taste Direction
 

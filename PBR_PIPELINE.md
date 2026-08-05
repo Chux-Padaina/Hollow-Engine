@@ -1,0 +1,241 @@
+# PBR Render Pipeline Notes
+
+This document tracks the steps needed to turn the current lighting/debug renderer into a basic physically based rendering pipeline. It is meant to be both a build checklist and a learning reference for why each part exists.
+
+## Goal
+
+Build a practical glTF/Sketchfab-friendly PBR renderer first, then stylize it later. The final direction is still a ZZZ-adjacent portfolio engine, but the foundation should understand standard PBR assets before toon ramps, colored shadows, bloom, and outlines are layered back in.
+
+## Current Baseline
+
+Implemented:
+
+- Mesh import for `.glb`, `.gltf`, and `.obj`.
+- glTF hierarchy transform preservation.
+- Base color factors, vertex colors, UVs, and base color textures.
+- Scene lights with directional, point, and retained spot data.
+- Generic diffuse/specular shader for clear lighting tests.
+- Lit floor cube, editor grid, simple planar projected shadows.
+- Albedo, normals, and lighting-only debug views.
+
+Not yet implemented:
+
+- Cook-Torrance/GGX PBR BRDF.
+- Metallic and roughness material properties in the shader.
+- Metallic-roughness texture import.
+- Normal maps and tangent-space shading.
+- Occlusion and emissive texture import.
+- Real shadow maps.
+- Image-based lighting/reflection probes.
+- HDR framebuffer/post-processing.
+
+## Proposed Pipeline Steps
+
+### 1. Direct-Light PBR Shader
+
+Implement a metallic-roughness Cook-Torrance shader for direct lights.
+
+Inputs:
+
+- base color
+- metallic
+- roughness
+- normal from mesh vertex normals
+- directional light
+- point light
+
+BRDF pieces:
+
+- GGX normal distribution
+- Smith-Schlick geometry term
+- Schlick Fresnel
+- Lambert diffuse for non-metals
+- energy split between diffuse and specular
+
+Why this matters:
+
+This is the core material model used by modern real-time renderers. It lets roughness and metallic values mean something predictable under lights.
+
+Status: pending.
+
+### 2. Material Properties And Inspector Controls
+
+Add per-material or per-object controls for:
+
+- base color factor
+- metallic factor
+- roughness factor
+- emissive factor
+- normal strength later
+
+Why this matters:
+
+Before importing all texture maps, sliders let us validate the math with simple cubes and known values.
+
+Status: pending.
+
+### 3. glTF Metallic-Roughness Import
+
+Read glTF material properties:
+
+- `baseColorFactor`
+- `metallicFactor`
+- `roughnessFactor`
+- `baseColorTexture`
+- `metallicRoughnessTexture`
+
+In glTF, metallic and roughness usually share one texture:
+
+- green channel: roughness
+- blue channel: metallic
+
+Why this matters:
+
+This is the standard Sketchfab/glTF workflow. Without it, imported assets cannot preserve their intended material response.
+
+Status: pending.
+
+### 4. Normal Mapping And Tangents
+
+Add tangent-space normal mapping.
+
+Needed data:
+
+- vertex tangents from glTF when present
+- generated tangents when missing
+- normal map texture
+- tangent-bitangent-normal matrix in shader
+
+Why this matters:
+
+Normal maps carry most of the small surface detail in modern assets: tire tread, fabric weave, panel grooves, screws, vents, bevels, and scratches.
+
+Status: pending.
+
+### 5. Emissive And Ambient Occlusion
+
+Read and use:
+
+- emissive factor
+- emissive texture
+- occlusion texture
+
+Why this matters:
+
+Emissive surfaces will be important for signs, screens, decals, and ZZZ-style accent lighting. Ambient occlusion helps contact areas and creases retain depth before full global illumination exists.
+
+Status: pending.
+
+### 6. Real Directional Shadow Map
+
+Replace planar blob shadows with a basic shadow map.
+
+Required passes:
+
+- render scene depth from directional light view
+- sample shadow map in PBR shader
+- apply depth bias
+- add simple PCF filtering
+
+Why this matters:
+
+Real shadows prove that objects can cast onto other objects, not just the floor. This is the first real engine-style shadow system.
+
+Status: pending.
+
+### 7. HDR Framebuffer And Tonemapping
+
+Render the scene into an HDR color buffer instead of directly to the window.
+
+Add:
+
+- HDR framebuffer
+- exposure control
+- ACES or Reinhard tonemapping
+- gamma correction
+
+Why this matters:
+
+PBR lighting often exceeds `0..1`. HDR lets bright lights, emissive materials, and future bloom behave correctly.
+
+Status: pending.
+
+### 8. Basic Environment Lighting
+
+Start simple, then improve.
+
+First version:
+
+- ambient irradiance color
+- roughness-aware fake reflection term
+
+Later version:
+
+- cubemap sky/environment
+- diffuse irradiance cubemap
+- prefiltered specular cubemap
+- BRDF lookup texture
+
+Why this matters:
+
+Metals and glossy surfaces look wrong without environment reflections. Direct lights alone are not enough for convincing PBR.
+
+Status: pending.
+
+### 9. PBR Debug Views
+
+Add debug views for:
+
+- base color
+- normals
+- roughness
+- metallic
+- occlusion
+- emissive
+- direct lighting
+- shadows
+- final shaded
+
+Why this matters:
+
+Debug views make asset import problems obvious. They also make this project better as a learning/portfolio piece.
+
+Status: pending.
+
+### 10. Stylized PBR Pass
+
+After the basic PBR renderer is stable, add stylization.
+
+Possible techniques:
+
+- quantized diffuse bands
+- colored shadow ramps
+- stylized rim lighting
+- graphic/specular shaping
+- outlines
+- emissive bloom accents
+- color grading
+- halftone or subtle screen texture
+
+Why this matters:
+
+This is where the renderer moves from “standard PBR” toward the final ZZZ-adjacent identity, while still preserving imported material data.
+
+Status: pending.
+
+## Recommended Immediate Next Steps
+
+1. Implement direct-light Cook-Torrance GGX PBR using uniform material values.
+2. Add material sliders to the details panel for metallic and roughness.
+3. Add debug views for roughness and metallic.
+4. Import glTF metallic/roughness factors.
+5. Import glTF metallic-roughness texture.
+6. Add tangent support and normal maps.
+7. Replace planar shadows with a directional shadow map.
+
+The first milestone should be considered complete when the default cubes can clearly demonstrate:
+
+- plastic: metallic `0`, roughness medium/high
+- shiny plastic: metallic `0`, roughness low
+- rough metal: metallic `1`, roughness high
+- polished metal: metallic `1`, roughness low

@@ -52,6 +52,8 @@ cargo run -- "C:\path\to\model.glb"
 
 ## Pipeline Target
 
+For the basic PBR renderer checklist and learning notes, see [PBR_PIPELINE.md](PBR_PIPELINE.md).
+
 1. Import model data from `.glb/.gltf/.obj`.
 2. Normalize scale and origin so arbitrary Sketchfab assets enter the scene at a predictable size.
 3. Extract useful material inputs:
@@ -82,9 +84,9 @@ cargo run -- "C:\path\to\model.glb"
 
 ## Next Engineering Steps
 
-1. Split `src/main.rs` into `renderer`, `assets`, `scene`, and `editor` modules.
-2. Add texture import and OpenGL texture binding for glTF base color, normal, and emissive maps.
-3. Replace cube/bar gizmo primitives with proper arrow, cone, and planar handle meshes.
-4. Add multi-object selection and grouped transform pivots.
-5. Add a post-processing framebuffer for bloom and color grading.
-6. Add a small `.scene.json` format so imported objects and style settings persist.
+1. Implement direct-light Cook-Torrance/GGX PBR using uniform material values.
+2. Add material sliders for metallic and roughness.
+3. Add debug views for roughness and metallic.
+4. Import glTF metallic/roughness factors and textures.
+5. Add tangent support and normal mapping.
+6. Replace planar shadows with a directional shadow map.

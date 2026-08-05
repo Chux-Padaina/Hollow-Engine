@@ -34,6 +34,7 @@ Current debug views:
 - Add light gizmos with editor colors and range indicators.
 - Add per-light intensity, color, range, and enabled state.
 - Add ambient light controls and a simple environment color.
+- Track PBR implementation details in `PBR_PIPELINE.md`.
 
 Current status:
 
@@ -43,6 +44,12 @@ Current status:
 - The active shader is temporarily generic diffuse/specular lighting so light behavior is easy to inspect.
 - The default scene includes warm/cool colored test cubes, a darker flattened gray cube floor, simple planar projected shadows, and a non-scene editor/world grid overlay.
 - Spot light data/cone support is retained for a later pass, but the next checkpoint should validate the simpler one-directional/one-point setup first.
+
+Next PBR checkpoint:
+
+1. Implement direct-light Cook-Torrance/GGX PBR with uniform metallic and roughness values.
+2. Add material sliders and roughness/metallic debug views.
+3. Import glTF metallic/roughness factors and textures.
 
 ## Phase 2: Shadows
 
