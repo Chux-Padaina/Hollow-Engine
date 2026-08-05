@@ -8,8 +8,9 @@ Small native Rust/OpenGL editor prototype for importing meshes and rendering the
 - Drag and drop `.glb`, `.gltf`, or `.obj` files into the window.
 - Basic CPU import path for mesh positions, normals, indices, and base material color.
 - GPU mesh upload with a direct-light Cook-Torrance/GGX PBR shader and a backface-expanded outline pass.
-- Details-panel material controls for selected object groups: metallic and roughness.
-- Default lighting test scene with two ordinary cube objects, one directional light, one point light, simple planar projected shadows, and a non-scene editor/world grid overlay.
+- Scene architecture uses a single actor list. Meshes and lights are actor kinds, so everything in the outliner is a selectable actor.
+- Details-panel material controls for selected mesh actors: metallic and roughness.
+- Default lighting test scene with two cube actors, one directional light actor, one point light actor, and a non-scene editor/world grid overlay.
 - Scene-owned lights affect object shading through the details panel.
 - Viewport outliner/details panels for scene objects, transforms, and lights.
 - Outliner creation/deletion for scene primitives and lights:
@@ -17,6 +18,7 @@ Small native Rust/OpenGL editor prototype for importing meshes and rendering the
   - lights: directional, point, spot
 - Lights use distinct editor icons and can be selected from the outliner or viewport, then moved/rotated with the active gizmo.
 - Toolbar snap toggle for grid-snapped movement on the X/Z plane.
+- The grid is a visual editor guide only; it does not receive shadows, block movement, or constrain objects to `Y >= 0`.
 - Click selection plus active 3D transform gizmos:
   - move lines with cone arrowheads, center free-move, and two-axis plane handles
   - smooth rotate axis rings with angle-based drag
@@ -37,7 +39,7 @@ Small native Rust/OpenGL editor prototype for importing meshes and rendering the
   - `W`: move tool
   - `E`: rotate tool
   - `R`: scale tool
-  - `Delete`: delete selected object group or light
+  - `Delete`: delete selected actor
   - `Snap`: toggle grid snapping while moving
   - `Global`/`Local` toolbar button: toggle transform space
   - `Home`: reset scene

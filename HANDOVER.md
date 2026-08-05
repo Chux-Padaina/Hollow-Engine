@@ -14,15 +14,15 @@ Do not copy proprietary ZZZ models, environments, UI, logos, or exact assets. Th
 - Drag/drop import for `.glb`, `.gltf`, and `.obj`.
 - glTF node transforms are applied so multi-part models stay assembled.
 - glTF base color factors, vertex colors, UVs, and base color textures are preserved.
-- Imported primitives are grouped so dragging moves the whole imported asset.
-- Default editor test scene with two ordinary cube objects, a non-scene editor/world grid overlay, one directional light, and one point light.
+- Scene data uses one actor list, similar to the Unreal editor mental model: every outliner item is an `Actor`, and actor kinds/components currently cover static mesh actors and light actors.
+- Imported glTF/OBJ assets become one mesh actor with multiple mesh parts, so dragging moves the whole imported asset.
+- Default editor test scene with two cube actors, a non-scene editor/world grid overlay, one directional light actor, and one point light actor.
 - The old baked-in floor object has been removed. A floor/plane can now be added as a normal scene object from the outliner.
 - Explicit render passes:
   1. Editor/world grid guide
-  2. Object outlines
-  3. Opaque objects
-  4. Decals/contact shadows
-  5. Gizmos/debug overlays
+  2. Opaque mesh actors
+  3. Object outlines
+  4. Gizmos/debug overlays
 - Generic lighting foundation:
   - scene-owned directional lights with color/intensity
   - scene-owned point lights with position, color, range, intensity
@@ -33,8 +33,7 @@ Do not copy proprietary ZZZ models, environments, UI, logos, or exact assets. Th
   - Schlick Fresnel
   - Lambert diffuse energy split for non-metals
   - per-mesh metallic and roughness factors
-  - details-panel sliders for selected-group metallic and roughness
-  - simple planar projected shadows onto the floor cube
+  - details-panel sliders for selected mesh actor metallic and roughness
   - simple fog and tonemapping
   - inverted-hull outline
 - Debug object views:
@@ -46,7 +45,7 @@ Do not copy proprietary ZZZ models, environments, UI, logos, or exact assets. Th
   - `F6`: metallic
 - Editor UI:
   - `src/editor.rs` owns the toolbar, outliner, details panel, and small egui widgets
-  - outliner with object groups and lights
+  - outliner with one actor list
   - add/delete controls for cube, plane, sphere, directional light, point light, and spot light
   - distinct viewport icons for directional, point, and spot lights
   - viewport and outliner light selection
@@ -76,13 +75,14 @@ Do not copy proprietary ZZZ models, environments, UI, logos, or exact assets. Th
 - Added a Global/Local transform-space toggle; constrained gizmo handles now draw, pick, and move in the selected space, while clicking the selected object body uses the active tool's free transform behavior.
 - Fixed constrained rotation by applying quaternion deltas around the displayed gizmo axis instead of directly editing Euler components; move gizmos now use cone arrowheads.
 - Implemented the first PBR milestone: direct-light Cook-Torrance/GGX shading with per-mesh metallic/roughness factors and glTF metallic/roughness factor import.
-- Added selected-group material sliders for metallic/roughness and debug views for roughness/metallic masks.
+- Added selected mesh actor material sliders for metallic/roughness and debug views for roughness/metallic masks.
 - Split editor UI code into `src/editor.rs`, removed the default floor, and added outliner creation/deletion for primitives and lights.
 - Added light actor icons, light selection/gizmo transforms, grid snap toggle, larger camera-following editor grid, corrected generated sphere triangle winding, and moved outlines after opaque rendering so depth clipping is more reliable.
+- Reworked scene ownership so meshes and lights are both actor kinds in one outliner list, removed the fake contact-shadow pass from the grid, and removed all Y=0 movement locking.
 
 ## Known Limitations
 
-- No shadow maps yet; current shadows are simple planar projected decals for lighting validation.
+- No shadow maps yet; the previous fake planar/contact shadow pass is currently disabled/removed so the editor grid stays purely visual.
 - No HDR framebuffer or real post-processing yet.
 - No bloom despite emissive-looking showroom panels.
 - No area lights.
@@ -91,7 +91,7 @@ Do not copy proprietary ZZZ models, environments, UI, logos, or exact assets. Th
 - Editor panels and clickable transform gizmos exist. Gizmo behavior covers the core Unreal-style center/axis/plane/ring workflow, but scale visuals still use cube/bar primitives rather than proper polished handle meshes.
 - Inverted-hull outlines can still be imperfect on thin/open geometry; screen-space outlines should come later.
 - Scene save/load is not implemented yet, so editor changes are session-only.
-- Grid snapping currently affects X/Z movement only. It does not snap rotation or scale yet.
+- Grid snapping currently affects X/Z movement only. It does not snap rotation or scale yet, and it does not prevent actors from moving below the grid.
 - Light scale gizmo changes local light range; directional light scale is intentionally ignored.
 - Code is only partially split so far. Editor UI is separated; renderer, import, scene, mesh, and shader code still need their own modules.
 

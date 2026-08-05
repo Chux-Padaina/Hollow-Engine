@@ -25,8 +25,6 @@ use winit::window::{Window, WindowAttributes};
 
 const WINDOW_TITLE: &str = "ZZZ Style Engine Prototype - drop .glb/.gltf/.obj, left-drag to move";
 const MAX_POINT_LIGHTS: usize = 8;
-const GROUND_CLEARANCE: f32 = 0.035;
-
 fn main() {
     if let Err(error) = run() {
         eprintln!("{error}");
@@ -301,48 +299,53 @@ impl App {
         gl.clear_color(0.075, 0.085, 0.08, 1.0);
         let renderer = Renderer::new(gl.clone())?;
         let mut scene = Scene::default();
-        scene.next_group_id = 1;
-        scene.lights = default_editor_lights();
-        scene.objects.push(SceneObject {
-            name: "Cube A".to_string(),
-            mesh: MeshGpu::from_cpu(
-                gl.clone(),
-                &MeshCpu::cube_with_material(
-                    "Cube A",
-                    [0.82, 0.66, 0.42, 1.0],
-                    MaterialProperties {
-                        metallic: 0.0,
-                        roughness: 0.72,
-                    },
-                ),
-            )?,
-            group_id: 0,
-            transform: Transform {
-                translation: Vec3::new(-1.2, 0.5 + GROUND_CLEARANCE, 0.0),
+        scene.actors.push(Actor::mesh(
+            "Cube A".to_string(),
+            Transform {
+                translation: Vec3::new(-1.2, 0.5, 0.0),
                 ..Transform::default()
             },
-        });
-        scene.objects.push(SceneObject {
-            name: "Cube B".to_string(),
-            mesh: MeshGpu::from_cpu(
-                gl.clone(),
-                &MeshCpu::cube_with_material(
-                    "Cube B",
-                    [0.42, 0.58, 0.76, 1.0],
-                    MaterialProperties {
-                        metallic: 1.0,
-                        roughness: 0.28,
-                    },
-                ),
-            )?,
-            group_id: 1,
-            transform: Transform {
-                translation: Vec3::new(1.2, 0.5 + GROUND_CLEARANCE, 0.0),
+            vec![MeshPart {
+                name: "Cube A".to_string(),
+                mesh: MeshGpu::from_cpu(
+                    gl.clone(),
+                    &MeshCpu::cube_with_material(
+                        "Cube A",
+                        [0.82, 0.66, 0.42, 1.0],
+                        MaterialProperties {
+                            metallic: 0.0,
+                            roughness: 0.72,
+                        },
+                    ),
+                )?,
+            }],
+        ));
+        scene.actors.push(Actor::mesh(
+            "Cube B".to_string(),
+            Transform {
+                translation: Vec3::new(1.2, 0.5, 0.0),
                 scale: Vec3::splat(0.8),
                 ..Transform::default()
             },
-        });
-        scene.next_group_id = 2;
+            vec![MeshPart {
+                name: "Cube B".to_string(),
+                mesh: MeshGpu::from_cpu(
+                    gl.clone(),
+                    &MeshCpu::cube_with_material(
+                        "Cube B",
+                        [0.42, 0.58, 0.76, 1.0],
+                        MaterialProperties {
+                            metallic: 1.0,
+                            roughness: 0.28,
+                        },
+                    ),
+                )?,
+            }],
+        ));
+        for actor in default_editor_actors() {
+            scene.actors.push(actor);
+        }
+        scene.selected_actor = Some(0);
         Ok(Self {
             gl,
             renderer,
@@ -381,32 +384,31 @@ impl App {
     fn import_model(&mut self, path: PathBuf) {
         match ImportedModel::load(&path) {
             Ok(model) => {
-                let mut imported = 0;
-                let group_id = self.scene.next_group_id;
-                self.scene.next_group_id += 1;
+                let actor_name = self.scene.unique_actor_name(
+                    path.file_stem()
+                        .and_then(|name| name.to_str())
+                        .unwrap_or("Imported Model"),
+                );
+                let mut parts = Vec::new();
                 for mesh in model.meshes {
                     match unsafe { MeshGpu::from_cpu(self.gl.clone(), &mesh) } {
                         Ok(gpu_mesh) => {
-                            self.scene.objects.push(SceneObject {
+                            parts.push(MeshPart {
                                 name: mesh.name,
                                 mesh: gpu_mesh,
-                                group_id,
-                                transform: Transform {
-                                    translation: Vec3::new(0.0, GROUND_CLEARANCE, 0.0),
-                                    rotation: Vec3::ZERO,
-                                    scale: Vec3::ONE,
-                                },
                             });
-                            imported += 1;
                         }
                         Err(error) => self.status = format!("GPU upload failed: {error}"),
                     }
                 }
+                let imported = parts.len();
                 if imported > 0 {
-                    self.scene.selected = self.scene.objects.len().saturating_sub(1);
-                    self.scene.selected_group = group_id;
-                    self.scene.selected_light = None;
-                    self.status = format!("Imported {imported} mesh(es) from {}", path.display());
+                    self.scene
+                        .actors
+                        .push(Actor::mesh(actor_name, Transform::default(), parts));
+                    self.scene.select_actor(self.scene.actors.len() - 1);
+                    self.status =
+                        format!("Imported {imported} mesh part(s) from {}", path.display());
                 }
             }
             Err(error) => self.status = format!("Import failed: {error}"),
@@ -414,9 +416,7 @@ impl App {
     }
 
     fn add_primitive(&mut self, kind: PrimitiveKind) {
-        let group_id = self.scene.next_group_id;
-        self.scene.next_group_id += 1;
-        let name = self.scene.unique_object_name(kind.name());
+        let name = self.scene.unique_actor_name(kind.name());
         let mesh = match kind {
             PrimitiveKind::Cube => MeshCpu::cube_with_color(&name, [0.78, 0.72, 0.56, 1.0]),
             PrimitiveKind::Plane => MeshCpu::plane_with_color(&name, [0.46, 0.48, 0.46, 1.0]),
@@ -429,13 +429,15 @@ impl App {
                     scale: kind.default_scale(),
                     ..Transform::default()
                 };
-                self.scene.objects.push(SceneObject {
-                    name,
-                    mesh: gpu_mesh,
-                    group_id,
+                self.scene.actors.push(Actor::mesh(
+                    name.clone(),
                     transform,
-                });
-                self.scene.select_group(group_id);
+                    vec![MeshPart {
+                        name: name.clone(),
+                        mesh: gpu_mesh,
+                    }],
+                ));
+                self.scene.select_actor(self.scene.actors.len() - 1);
                 self.status = format!("Added {}", kind.name());
             }
             Err(error) => self.status = format!("Primitive creation failed: {error}"),
@@ -443,8 +445,8 @@ impl App {
     }
 
     fn add_light(&mut self, kind: LightKind) {
+        let name = self.scene.unique_actor_name(kind.name());
         let mut light = Light::new(
-            &self.scene.unique_light_name(kind.name()),
             kind,
             match kind {
                 LightKind::Directional => Vec3::new(1.0, 0.98, 0.9),
@@ -457,63 +459,50 @@ impl App {
                 LightKind::Spot => 1.7,
             },
         );
+        let mut transform = Transform::default();
         match kind {
             LightKind::Directional => {
-                light.direction = Vec3::new(-0.35, -0.82, -0.46).normalize();
-                light.position = Vec3::new(0.0, 3.0, 0.0);
+                transform.translation = Vec3::new(0.0, 3.0, 0.0);
+                transform.set_rotation_quat(Quat::from_rotation_arc(
+                    Vec3::NEG_Y,
+                    Vec3::new(-0.35, -0.82, -0.46).normalize(),
+                ));
             }
             LightKind::Point => {
-                light.position = Vec3::new(2.0, 2.2, 1.5);
+                transform.translation = Vec3::new(2.0, 2.2, 1.5);
                 light.range = 8.0;
             }
             LightKind::Spot => {
-                light.position = Vec3::new(-2.0, 3.0, 1.0);
-                light.direction = Vec3::new(0.45, -0.88, -0.18).normalize();
+                transform.translation = Vec3::new(-2.0, 3.0, 1.0);
+                transform.set_rotation_quat(Quat::from_rotation_arc(
+                    Vec3::NEG_Y,
+                    Vec3::new(0.45, -0.88, -0.18).normalize(),
+                ));
                 light.range = 9.0;
                 light.spot_angle_radians = 32.0_f32.to_radians();
             }
         }
-        self.scene.lights.push(light);
-        self.scene.select_light(self.scene.lights.len() - 1);
+        self.scene
+            .actors
+            .push(Actor::light_actor(name, transform, light));
+        self.scene.select_actor(self.scene.actors.len() - 1);
         self.status = format!("Added {} light", kind.name());
     }
 
     fn delete_selection(&mut self) {
-        if let Some(light_index) = self.scene.selected_light {
-            if light_index < self.scene.lights.len() {
-                let name = self.scene.lights[light_index].name.clone();
-                self.scene.lights.remove(light_index);
-                self.scene.selected_light = None;
-                if !self.scene.lights.is_empty() {
-                    self.scene
-                        .select_light(light_index.min(self.scene.lights.len() - 1));
-                }
-                self.status = format!("Deleted light {name}");
-            }
+        let Some(actor_index) = self.scene.selected_actor else {
+            return;
+        };
+        if actor_index >= self.scene.actors.len() {
             return;
         }
-
-        let group_id = self.scene.selected_group;
-        let deleted_name = self
-            .scene
-            .objects
-            .iter()
-            .find(|object| object.group_id == group_id)
-            .map(|object| object.name.clone())
-            .unwrap_or_else(|| "object".to_string());
-        let before = self.scene.objects.len();
-        self.scene
-            .objects
-            .retain(|object| object.group_id != group_id);
-        if self.scene.objects.len() == before {
-            return;
-        }
-        if let Some(object) = self.scene.objects.first() {
-            self.scene.select_group(object.group_id);
+        let deleted_name = self.scene.actors[actor_index].name.clone();
+        self.scene.actors.remove(actor_index);
+        if self.scene.actors.is_empty() {
+            self.scene.selected_actor = None;
         } else {
-            self.scene.selected = 0;
-            self.scene.selected_group = 0;
-            self.scene.selected_light = None;
+            self.scene
+                .select_actor(actor_index.min(self.scene.actors.len() - 1));
         }
         self.active_gizmo = None;
         self.hovered_gizmo = None;
@@ -576,16 +565,12 @@ impl App {
                 if matches!(self.editor_tool, EditorTool::Select) {
                     self.editor_tool = EditorTool::Move;
                 }
-            } else if let Some(group_id) = self.pick_object(ray) {
-                self.scene.select_group(group_id);
-                self.drag_start_transform = self
-                    .scene
-                    .selected_group()
-                    .first()
-                    .map(|object| object.transform);
+            } else if let Some(actor_index) = self.pick_object(ray) {
+                self.scene.select_actor(actor_index);
+                self.drag_start_transform = self.selected_transform();
                 self.active_gizmo = Some(GizmoHandle::Center);
             } else if let Some(light_index) = self.pick_light(ray) {
-                self.scene.select_light(light_index);
+                self.scene.select_actor(light_index);
                 self.drag_start_transform = self.selected_transform();
                 self.active_gizmo = Some(GizmoHandle::Center);
             } else {
@@ -645,12 +630,6 @@ impl App {
                     );
                     transform.translation = start_transform.translation + axis_vec * amount;
                     transform.translation = self.snap_translation(transform.translation);
-                    if self.scene.selected_light.is_none()
-                        && matches!(self.transform_space, TransformSpace::Global)
-                        && axis == Axis::Y
-                    {
-                        transform.translation.y = transform.translation.y.max(GROUND_CLEARANCE);
-                    }
                 }
                 GizmoHandle::Plane(plane) => {
                     let (a, b) = self.gizmo_plane_axes(plane, start_transform);
@@ -729,24 +708,12 @@ impl App {
     }
 
     fn selected_transform(&self) -> Option<Transform> {
-        if let Some(light_index) = self.scene.selected_light {
-            return self.scene.lights.get(light_index).map(Light::transform);
-        }
-        self.scene
-            .selected_group()
-            .first()
-            .map(|object| object.transform)
+        self.scene.selected_transform()
     }
 
     fn apply_selected_transform(&mut self, transform: Transform) {
-        if let Some(light_index) = self.scene.selected_light {
-            if let Some(light) = self.scene.lights.get_mut(light_index) {
-                light.apply_transform(transform);
-            }
-            return;
-        }
-        for object in self.scene.selected_group_mut() {
-            object.transform = transform;
+        if let Some(actor) = self.scene.selected_actor_mut() {
+            actor.apply_gizmo_transform(transform);
         }
     }
 
@@ -771,19 +738,17 @@ impl App {
     }
 
     fn reset_scene(&mut self) {
-        self.scene.selected = 0;
-        self.scene.selected_group = 0;
-        self.scene.selected_light = None;
-        for (index, object) in self.scene.objects.iter_mut().enumerate() {
-            object.transform.translation = if object.group_id == 0 {
-                Vec3::new(-1.2, 0.5 + GROUND_CLEARANCE, 0.0)
-            } else if object.group_id == 1 {
-                Vec3::new(1.2, 0.5 + GROUND_CLEARANCE, 0.0)
+        for (index, actor) in self.scene.actors.iter_mut().enumerate() {
+            actor.transform.translation = if index == 0 {
+                Vec3::new(-1.2, 0.5, 0.0)
+            } else if index == 1 {
+                Vec3::new(1.2, 0.5, 0.0)
             } else {
-                Vec3::new(index as f32 * 0.02, GROUND_CLEARANCE, 0.0)
+                Vec3::new(index as f32 * 0.02, 0.0, 0.0)
             };
-            object.transform.rotation = Vec3::ZERO;
+            actor.transform.rotation = Vec3::ZERO;
         }
+        self.scene.selected_actor = (!self.scene.actors.is_empty()).then_some(0);
         self.status = "Scene reset".to_string();
     }
 
@@ -884,32 +849,31 @@ impl App {
         }
     }
 
-    fn pick_object(&self, ray: Ray) -> Option<u32> {
+    fn pick_object(&self, ray: Ray) -> Option<usize> {
         self.scene
-            .objects
+            .actors
             .iter()
-            .filter_map(|object| {
-                let scale = object.transform.scale.max_element().max(0.001);
-                let radius = object.mesh.bounds_radius * scale;
-                ray.intersect_sphere(object.transform.translation, radius)
-                    .map(|distance| (distance, object.group_id))
+            .enumerate()
+            .filter(|(_, actor)| matches!(actor.kind, ActorKind::Mesh { .. }))
+            .filter_map(|(index, actor)| {
+                let scale = actor.transform.scale.max_element().max(0.001);
+                let radius = actor.bounds_radius() * scale;
+                ray.intersect_sphere(actor.transform.translation, radius)
+                    .map(|distance| (distance, index))
             })
             .min_by(|a, b| a.0.total_cmp(&b.0))
-            .map(|(_, group_id)| group_id)
+            .map(|(_, index)| index)
     }
 
     fn pick_light(&self, ray: Ray) -> Option<usize> {
         self.scene
-            .lights
+            .actors
             .iter()
             .enumerate()
+            .filter(|(_, actor)| matches!(actor.kind, ActorKind::Light(_)))
             .filter_map(|(index, light)| {
-                let radius = match light.kind {
-                    LightKind::Directional => 0.42,
-                    LightKind::Point => 0.34,
-                    LightKind::Spot => 0.38,
-                };
-                ray.intersect_sphere(light.position, radius)
+                let radius = light.bounds_radius();
+                ray.intersect_sphere(light.transform.translation, radius)
                     .map(|distance| (distance, index))
             })
             .min_by(|a, b| a.0.total_cmp(&b.0))
@@ -965,26 +929,18 @@ impl App {
     }
 
     fn update_title(&self, window: &Window) {
-        let selected_name = if let Some(light_index) = self.scene.selected_light {
-            self.scene
-                .lights
-                .get(light_index)
-                .map(|light| light.name.as_str())
-                .unwrap_or("none")
-        } else {
-            self.scene
-                .objects
-                .get(self.scene.selected)
-                .map(|object| object.name.as_str())
-                .unwrap_or("none")
-        };
+        let selected_name = self
+            .scene
+            .selected_actor()
+            .map(|actor| actor.name.as_str())
+            .unwrap_or("none");
         window.set_title(&format!(
-            "{WINDOW_TITLE} | style: {} | view: {} | selected: {} | objects: {} | lights: {} | key: {} | {}",
+            "{WINDOW_TITLE} | style: {} | view: {} | selected: {} | actors: {} | lights: {} | key: {} | {}",
             self.style.name(),
             self.debug_view.name(),
             selected_name,
-            self.scene.objects.len(),
-            self.scene.lights.len(),
+            self.scene.actors.len(),
+            self.scene.light_count(),
             self.scene.key_light_name(),
             self.status
         ));
@@ -1023,7 +979,6 @@ impl App {
 #[derive(Clone, Copy)]
 enum RenderPass {
     Environment,
-    Decals,
     Opaque,
     Outlines,
     Gizmos,
@@ -1252,12 +1207,6 @@ impl RenderPass {
                 blend: true,
                 cull_face: None,
             },
-            Self::Decals => RenderState {
-                depth_test: true,
-                depth_write: false,
-                blend: true,
-                cull_face: None,
-            },
             Self::Opaque => RenderState {
                 depth_test: true,
                 depth_write: true,
@@ -1409,10 +1358,7 @@ impl LightKind {
 }
 
 struct Light {
-    name: String,
     kind: LightKind,
-    position: Vec3,
-    direction: Vec3,
     color: Vec3,
     intensity: f32,
     range: f32,
@@ -1422,70 +1368,13 @@ struct Light {
 }
 
 impl Light {
-    fn new(name: &str, kind: LightKind, color: Vec3, intensity: f32) -> Self {
+    fn new(kind: LightKind, color: Vec3, intensity: f32) -> Self {
         Self {
-            name: name.to_string(),
             kind,
-            position: Vec3::ZERO,
-            direction: Vec3::NEG_Y,
             color,
             intensity,
             range: 1.0,
             spot_angle_radians: 0.0,
-            enabled: true,
-            pulse: 0.0,
-        }
-    }
-
-    fn directional(name: &str, direction: Vec3, color: Vec3, intensity: f32) -> Self {
-        Self {
-            name: name.to_string(),
-            kind: LightKind::Directional,
-            position: -direction.normalize_or_zero() * 3.0,
-            direction: direction.normalize_or_zero(),
-            color,
-            intensity,
-            range: 1.0,
-            spot_angle_radians: 0.0,
-            enabled: true,
-            pulse: 0.0,
-        }
-    }
-
-    fn point(name: &str, position: Vec3, color: Vec3, range: f32, intensity: f32) -> Self {
-        Self {
-            name: name.to_string(),
-            kind: LightKind::Point,
-            position,
-            direction: Vec3::NEG_Y,
-            color,
-            intensity,
-            range,
-            spot_angle_radians: 0.0,
-            enabled: true,
-            pulse: 0.0,
-        }
-    }
-
-    #[allow(dead_code)]
-    fn spot(
-        name: &str,
-        position: Vec3,
-        direction: Vec3,
-        color: Vec3,
-        range: f32,
-        intensity: f32,
-        spot_angle_radians: f32,
-    ) -> Self {
-        Self {
-            name: name.to_string(),
-            kind: LightKind::Spot,
-            position,
-            direction: direction.normalize_or_zero(),
-            color,
-            intensity,
-            range,
-            spot_angle_radians,
             enabled: true,
             pulse: 0.0,
         }
@@ -1500,44 +1389,32 @@ impl Light {
     fn animated_intensity(&self, time: f32) -> f32 {
         self.intensity * (1.0 + self.pulse * time.sin())
     }
-
-    fn transform(&self) -> Transform {
-        let direction = self.direction.normalize_or(Vec3::NEG_Y);
-        let rotation = Quat::from_rotation_arc(Vec3::NEG_Y, direction);
-        let mut transform = Transform {
-            translation: self.position,
-            scale: Vec3::splat((self.range / 5.0).clamp(0.12, 4.0)),
-            ..Transform::default()
-        };
-        transform.set_rotation_quat(rotation);
-        transform
-    }
-
-    fn apply_transform(&mut self, transform: Transform) {
-        self.position = transform.translation;
-        if matches!(self.kind, LightKind::Directional | LightKind::Spot) {
-            self.direction = (transform.rotation_quat() * Vec3::NEG_Y).normalize_or(Vec3::NEG_Y);
-        }
-        if !matches!(self.kind, LightKind::Directional) {
-            self.range = (transform.scale.max_element() * 5.0).clamp(0.1, 80.0);
-        }
-    }
 }
 
-fn default_editor_lights() -> Vec<Light> {
+fn default_editor_actors() -> Vec<Actor> {
+    let mut key_transform = Transform {
+        translation: Vec3::new(1.35, 2.7, 1.05),
+        ..Transform::default()
+    };
+    key_transform.set_rotation_quat(Quat::from_rotation_arc(
+        Vec3::NEG_Y,
+        Vec3::new(-0.45, -0.9, -0.35).normalize(),
+    ));
+    let mut point = Light::new(LightKind::Point, Vec3::new(1.0, 0.74, 0.42), 1.35);
+    point.range = 5.0;
     vec![
-        Light::directional(
-            "Key Directional",
-            Vec3::new(-0.45, -0.9, -0.35),
-            Vec3::new(1.0, 1.0, 0.96),
-            1.15,
+        Actor::light_actor(
+            "Key Directional".to_string(),
+            key_transform,
+            Light::new(LightKind::Directional, Vec3::new(1.0, 1.0, 0.96), 1.15),
         ),
-        Light::point(
-            "Test Point",
-            Vec3::new(0.0, 2.4, 2.2),
-            Vec3::new(1.0, 0.74, 0.42),
-            5.0,
-            1.35,
+        Actor::light_actor(
+            "Test Point".to_string(),
+            Transform {
+                translation: Vec3::new(0.0, 2.4, 2.2),
+                ..Transform::default()
+            },
+            point,
         ),
     ]
 }
@@ -1653,28 +1530,34 @@ impl Transform {
 
 #[derive(Default)]
 struct Scene {
-    objects: Vec<SceneObject>,
-    lights: Vec<Light>,
-    selected: usize,
-    selected_group: u32,
-    selected_light: Option<usize>,
-    next_group_id: u32,
+    actors: Vec<Actor>,
+    selected_actor: Option<usize>,
 }
 
-struct SceneObject {
+struct Actor {
+    name: String,
+    transform: Transform,
+    kind: ActorKind,
+}
+
+enum ActorKind {
+    Mesh { parts: Vec<MeshPart> },
+    Light(Light),
+}
+
+struct MeshPart {
     name: String,
     mesh: MeshGpu,
-    group_id: u32,
-    transform: Transform,
 }
 
 impl Scene {
     fn primary_directional_light(&self) -> GpuDirectionalLight {
-        self.lights
+        self.actors
             .iter()
-            .find(|light| light.enabled && matches!(light.kind, LightKind::Directional))
-            .map(|light| GpuDirectionalLight {
-                direction: light.direction.normalize_or_zero(),
+            .filter_map(Actor::light)
+            .find(|(_, light)| light.enabled && matches!(light.kind, LightKind::Directional))
+            .map(|(actor, light)| GpuDirectionalLight {
+                direction: actor.light_direction(),
                 color: light.color,
                 intensity: light.intensity,
             })
@@ -1684,7 +1567,10 @@ impl Scene {
     fn local_light_packet(&self, time: f32) -> [GpuLocalLight; MAX_POINT_LIGHTS] {
         let mut packet = [GpuLocalLight::default(); MAX_POINT_LIGHTS];
         let mut count = 0;
-        for light in &self.lights {
+        for actor in &self.actors {
+            let Some(light) = actor.light_component() else {
+                continue;
+            };
             if !light.enabled || matches!(light.kind, LightKind::Directional) {
                 continue;
             }
@@ -1699,9 +1585,9 @@ impl Scene {
                 (-2.0, -2.0)
             };
             packet[count] = GpuLocalLight {
-                position: light.position,
+                position: actor.transform.translation,
                 color: light.color,
-                direction: light.direction.normalize_or_zero(),
+                direction: actor.light_direction(),
                 range: light.range,
                 intensity: light.animated_intensity(time),
                 inner_cos,
@@ -1713,66 +1599,55 @@ impl Scene {
     }
 
     fn local_light_count(&self) -> i32 {
-        self.lights
+        self.actors
             .iter()
+            .filter_map(Actor::light_component)
             .filter(|light| light.enabled && !matches!(light.kind, LightKind::Directional))
             .take(MAX_POINT_LIGHTS)
             .count() as i32
     }
 
+    fn light_count(&self) -> usize {
+        self.actors
+            .iter()
+            .filter(|actor| matches!(actor.kind, ActorKind::Light(_)))
+            .count()
+    }
+
     fn selected_transform(&self) -> Option<Transform> {
-        if let Some(light_index) = self.selected_light {
-            return self.lights.get(light_index).map(Light::transform);
-        }
-        self.selected_group().first().map(|object| object.transform)
+        self.selected_actor()
+            .map(|actor| actor.transform_for_gizmo())
     }
 
     fn key_light_name(&self) -> &str {
-        self.lights
+        self.actors
             .iter()
-            .find(|light| light.enabled && matches!(light.kind, LightKind::Directional))
-            .map(|light| light.name.as_str())
+            .find(|actor| {
+                actor.light_component().is_some_and(|light| {
+                    light.enabled && matches!(light.kind, LightKind::Directional)
+                })
+            })
+            .map(|actor| actor.name.as_str())
             .unwrap_or("none")
     }
 
-    fn selected_group(&self) -> Vec<&SceneObject> {
-        self.objects
-            .iter()
-            .filter(|object| object.group_id == self.selected_group)
-            .collect()
+    fn selected_actor(&self) -> Option<&Actor> {
+        self.selected_actor.and_then(|index| self.actors.get(index))
     }
 
-    fn selected_group_mut(&mut self) -> impl Iterator<Item = &mut SceneObject> {
-        let selected_group = self.selected_group;
-        self.objects
-            .iter_mut()
-            .filter(move |object| object.group_id == selected_group)
+    fn selected_actor_mut(&mut self) -> Option<&mut Actor> {
+        self.selected_actor
+            .and_then(|index| self.actors.get_mut(index))
     }
 
-    fn select_group(&mut self, group_id: u32) {
-        self.selected_group = group_id;
-        self.selected_light = None;
-        if let Some(index) = self
-            .objects
-            .iter()
-            .position(|object| object.group_id == group_id)
-        {
-            self.selected = index;
+    fn select_actor(&mut self, index: usize) {
+        if index < self.actors.len() {
+            self.selected_actor = Some(index);
         }
     }
 
-    fn select_light(&mut self, index: usize) {
-        if index < self.lights.len() {
-            self.selected_light = Some(index);
-        }
-    }
-
-    fn unique_object_name(&self, base: &str) -> String {
-        self.unique_name(base, self.objects.iter().map(|object| object.name.as_str()))
-    }
-
-    fn unique_light_name(&self, base: &str) -> String {
-        self.unique_name(base, self.lights.iter().map(|light| light.name.as_str()))
+    fn unique_actor_name(&self, base: &str) -> String {
+        self.unique_name(base, self.actors.iter().map(|actor| actor.name.as_str()))
     }
 
     fn unique_name<'a>(&self, base: &str, existing: impl Iterator<Item = &'a str>) -> String {
@@ -1787,6 +1662,93 @@ impl Scene {
             }
         }
         unreachable!()
+    }
+}
+
+impl Actor {
+    fn mesh(name: String, transform: Transform, parts: Vec<MeshPart>) -> Self {
+        Self {
+            name,
+            transform,
+            kind: ActorKind::Mesh { parts },
+        }
+    }
+
+    fn light_actor(name: String, transform: Transform, light: Light) -> Self {
+        Self {
+            name,
+            transform,
+            kind: ActorKind::Light(light),
+        }
+    }
+
+    fn kind_name(&self) -> &'static str {
+        match &self.kind {
+            ActorKind::Mesh { .. } => "Static Mesh",
+            ActorKind::Light(light) => light.kind.name(),
+        }
+    }
+
+    fn light(&self) -> Option<(&Actor, &Light)> {
+        self.light_component().map(|light| (self, light))
+    }
+
+    fn light_component(&self) -> Option<&Light> {
+        match &self.kind {
+            ActorKind::Light(light) => Some(light),
+            ActorKind::Mesh { .. } => None,
+        }
+    }
+
+    fn mesh_parts(&self) -> Option<&[MeshPart]> {
+        match &self.kind {
+            ActorKind::Mesh { parts } => Some(parts),
+            ActorKind::Light(_) => None,
+        }
+    }
+
+    fn transform_for_gizmo(&self) -> Transform {
+        match &self.kind {
+            ActorKind::Light(light) => {
+                let mut transform = self.transform;
+                transform.scale = Vec3::splat((light.range / 5.0).clamp(0.12, 4.0));
+                transform
+            }
+            ActorKind::Mesh { .. } => self.transform,
+        }
+    }
+
+    fn apply_gizmo_transform(&mut self, transform: Transform) {
+        self.transform.translation = transform.translation;
+        self.transform.rotation = transform.rotation;
+        match &mut self.kind {
+            ActorKind::Light(light) => {
+                if !matches!(light.kind, LightKind::Directional) {
+                    light.range = (transform.scale.max_element() * 5.0).clamp(0.1, 80.0);
+                }
+            }
+            ActorKind::Mesh { .. } => {
+                self.transform.scale = transform.scale;
+            }
+        }
+    }
+
+    fn light_direction(&self) -> Vec3 {
+        (self.transform.rotation_quat() * Vec3::NEG_Y).normalize_or(Vec3::NEG_Y)
+    }
+
+    fn bounds_radius(&self) -> f32 {
+        match &self.kind {
+            ActorKind::Mesh { parts } => parts
+                .iter()
+                .map(|part| part.mesh.bounds_radius)
+                .fold(0.0, f32::max),
+            ActorKind::Light(light) => match light.kind {
+                LightKind::Directional => 0.42,
+                LightKind::Point => 0.34,
+                LightKind::Spot => 0.38,
+            },
+        }
     }
 }
 
@@ -1808,7 +1770,7 @@ impl PrimitiveKind {
 
     fn default_height(self) -> f32 {
         match self {
-            Self::Cube | Self::Sphere => 0.5 + GROUND_CLEARANCE,
+            Self::Cube | Self::Sphere => 0.5,
             Self::Plane => 0.01,
         }
     }
@@ -2356,12 +2318,10 @@ struct Renderer {
     outline_program: glow::NativeProgram,
     editor_grid_program: glow::NativeProgram,
     unlit_program: glow::NativeProgram,
-    contact_shadow_program: glow::NativeProgram,
     editor_grid: MeshGpu,
     light_gizmo: MeshGpu,
     arrow_gizmo: MeshGpu,
     rotation_gizmo: MeshGpu,
-    contact_shadow: MeshGpu,
 }
 
 impl Renderer {
@@ -2370,25 +2330,20 @@ impl Renderer {
         let outline_program = compile_program(&gl, OUTLINE_VERTEX, OUTLINE_FRAGMENT)?;
         let editor_grid_program = compile_program(&gl, EDITOR_GRID_VERTEX, EDITOR_GRID_FRAGMENT)?;
         let unlit_program = compile_program(&gl, UNLIT_VERTEX, UNLIT_FRAGMENT)?;
-        let contact_shadow_program =
-            compile_program(&gl, CONTACT_SHADOW_VERTEX, CONTACT_SHADOW_FRAGMENT)?;
         let editor_grid = MeshGpu::from_cpu(gl.clone(), &editor_grid_mesh())?;
         let light_gizmo = MeshGpu::from_cpu(gl.clone(), &MeshCpu::cube())?;
         let arrow_gizmo = MeshGpu::from_cpu(gl.clone(), &arrow_gizmo_mesh())?;
         let rotation_gizmo = MeshGpu::from_cpu(gl.clone(), &rotation_gizmo_mesh())?;
-        let contact_shadow = MeshGpu::from_cpu(gl.clone(), &contact_shadow_mesh())?;
         Ok(Self {
             gl,
             object_program,
             outline_program,
             editor_grid_program,
             unlit_program,
-            contact_shadow_program,
             editor_grid,
             light_gizmo,
             arrow_gizmo,
             rotation_gizmo,
-            contact_shadow,
         })
     }
 
@@ -2397,26 +2352,13 @@ impl Renderer {
         self.draw_editor_grid(frame);
 
         self.begin_pass(RenderPass::Opaque);
-        for object in &scene.objects {
-            self.draw_object_surface(
-                object,
-                scene.selected_light.is_none() && object.group_id == scene.selected_group,
-                frame,
-            );
+        for (index, actor) in scene.actors.iter().enumerate() {
+            self.draw_actor_surface(actor, scene.selected_actor == Some(index), frame);
         }
 
         self.begin_pass(RenderPass::Outlines);
-        for object in &scene.objects {
-            self.draw_object_outline(
-                object,
-                scene.selected_light.is_none() && object.group_id == scene.selected_group,
-                frame,
-            );
-        }
-
-        self.begin_pass(RenderPass::Decals);
-        for object in &scene.objects {
-            self.draw_contact_shadow(object, frame);
+        for (index, actor) in scene.actors.iter().enumerate() {
+            self.draw_actor_outline(actor, scene.selected_actor == Some(index), frame);
         }
 
         self.begin_pass(RenderPass::Gizmos);
@@ -2502,13 +2444,15 @@ impl Renderer {
             "u_projection",
             frame.projection,
         );
-        for (index, light) in scene.lights.iter().enumerate() {
-            self.draw_light_icon(light, scene.selected_light == Some(index));
+        for (index, actor) in scene.actors.iter().enumerate() {
+            if let Some(light) = actor.light_component() {
+                self.draw_light_icon(actor, light, scene.selected_actor == Some(index));
+            }
         }
         self.gl.bind_vertex_array(None);
     }
 
-    unsafe fn draw_light_icon(&self, light: &Light, selected: bool) {
+    unsafe fn draw_light_icon(&self, actor: &Actor, light: &Light, selected: bool) {
         let base_color = if selected {
             Vec3::new(1.0, 0.92, 0.18)
         } else {
@@ -2520,43 +2464,43 @@ impl Renderer {
                 self.gl
                     .bind_vertex_array(Some(self.light_gizmo.vertex_array));
                 self.draw_gizmo_box(
-                    light.position,
+                    actor.transform.translation,
                     Mat4::IDENTITY,
                     Vec3::splat(0.16 * highlight),
                     base_color,
                 );
                 self.draw_gizmo_box(
-                    light.position,
+                    actor.transform.translation,
                     Mat4::IDENTITY,
                     Vec3::new(0.5, 0.045, 0.045) * highlight,
                     base_color,
                 );
                 self.draw_gizmo_box(
-                    light.position,
+                    actor.transform.translation,
                     Mat4::IDENTITY,
                     Vec3::new(0.045, 0.5, 0.045) * highlight,
                     base_color,
                 );
                 self.draw_gizmo_box(
-                    light.position,
+                    actor.transform.translation,
                     Mat4::IDENTITY,
                     Vec3::new(0.045, 0.045, 0.5) * highlight,
                     base_color,
                 );
             }
             LightKind::Directional => {
-                let direction = light.direction.normalize_or(Vec3::NEG_Y);
+                let direction = actor.light_direction();
                 let rotation = Quat::from_rotation_arc(Vec3::Y, direction);
                 let basis = Mat4::from_quat(rotation);
                 self.gl
                     .bind_vertex_array(Some(self.light_gizmo.vertex_array));
                 self.draw_gizmo_box(
-                    light.position - direction * 0.24,
+                    actor.transform.translation - direction * 0.24,
                     basis,
                     Vec3::new(0.055, 0.48, 0.055) * highlight,
                     base_color,
                 );
-                let model = Mat4::from_translation(light.position + direction * 0.18)
+                let model = Mat4::from_translation(actor.transform.translation + direction * 0.18)
                     * basis
                     * Mat4::from_scale(Vec3::splat(0.22 * highlight));
                 set_mat4(&self.gl, self.unlit_program, "u_model", model);
@@ -2571,9 +2515,9 @@ impl Renderer {
                 );
             }
             LightKind::Spot => {
-                let direction = light.direction.normalize_or(Vec3::NEG_Y);
+                let direction = actor.light_direction();
                 let rotation = Quat::from_rotation_arc(Vec3::Y, direction);
-                let model = Mat4::from_translation(light.position)
+                let model = Mat4::from_translation(actor.transform.translation)
                     * Mat4::from_quat(rotation)
                     * Mat4::from_scale(Vec3::splat(0.34 * highlight));
                 set_mat4(&self.gl, self.unlit_program, "u_model", model);
@@ -2589,7 +2533,7 @@ impl Renderer {
                 self.gl
                     .bind_vertex_array(Some(self.light_gizmo.vertex_array));
                 self.draw_gizmo_box(
-                    light.position - direction * 0.16,
+                    actor.transform.translation - direction * 0.16,
                     Mat4::from_quat(rotation),
                     Vec3::splat(0.11 * highlight),
                     base_color,
@@ -2866,49 +2810,11 @@ impl Renderer {
         );
     }
 
-    unsafe fn draw_contact_shadow(&self, object: &SceneObject, frame: &FrameData) {
-        let radius = object.mesh.bounds_radius.clamp(0.35, 2.4);
-        let light_ray = frame.directional_light.direction.normalize_or_zero();
-        let object_height = object.transform.translation.y.max(0.12);
-        let ray_y = light_ray.y.min(-0.08);
-        let projected =
-            object.transform.translation + light_ray * ((0.012 - object_height) / ray_y);
-        let horizontal = Vec2::new(light_ray.x, light_ray.z);
-        let stretch = 1.0 + horizontal.length() * 1.4;
-        let yaw = horizontal.y.atan2(horizontal.x);
-        let position = Vec3::new(projected.x, 0.012, projected.z);
-        let model = Mat4::from_translation(position)
-            * Mat4::from_rotation_y(-yaw)
-            * Mat4::from_scale(Vec3::new(radius * 0.88 * stretch, 1.0, radius * 0.54));
-
-        self.gl.use_program(Some(self.contact_shadow_program));
-        set_mat4(&self.gl, self.contact_shadow_program, "u_model", model);
-        set_mat4(&self.gl, self.contact_shadow_program, "u_view", frame.view);
-        set_mat4(
-            &self.gl,
-            self.contact_shadow_program,
-            "u_projection",
-            frame.projection,
-        );
-        set_f32(
-            &self.gl,
-            self.contact_shadow_program,
-            "u_strength",
-            (0.34 * frame.directional_light.intensity / radius.sqrt()).clamp(0.1, 0.42),
-        );
-        self.gl
-            .bind_vertex_array(Some(self.contact_shadow.vertex_array));
-        self.gl.draw_elements(
-            glow::TRIANGLES,
-            self.contact_shadow.index_count,
-            glow::UNSIGNED_INT,
-            0,
-        );
-        self.gl.bind_vertex_array(None);
-    }
-
-    unsafe fn draw_object_outline(&self, object: &SceneObject, selected: bool, frame: &FrameData) {
-        let model = object.transform.matrix();
+    unsafe fn draw_actor_outline(&self, actor: &Actor, selected: bool, frame: &FrameData) {
+        let Some(parts) = actor.mesh_parts() else {
+            return;
+        };
+        let model = actor.transform.matrix();
         let palette = frame.style.palette();
 
         self.gl.use_program(Some(self.outline_program));
@@ -2933,27 +2839,25 @@ impl Renderer {
             "u_outline_width",
             if selected { 3.4 } else { 2.2 },
         );
-        set_f32(
-            &self.gl,
-            self.outline_program,
-            "u_ground_clip_y",
-            GROUND_CLEARANCE * 0.45,
-        );
-        self.gl.bind_vertex_array(Some(object.mesh.vertex_array));
-        self.gl.draw_elements(
-            glow::TRIANGLES,
-            object.mesh.index_count,
-            glow::UNSIGNED_INT,
-            0,
-        );
+        set_f32(&self.gl, self.outline_program, "u_ground_clip_y", -1.0e20);
+        for part in parts {
+            self.gl.bind_vertex_array(Some(part.mesh.vertex_array));
+            self.gl.draw_elements(
+                glow::TRIANGLES,
+                part.mesh.index_count,
+                glow::UNSIGNED_INT,
+                0,
+            );
+        }
         self.gl.bind_vertex_array(None);
     }
 
-    unsafe fn draw_object_surface(&self, object: &SceneObject, selected: bool, frame: &FrameData) {
-        let model = object.transform.matrix();
+    unsafe fn draw_actor_surface(&self, actor: &Actor, selected: bool, frame: &FrameData) {
+        let Some(parts) = actor.mesh_parts() else {
+            return;
+        };
+        let model = actor.transform.matrix();
         self.gl.use_program(Some(self.object_program));
-        self.gl.active_texture(glow::TEXTURE0);
-        self.gl.bind_texture(glow::TEXTURE_2D, object.mesh.texture);
         set_mat4(&self.gl, self.object_program, "u_model", model);
         set_mat4(&self.gl, self.object_program, "u_view", frame.view);
         set_mat4(
@@ -2986,18 +2890,6 @@ impl Renderer {
             "u_directional_light_intensity",
             frame.directional_light.intensity,
         );
-        set_f32(
-            &self.gl,
-            self.object_program,
-            "u_metallic",
-            object.mesh.material.metallic,
-        );
-        set_f32(
-            &self.gl,
-            self.object_program,
-            "u_roughness",
-            object.mesh.material.roughness,
-        );
         set_i32(
             &self.gl,
             self.object_program,
@@ -3015,26 +2907,42 @@ impl Renderer {
         set_f32(
             &self.gl,
             self.object_program,
-            "u_has_texture",
-            if object.mesh.texture.is_some() {
-                1.0
-            } else {
-                0.0
-            },
-        );
-        set_f32(
-            &self.gl,
-            self.object_program,
             "u_selected",
             if selected { 1.0 } else { 0.0 },
         );
-        self.gl.bind_vertex_array(Some(object.mesh.vertex_array));
-        self.gl.draw_elements(
-            glow::TRIANGLES,
-            object.mesh.index_count,
-            glow::UNSIGNED_INT,
-            0,
-        );
+        self.gl.active_texture(glow::TEXTURE0);
+        for part in parts {
+            self.gl.bind_texture(glow::TEXTURE_2D, part.mesh.texture);
+            set_f32(
+                &self.gl,
+                self.object_program,
+                "u_metallic",
+                part.mesh.material.metallic,
+            );
+            set_f32(
+                &self.gl,
+                self.object_program,
+                "u_roughness",
+                part.mesh.material.roughness,
+            );
+            set_f32(
+                &self.gl,
+                self.object_program,
+                "u_has_texture",
+                if part.mesh.texture.is_some() {
+                    1.0
+                } else {
+                    0.0
+                },
+            );
+            self.gl.bind_vertex_array(Some(part.mesh.vertex_array));
+            self.gl.draw_elements(
+                glow::TRIANGLES,
+                part.mesh.index_count,
+                glow::UNSIGNED_INT,
+                0,
+            );
+        }
         self.gl.bind_vertex_array(None);
         self.gl.bind_texture(glow::TEXTURE_2D, None);
     }
@@ -3104,42 +3012,6 @@ fn editor_grid_mesh() -> MeshCpu {
         name: "world editor grid".to_string(),
         vertices,
         indices,
-        texture: None,
-        material: MaterialProperties::default(),
-    }
-}
-
-fn contact_shadow_mesh() -> MeshCpu {
-    let vertices = vec![
-        Vertex {
-            position: [-1.0, 0.0, -1.0],
-            normal: [0.0, 1.0, 0.0],
-            color: [0.0, 0.0, 0.0, 1.0],
-            tex_coord: [0.0, 0.0],
-        },
-        Vertex {
-            position: [1.0, 0.0, -1.0],
-            normal: [0.0, 1.0, 0.0],
-            color: [0.0, 0.0, 0.0, 1.0],
-            tex_coord: [1.0, 0.0],
-        },
-        Vertex {
-            position: [1.0, 0.0, 1.0],
-            normal: [0.0, 1.0, 0.0],
-            color: [0.0, 0.0, 0.0, 1.0],
-            tex_coord: [1.0, 1.0],
-        },
-        Vertex {
-            position: [-1.0, 0.0, 1.0],
-            normal: [0.0, 1.0, 0.0],
-            color: [0.0, 0.0, 0.0, 1.0],
-            tex_coord: [0.0, 1.0],
-        },
-    ];
-    MeshCpu {
-        name: "contact shadow".to_string(),
-        vertices,
-        indices: vec![0, 1, 2, 0, 2, 3],
         texture: None,
         material: MaterialProperties::default(),
     }
@@ -3671,35 +3543,6 @@ out vec4 out_color;
 void main() {
     vec3 color = u_color / (u_color + vec3(1.0));
     out_color = vec4(pow(color, vec3(0.72)), 1.0);
-}
-"#;
-
-const CONTACT_SHADOW_VERTEX: &str = r#"#version 330 core
-layout (location = 0) in vec3 a_position;
-layout (location = 3) in vec2 a_tex_coord;
-
-uniform mat4 u_model;
-uniform mat4 u_view;
-uniform mat4 u_projection;
-
-out vec2 v_tex_coord;
-
-void main() {
-    v_tex_coord = a_tex_coord;
-    gl_Position = u_projection * u_view * u_model * vec4(a_position, 1.0);
-}
-"#;
-
-const CONTACT_SHADOW_FRAGMENT: &str = r#"#version 330 core
-in vec2 v_tex_coord;
-uniform float u_strength;
-out vec4 out_color;
-
-void main() {
-    vec2 centered = v_tex_coord * 2.0 - 1.0;
-    float d = dot(centered, centered);
-    float alpha = smoothstep(1.0, 0.08, d) * u_strength;
-    out_color = vec4(0.0, 0.0, 0.0, alpha);
 }
 "#;
 

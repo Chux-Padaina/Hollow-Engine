@@ -58,42 +58,13 @@ pub(crate) fn editor_ui(ctx: &egui::Context, app: &mut App) {
                 }
             });
             ui.separator();
-            ui.collapsing("Objects", |ui| {
-                let mut groups = Vec::<(u32, String, usize)>::new();
-                for object in &app.scene.objects {
-                    if let Some((_, _, count)) =
-                        groups.iter_mut().find(|(id, _, _)| *id == object.group_id)
-                    {
-                        *count += 1;
-                    } else {
-                        groups.push((object.group_id, object.name.clone(), 1));
-                    }
-                }
-                for (group_id, name, count) in groups {
-                    let selected =
-                        app.scene.selected_light.is_none() && app.scene.selected_group == group_id;
-                    let label = if count > 1 {
-                        format!("{name} ({count} meshes)")
-                    } else {
-                        name
-                    };
+            ui.collapsing("Actors", |ui| {
+                for index in 0..app.scene.actors.len() {
+                    let actor = &app.scene.actors[index];
+                    let selected = app.scene.selected_actor == Some(index);
+                    let label = format!("{} [{}]", actor.name, actor.kind_name());
                     if ui.selectable_label(selected, label).clicked() {
-                        app.scene.select_group(group_id);
-                    }
-                }
-            });
-            ui.collapsing("Lights", |ui| {
-                for index in 0..app.scene.lights.len() {
-                    let light = &app.scene.lights[index];
-                    let selected = app.scene.selected_light == Some(index);
-                    if ui
-                        .selectable_label(
-                            selected,
-                            format!("{} [{}]", light.name, light.kind.name()),
-                        )
-                        .clicked()
-                    {
-                        app.scene.select_light(index);
+                        app.scene.select_actor(index);
                     }
                 }
             });
@@ -104,10 +75,8 @@ pub(crate) fn editor_ui(ctx: &egui::Context, app: &mut App) {
         .show(ctx, |ui| {
             ui.heading("Details");
             ui.separator();
-            if let Some(light_index) = app.scene.selected_light {
-                light_details(ui, &mut app.scene.lights[light_index]);
-            } else {
-                object_details(ui, &mut app.scene);
+            if let Some(actor) = app.scene.selected_actor_mut() {
+                actor_details(ui, actor);
             }
             ui.separator();
             camera_details(ui, &mut app.camera);
@@ -124,47 +93,69 @@ fn tool_button(ui: &mut egui::Ui, app: &mut App, tool: EditorTool, label: &str) 
     }
 }
 
-fn object_details(ui: &mut egui::Ui, scene: &mut Scene) {
-    ui.label(format!("Selected group: {}", scene.selected_group));
-    let count = scene
-        .objects
-        .iter()
-        .filter(|object| object.group_id == scene.selected_group)
-        .count();
-    ui.label(format!("Meshes: {count}"));
-    if let Some(transform) = scene
-        .selected_group()
-        .first()
-        .map(|object| object.transform)
-    {
-        let mut transform = transform;
-        let mut changed = false;
-        ui.separator();
-        ui.label("Transform");
-        changed |= vec3_drag(ui, "Position", &mut transform.translation, 0.05);
-        let mut rotation_degrees = Vec3::new(
-            transform.rotation.x.to_degrees(),
-            transform.rotation.y.to_degrees(),
-            transform.rotation.z.to_degrees(),
-        );
-        changed |= vec3_drag(ui, "Rotation", &mut rotation_degrees, 0.4);
-        transform.rotation = Vec3::new(
+fn actor_details(ui: &mut egui::Ui, actor: &mut Actor) {
+    ui.label(format!("Actor: {}", actor.name));
+    ui.label(format!("Type: {}", actor.kind_name()));
+    ui.separator();
+    ui.label("Transform");
+    vec3_drag(ui, "Position", &mut actor.transform.translation, 0.05);
+    let mut rotation_degrees = Vec3::new(
+        actor.transform.rotation.x.to_degrees(),
+        actor.transform.rotation.y.to_degrees(),
+        actor.transform.rotation.z.to_degrees(),
+    );
+    if vec3_drag(ui, "Rotation", &mut rotation_degrees, 0.4) {
+        actor.transform.rotation = Vec3::new(
             rotation_degrees.x.to_radians(),
             rotation_degrees.y.to_radians(),
             rotation_degrees.z.to_radians(),
         );
-        changed |= vec3_drag(ui, "Scale", &mut transform.scale, 0.02);
-        if changed {
-            for object in scene.selected_group_mut() {
-                object.transform = transform;
-            }
+    }
+    if matches!(actor.kind, ActorKind::Mesh { .. }) {
+        vec3_drag(ui, "Scale", &mut actor.transform.scale, 0.02);
+    }
+
+    match &mut actor.kind {
+        ActorKind::Mesh { parts } => mesh_details(ui, parts),
+        ActorKind::Light(light) => light_details(ui, light),
+    }
+}
+
+fn light_details(ui: &mut egui::Ui, light: &mut Light) {
+    ui.separator();
+    ui.label("Light");
+    ui.checkbox(&mut light.enabled, "Enabled");
+    let mut color = [light.color.x, light.color.y, light.color.z];
+    if ui.color_edit_button_rgb(&mut color).changed() {
+        light.color = Vec3::new(color[0], color[1], color[2]);
+    }
+    ui.add(egui::Slider::new(&mut light.intensity, 0.0..=4.0).text("Intensity"));
+    if !matches!(light.kind, LightKind::Directional) {
+        ui.add(egui::Slider::new(&mut light.range, 0.1..=20.0).text("Range"));
+    }
+    if matches!(light.kind, LightKind::Spot) {
+        let mut angle = light.spot_angle_radians.to_degrees();
+        if ui
+            .add(egui::Slider::new(&mut angle, 5.0..=90.0).text("Spot angle"))
+            .changed()
+        {
+            light.spot_angle_radians = angle.to_radians();
         }
     }
-    if let Some(material) = scene
-        .selected_group()
-        .first()
-        .map(|object| object.mesh.material)
-    {
+}
+
+fn mesh_details(ui: &mut egui::Ui, parts: &mut [MeshPart]) {
+    ui.separator();
+    ui.label("Static Mesh");
+    ui.label(format!("Mesh parts: {}", parts.len()));
+    if parts.len() > 1 {
+        ui.collapsing("Parts", |ui| {
+            for part in parts.iter() {
+                ui.label(&part.name);
+            }
+        });
+    }
+    if let Some(material) = parts.first().map(|part| part.mesh.material) {
         let mut material = material;
         let mut changed = false;
         ui.separator();
@@ -175,39 +166,11 @@ fn object_details(ui: &mut egui::Ui, scene: &mut Scene) {
         changed |= ui
             .add(egui::Slider::new(&mut material.roughness, 0.04..=1.0).text("Roughness"))
             .changed();
-        ui.label("Applies to all meshes in the selected group.");
+        ui.label("Applies to all mesh parts in this actor.");
         if changed {
-            for object in scene.selected_group_mut() {
-                object.mesh.material = material;
+            for part in parts {
+                part.mesh.material = material;
             }
-        }
-    }
-}
-
-fn light_details(ui: &mut egui::Ui, light: &mut Light) {
-    ui.label(format!("Light: {}", light.name));
-    ui.label(format!("Type: {}", light.kind.name()));
-    ui.checkbox(&mut light.enabled, "Enabled");
-    let mut color = [light.color.x, light.color.y, light.color.z];
-    if ui.color_edit_button_rgb(&mut color).changed() {
-        light.color = Vec3::new(color[0], color[1], color[2]);
-    }
-    ui.add(egui::Slider::new(&mut light.intensity, 0.0..=4.0).text("Intensity"));
-    if !matches!(light.kind, LightKind::Directional) {
-        vec3_drag(ui, "Position", &mut light.position, 0.05);
-        ui.add(egui::Slider::new(&mut light.range, 0.1..=20.0).text("Range"));
-    }
-    if matches!(light.kind, LightKind::Directional | LightKind::Spot) {
-        vec3_drag(ui, "Direction", &mut light.direction, 0.02);
-        light.direction = light.direction.normalize_or_zero();
-    }
-    if matches!(light.kind, LightKind::Spot) {
-        let mut angle = light.spot_angle_radians.to_degrees();
-        if ui
-            .add(egui::Slider::new(&mut angle, 5.0..=90.0).text("Spot angle"))
-            .changed()
-        {
-            light.spot_angle_radians = angle.to_radians();
         }
     }
 }
