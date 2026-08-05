@@ -7,6 +7,7 @@
 
 #include <chrono>
 #include <optional>
+#include <string>
 
 namespace Forge {
 
@@ -63,6 +64,7 @@ private:
     int drag_start_x_ = 0;
     int drag_start_y_ = 0;
     bool snap_to_grid_ = false;
+    std::string status_ = "Drop a Sketchfab-style .glb/.gltf/.obj to import";
 };
 
 } // namespace Forge

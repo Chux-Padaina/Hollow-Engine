@@ -19,6 +19,24 @@ enum class TransformSpace {
     World,
 };
 
+enum class StylePreset {
+    Character,
+    Street,
+    Combat,
+};
+
+enum class DebugView {
+    Final,
+    Albedo,
+    Normals,
+    LightingOnly,
+    Roughness,
+    Metallic,
+};
+
+const char* name_of(StylePreset style);
+const char* name_of(DebugView view);
+
 struct RenderPipelineSettings {
     bool draw_world_grid = true;
     bool draw_actor_outlines = true;
@@ -51,6 +69,12 @@ public:
     EditorTool active_tool() const { return active_tool_; }
     void set_active_tool(EditorTool tool) { active_tool_ = tool; }
 
+    StylePreset style() const { return style_; }
+    void set_style(StylePreset style) { style_ = style; }
+
+    DebugView debug_view() const { return debug_view_; }
+    void set_debug_view(DebugView view) { debug_view_ = view; }
+
     TransformSpace transform_space() const { return transform_space_; }
     void toggle_transform_space();
 
@@ -59,6 +83,8 @@ private:
     RenderPipelineSettings render_settings_;
     EditorTool active_tool_ = EditorTool::Move;
     TransformSpace transform_space_ = TransformSpace::World;
+    StylePreset style_ = StylePreset::Street;
+    DebugView debug_view_ = DebugView::Final;
 };
 
 } // namespace Forge

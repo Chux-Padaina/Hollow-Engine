@@ -66,7 +66,7 @@ int App::run() {
         engine_.tick(delta);
         renderer_.resize(window_.width(), window_.height());
         renderer_.render(scene_, camera_, engine_);
-        renderer_.render_editor_overlay(scene_, camera_, {engine_.active_tool(), engine_.transform_space(), snap_to_grid_, 0});
+        renderer_.render_editor_overlay(scene_, camera_, {engine_.active_tool(), engine_.transform_space(), engine_.style(), engine_.debug_view(), snap_to_grid_, 0, status_});
         window_.swap_buffers();
         update_window_title();
     }
@@ -95,6 +95,24 @@ void App::handle_keyboard() {
     if (key_pressed('Q')) {
         engine_.set_active_tool(EditorTool::Select);
     }
+    if (key_pressed('1')) {
+        engine_.set_style(StylePreset::Character);
+        status_ = "Style preset: Character";
+    }
+    if (key_pressed('2')) {
+        engine_.set_style(StylePreset::Street);
+        status_ = "Style preset: Street";
+    }
+    if (key_pressed('3')) {
+        engine_.set_style(StylePreset::Combat);
+        status_ = "Style preset: Combat";
+    }
+    if (key_pressed(VK_F1)) engine_.set_debug_view(DebugView::Final);
+    if (key_pressed(VK_F2)) engine_.set_debug_view(DebugView::Albedo);
+    if (key_pressed(VK_F3)) engine_.set_debug_view(DebugView::Normals);
+    if (key_pressed(VK_F4)) engine_.set_debug_view(DebugView::LightingOnly);
+    if (key_pressed(VK_F5)) engine_.set_debug_view(DebugView::Roughness);
+    if (key_pressed(VK_F6)) engine_.set_debug_view(DebugView::Metallic);
     if (key_pressed('X')) {
         engine_.toggle_transform_space();
     }
@@ -106,15 +124,6 @@ void App::handle_keyboard() {
     }
     if (key_pressed(VK_HOME)) {
         reset_scene();
-    }
-    if (key_pressed('1')) {
-        add_mesh(MeshPrimitive::Cube);
-    }
-    if (key_pressed('2')) {
-        add_mesh(MeshPrimitive::Plane);
-    }
-    if (key_pressed('3')) {
-        add_mesh(MeshPrimitive::Sphere);
     }
     if (key_pressed('4')) {
         add_light(LightKind::Directional);
@@ -188,7 +197,10 @@ void App::handle_ui_click(int x, int y) {
     if (point_in_rect(x, y, 14, 160, 104, 24)) add_light(LightKind::Directional);
     if (point_in_rect(x, y, 124, 160, 72, 24)) add_light(LightKind::Point);
     if (point_in_rect(x, y, 202, 160, 44, 24)) add_light(LightKind::Spot);
-    if (point_in_rect(x, y, 14, 192, 80, 24)) scene_.destroy_selected_actor();
+    if (point_in_rect(x, y, 14, 192, 80, 24)) {
+        scene_.destroy_selected_actor();
+        status_ = "Deleted selected actor";
+    }
 
     int row_y = 252;
     for (const auto& actor : scene_.actors()) {
@@ -278,13 +290,16 @@ void App::add_mesh(MeshPrimitive primitive) {
     if (primitive == MeshPrimitive::Cube) {
         t.translation.y += 0.5f;
         scene_.create_static_mesh_actor("Cube", primitive, t);
+        status_ = "Added Cube";
     } else if (primitive == MeshPrimitive::Plane) {
         t.scale = {5.0f, 1.0f, 5.0f};
         scene_.create_static_mesh_actor("Plane", primitive, t);
+        status_ = "Added Plane";
     } else {
         t.translation.y += 0.7f;
         t.scale = {1.4f, 1.4f, 1.4f};
         scene_.create_static_mesh_actor("Sphere", primitive, t);
+        status_ = "Added Sphere";
     }
 }
 
@@ -298,12 +313,14 @@ void App::add_light(LightKind kind) {
         name = "Spot Light";
     }
     scene_.create_light_actor(name, kind, t);
+    status_ = std::string("Added ") + name;
 }
 
 void App::reset_scene() {
     scene_ = make_default_scene();
     camera_ = Camera{};
     drag_mode_ = DragMode::None;
+    status_ = "Scene reset";
 }
 
 ActorId App::pick_actor(int x, int y) const {

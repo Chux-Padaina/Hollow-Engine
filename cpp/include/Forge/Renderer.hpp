@@ -26,8 +26,11 @@ struct Camera {
 struct EditorOverlayState {
     EditorTool active_tool = EditorTool::Move;
     TransformSpace transform_space = TransformSpace::World;
+    StylePreset style = StylePreset::Street;
+    DebugView debug_view = DebugView::Final;
     bool snap_to_grid = false;
     ActorId hovered_actor = 0;
+    std::string status;
 };
 
 class Renderer {

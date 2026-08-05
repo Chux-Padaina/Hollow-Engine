@@ -150,8 +150,8 @@ void Renderer::render_editor_overlay(const Scene& scene, const Camera& camera, c
     draw_rect(406, 10, 1, 23, stroke, 1.0f);
     draw_button(414, 9, 88, 25, overlay.transform_space == TransformSpace::World ? "World" : "Local", overlay.transform_space == TransformSpace::Local);
     draw_button(510, 9, 92, 25, "Snap Grid", overlay.snap_to_grid);
-    draw_text(620, 27, "View: Final", muted);
-    draw_text(708, 27, "Style: Street", muted);
+    draw_text(620, 27, std::string("View: ") + name_of(overlay.debug_view), muted);
+    draw_text(708, 27, std::string("Style: ") + name_of(overlay.style), muted);
 
     draw_text(16, 72, "Outliner", {0.95f, 0.96f, 0.92f});
     draw_rect(12, 86, 236, 1, stroke, 1.0f);
@@ -219,7 +219,10 @@ void Renderer::render_editor_overlay(const Scene& scene, const Camera& camera, c
     draw_text(details_x + 8, camera_y + 84, "Distance: " + fmt(camera.distance), muted);
 
     draw_rect(left_w, static_cast<float>(height_ - 30), static_cast<float>(width_) - left_w - right_w, 30, {0.045f, 0.052f, 0.052f}, 0.86f);
-    draw_text(left_w + 16, static_cast<float>(height_ - 11), "RMB orbit/look   MMB pan   Wheel zoom   Click actor/gizmo   Home reset   Del delete", {0.62f, 0.72f, 0.70f});
+    const std::string footer = overlay.status.empty()
+        ? "RMB orbit/look   MMB pan   Wheel zoom   Click actor/gizmo   Home reset   Del delete"
+        : overlay.status;
+    draw_text(left_w + 16, static_cast<float>(height_ - 11), footer, {0.62f, 0.72f, 0.70f});
 
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_CULL_FACE);

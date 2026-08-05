@@ -1,0 +1,96 @@
+# Rust Prototype Parity Audit
+
+This file tracks what exists in the Rust prototype and whether it has been ported to the active C++ implementation.
+
+## Ported Or Mostly Ported
+
+- Native window and render loop.
+- Actor-centric scene model.
+- Root scene transform per actor.
+- Component-driven actors for static meshes and lights.
+- Placeholder engine subsystem/component slots.
+- Default two-cube scene.
+- Directional, point, and spot light actor data.
+- Select, move, rotate, and scale editor tools.
+- Global/local transform-space toggle.
+- Snap-to-grid movement toggle.
+- Outliner-style actor list.
+- Add object controls: cube, plane, sphere.
+- Add light controls: directional, point, spot.
+- Delete selected actor.
+- Home reset.
+- Right-mouse camera orbit, middle-mouse pan, mouse-wheel zoom.
+- Camera-following visual editor grid.
+- Selected actor details panel layout.
+- Rust-style toolbar labels for tool, view, and style.
+- Style preset state: Character, Street, Combat.
+- Debug view state: Final, Albedo, Normals, Lighting, Roughness, Metallic.
+- Status/footer text.
+- Basic light icons and transform gizmo rendering.
+- Basic click selection for actors and lights.
+- Basic mouse-driven transform gizmo interaction.
+
+## Partially Ported
+
+- Editor UI:
+  - Rust uses egui panels with interactive sliders, color pickers, menus, and editable numeric values.
+  - C++ currently uses a custom OpenGL overlay that visually matches the layout, but most detail fields are display-only.
+- Transform gizmos:
+  - Rust has center, axis, plane handles, smooth rings, hover/active highlighting, ray-based picking, and more careful drag math.
+  - C++ has center/axis/ring interaction and improved screen-space dragging, but lacks plane handles, hover highlight, polished arrows, and ray-accurate selection.
+- Renderer pass structure:
+  - Rust has explicit environment, opaque, outlines, and gizmo passes with shader state.
+  - C++ has the same conceptual order, but uses immediate-mode OpenGL bootstrap rendering.
+- Grid:
+  - Rust uses a shader-driven grid mesh with camera-following origin.
+  - C++ now follows the camera but is still line-rendered.
+- Material/display state:
+  - Rust has metallic/roughness sliders and debug views connected to shader uniforms.
+  - C++ stores material fields and debug-view state, but does not yet render those debug views.
+
+## Not Yet Ported
+
+- Drag/drop model import.
+- Command-line model import.
+- glTF loading.
+- OBJ loading.
+- glTF node transform preservation.
+- glTF base color factor import.
+- Vertex color import.
+- UV import.
+- Base-color texture import/upload.
+- Texture sampling.
+- Mesh normalization after import.
+- GPU VBO/VAO mesh upload for arbitrary imported meshes.
+- Cook-Torrance/GGX direct-light PBR shader.
+- Directional/point/spot lighting in shader.
+- PBR metallic/roughness factors affecting rendering.
+- Albedo/normal/lighting/roughness/metallic debug rendering.
+- Inverted-hull pixel-width outlines.
+- Smooth stylized lighting bands.
+- Fog and tonemapping.
+- Rust shader source split/parity in C++.
+- Ray-based mesh picking using bounds radius.
+- Ray-based light picking.
+- Ray-based plane handles.
+- Two-axis transform plane handles.
+- Hover/active gizmo highlighting.
+- Polished arrowhead gizmo meshes.
+- Torus rotation gizmo mesh.
+- Per-light animated/pulsing intensity helpers.
+- Light packets/count helpers for shader upload.
+- Selected object outline pass matching Rust.
+- Texture/material inspector editing.
+- Camera details editing.
+- Scene status messages for import errors.
+
+## Recommended Port Order
+
+1. Replace the custom OpenGL overlay with Dear ImGui so the C++ editor can match the Rust egui controls and become editable.
+2. Move C++ rendering from immediate mode to shader/VBO/VAO rendering.
+3. Port CPU mesh types, primitive mesh builders, bounds radius, and GPU mesh upload.
+4. Port glTF/OBJ import and drag/drop.
+5. Port Rust render passes and shader uniforms.
+6. Port direct-light PBR and debug views.
+7. Port outline pass and polished gizmo meshes.
+8. Continue the planned full PBR pipeline: metallic-roughness textures, normal maps, shadow maps, HDR, and environment lighting.

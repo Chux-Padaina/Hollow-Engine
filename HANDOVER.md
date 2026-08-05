@@ -16,6 +16,7 @@ Do not copy proprietary ZZZ models, environments, UI, logos, or exact assets. Th
 - Git repo initialized with incremental commits.
 - `PBR_PIPELINE.md` tracks the render-pipeline learning checklist and implementation plan.
 - `ENGINE_ARCHITECTURE.md` tracks the long-term editor/engine skeleton.
+- `RUST_PARITY_AUDIT.md` tracks what has and has not been ported from the Rust prototype.
 - `src/engine.rs` owns placeholder engine subsystem slots.
 - `src/shaders.rs` owns GLSL shader source strings.
 - Drag/drop import for `.glb`, `.gltf`, and `.obj`.

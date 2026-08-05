@@ -2,6 +2,36 @@
 
 namespace Forge {
 
+const char* name_of(StylePreset style) {
+    switch (style) {
+    case StylePreset::Character:
+        return "Character";
+    case StylePreset::Street:
+        return "Street";
+    case StylePreset::Combat:
+        return "Combat";
+    }
+    return "Unknown";
+}
+
+const char* name_of(DebugView view) {
+    switch (view) {
+    case DebugView::Final:
+        return "Final";
+    case DebugView::Albedo:
+        return "Albedo";
+    case DebugView::Normals:
+        return "Normals";
+    case DebugView::LightingOnly:
+        return "Lighting";
+    case DebugView::Roughness:
+        return "Roughness";
+    case DebugView::Metallic:
+        return "Metallic";
+    }
+    return "Unknown";
+}
+
 void SystemRegistry::register_placeholder(std::string name) {
     systems_.push_back(std::move(name));
 }
