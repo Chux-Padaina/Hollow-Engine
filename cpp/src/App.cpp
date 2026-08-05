@@ -24,6 +24,17 @@ float distance_2d(Vec2 a, Vec2 b) {
     return std::sqrt(dx * dx + dy * dy);
 }
 
+float distance_to_segment_2d(Vec2 p, Vec2 a, Vec2 b) {
+    const Vec2 ab{b.x - a.x, b.y - a.y};
+    const Vec2 ap{p.x - a.x, p.y - a.y};
+    const float len2 = ab.x * ab.x + ab.y * ab.y;
+    if (len2 <= 0.0001f) {
+        return distance_2d(p, a);
+    }
+    const float t = std::clamp((ap.x * ab.x + ap.y * ab.y) / len2, 0.0f, 1.0f);
+    return distance_2d(p, {a.x + ab.x * t, a.y + ab.y * t});
+}
+
 std::wstring widen(const std::string& value) {
     return {value.begin(), value.end()};
 }
@@ -293,19 +304,48 @@ DragMode App::pick_gizmo(int x, int y) const {
         return engine_.active_tool() == EditorTool::Scale ? DragMode::ScaleCenter : DragMode::MoveCenter;
     }
     const float len = 1.35f;
-    struct Candidate { DragMode mode; Vec3 axis; };
+    struct Candidate { DragMode mode; DragMode axis_mode; };
     Candidate candidates[] = {
-        {engine_.active_tool() == EditorTool::Rotate ? DragMode::RotateX : engine_.active_tool() == EditorTool::Scale ? DragMode::ScaleX : DragMode::MoveX, {1, 0, 0}},
-        {engine_.active_tool() == EditorTool::Rotate ? DragMode::RotateY : engine_.active_tool() == EditorTool::Scale ? DragMode::ScaleY : DragMode::MoveY, {0, 1, 0}},
-        {engine_.active_tool() == EditorTool::Rotate ? DragMode::RotateZ : engine_.active_tool() == EditorTool::Scale ? DragMode::ScaleZ : DragMode::MoveZ, {0, 0, 1}},
+        {engine_.active_tool() == EditorTool::Rotate ? DragMode::RotateX : engine_.active_tool() == EditorTool::Scale ? DragMode::ScaleX : DragMode::MoveX, DragMode::MoveX},
+        {engine_.active_tool() == EditorTool::Rotate ? DragMode::RotateY : engine_.active_tool() == EditorTool::Scale ? DragMode::ScaleY : DragMode::MoveY, DragMode::MoveY},
+        {engine_.active_tool() == EditorTool::Rotate ? DragMode::RotateZ : engine_.active_tool() == EditorTool::Scale ? DragMode::ScaleZ : DragMode::MoveZ, DragMode::MoveZ},
     };
+
+    float best_score = 1000000.0f;
+    DragMode best_mode = DragMode::None;
     for (const Candidate& c : candidates) {
-        Vec2 tip = renderer_.project(origin + c.axis * len, camera_);
-        if (distance_2d(mouse, tip) < 24.0f) {
-            return c.mode;
+        const Vec3 axis = gizmo_axis(c.axis_mode, actor->root().local_transform);
+        if (engine_.active_tool() == EditorTool::Rotate) {
+            Vec3 tangent_a = normalize(cross(axis, camera_.forward()));
+            if (length(tangent_a) <= 0.001f) {
+                tangent_a = normalize(cross(axis, camera_.right()));
+            }
+            const Vec3 tangent_b = normalize(cross(axis, tangent_a));
+            constexpr int segments = 96;
+            for (int i = 0; i < segments; ++i) {
+                const float t0 = static_cast<float>(i) / segments * 6.2831853f;
+                const float t1 = static_cast<float>(i + 1) / segments * 6.2831853f;
+                const Vec2 a = renderer_.project(origin + tangent_a * (std::cos(t0) * len) + tangent_b * (std::sin(t0) * len), camera_);
+                const Vec2 b = renderer_.project(origin + tangent_a * (std::cos(t1) * len) + tangent_b * (std::sin(t1) * len), camera_);
+                const float score = distance_to_segment_2d(mouse, a, b);
+                if (score < best_score) {
+                    best_score = score;
+                    best_mode = c.mode;
+                }
+            }
+        } else {
+            const Vec2 tip = renderer_.project(origin + axis * len, camera_);
+            const float line_score = distance_to_segment_2d(mouse, center, tip);
+            const float tip_score = distance_2d(mouse, tip);
+            const float score = std::min(line_score, tip_score);
+            if (score < best_score) {
+                best_score = score;
+                best_mode = c.mode;
+            }
         }
     }
-    return DragMode::None;
+    const float threshold = engine_.active_tool() == EditorTool::Rotate ? 14.0f : 18.0f;
+    return best_score <= threshold ? best_mode : DragMode::None;
 }
 
 bool App::is_over_editor_ui(int x, int y) const {
