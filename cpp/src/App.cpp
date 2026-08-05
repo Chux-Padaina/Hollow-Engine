@@ -2,12 +2,14 @@
 
 #include <Windows.h>
 
+#include <iostream>
 #include <sstream>
 
 namespace Forge {
 
 int App::run() {
     if (!window_.create(L"Forge Engine C++ Prototype", 1280, 720)) {
+        std::wcerr << L"Failed to create Forge window: " << window_.last_error() << L"\n";
         return 1;
     }
 

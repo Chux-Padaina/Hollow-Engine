@@ -1,5 +1,6 @@
 #include "Forge/Win32Window.hpp"
 
+#include <Windows.h>
 #include <gl/GL.h>
 
 namespace Forge {
@@ -30,10 +31,16 @@ bool Win32Window::create(const wchar_t* title, int width, int height) {
     wc.lpszClassName = class_name;
     wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
     wc.style = CS_OWNDC;
-    RegisterClassW(&wc);
+    if (RegisterClassW(&wc) == 0 && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) {
+        set_last_error(L"RegisterClassW failed");
+        return false;
+    }
 
     RECT rect{0, 0, width_, height_};
-    AdjustWindowRect(&rect, WS_OVERLAPPEDWINDOW, FALSE);
+    if (AdjustWindowRect(&rect, WS_OVERLAPPEDWINDOW, FALSE) == FALSE) {
+        set_last_error(L"AdjustWindowRect failed");
+        return false;
+    }
 
     hwnd_ = CreateWindowExW(
         0,
@@ -49,10 +56,16 @@ bool Win32Window::create(const wchar_t* title, int width, int height) {
         instance,
         this);
     if (hwnd_ == nullptr) {
+        set_last_error(L"CreateWindowExW failed");
         return false;
     }
 
     device_context_ = GetDC(hwnd_);
+    if (device_context_ == nullptr) {
+        set_last_error(L"GetDC failed");
+        return false;
+    }
+
     PIXELFORMATDESCRIPTOR pfd{};
     pfd.nSize = sizeof(pfd);
     pfd.nVersion = 1;
@@ -65,11 +78,13 @@ bool Win32Window::create(const wchar_t* title, int width, int height) {
 
     const int pixel_format = ChoosePixelFormat(device_context_, &pfd);
     if (pixel_format == 0 || SetPixelFormat(device_context_, pixel_format, &pfd) == FALSE) {
+        set_last_error(L"OpenGL pixel format setup failed");
         return false;
     }
 
     gl_context_ = wglCreateContext(device_context_);
     if (gl_context_ == nullptr || wglMakeCurrent(device_context_, gl_context_) == FALSE) {
+        set_last_error(L"OpenGL context creation failed");
         return false;
     }
 
@@ -95,18 +110,19 @@ LRESULT CALLBACK Win32Window::window_proc(HWND hwnd, UINT message, WPARAM wparam
     if (message == WM_NCCREATE) {
         auto* create = reinterpret_cast<CREATESTRUCTW*>(lparam);
         window = static_cast<Win32Window*>(create->lpCreateParams);
+        window->hwnd_ = hwnd;
         SetWindowLongPtrW(hwnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(window));
     } else {
         window = reinterpret_cast<Win32Window*>(GetWindowLongPtrW(hwnd, GWLP_USERDATA));
     }
 
     if (window != nullptr) {
-        return window->handle_message(message, wparam, lparam);
+        return window->handle_message(hwnd, message, wparam, lparam);
     }
     return DefWindowProcW(hwnd, message, wparam, lparam);
 }
 
-LRESULT Win32Window::handle_message(UINT message, WPARAM, LPARAM lparam) {
+LRESULT Win32Window::handle_message(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam) {
     switch (message) {
     case WM_SIZE:
         width_ = LOWORD(lparam);
@@ -118,8 +134,14 @@ LRESULT Win32Window::handle_message(UINT message, WPARAM, LPARAM lparam) {
         PostQuitMessage(0);
         return 0;
     default:
-        return DefWindowProcW(hwnd_, message, 0, lparam);
+        return DefWindowProcW(hwnd, message, wparam, lparam);
     }
+}
+
+void Win32Window::set_last_error(std::wstring message) {
+    const DWORD code = GetLastError();
+    message += L" (GetLastError=" + std::to_wstring(code) + L")";
+    last_error_ = std::move(message);
 }
 
 } // namespace Forge

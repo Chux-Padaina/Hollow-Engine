@@ -22,10 +22,12 @@ public:
     int width() const { return width_; }
     int height() const { return height_; }
     bool should_close() const { return should_close_; }
+    const std::wstring& last_error() const { return last_error_; }
 
 private:
     static LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam);
-    LRESULT handle_message(UINT message, WPARAM wparam, LPARAM lparam);
+    LRESULT handle_message(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam);
+    void set_last_error(std::wstring message);
 
     HWND hwnd_ = nullptr;
     HDC device_context_ = nullptr;
@@ -33,6 +35,7 @@ private:
     int width_ = 1280;
     int height_ = 720;
     bool should_close_ = false;
+    std::wstring last_error_;
 };
 
 } // namespace Forge
