@@ -36,16 +36,35 @@ Implemented now:
   - `StaticMeshComponent`
   - `LightComponent`
 - Placeholder component types:
+  - `SkeletalMeshComponent`
+  - `CameraComponent`
+  - `CollisionComponent`
+  - `PhysicsBodyComponent`
   - `ScriptComponent`
   - `AudioComponent`
   - `AnimationComponent`
   - `InputComponent`
+  - `UiComponent`
+  - `ParticleSystemComponent`
+  - `NavigationAgentComponent`
+  - `AiControllerComponent`
+  - `PostProcessVolumeComponent`
+  - `NetworkReplicationComponent`
 - Placeholder subsystem slots:
   - input
   - assets
   - audio
   - animation
   - scripting
+  - physics
+  - collision
+  - navigation
+  - AI
+  - UI
+  - networking
+  - save games
+  - localization
+  - diagnostics
   - post-processing
   - settings
 

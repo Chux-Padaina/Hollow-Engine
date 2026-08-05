@@ -9,6 +9,7 @@ Small native Rust/OpenGL editor prototype for importing meshes and rendering the
 - Basic CPU import path for mesh positions, normals, indices, and base material color.
 - GPU mesh upload with a direct-light Cook-Torrance/GGX PBR shader and a backface-expanded outline pass.
 - Scene architecture uses a single actor list. Actors own root scene components and component lists; current active components are static mesh and light, so everything in the outliner is a selectable actor.
+- Engine subsystem placeholders are split into `src/engine.rs`, and shader source is split into `src/shaders.rs`.
 - Details-panel material controls for selected mesh actors: metallic and roughness.
 - Default lighting test scene with two cube actors, one directional light actor, one point light actor, and a non-scene editor/world grid overlay.
 - Scene-owned lights affect object shading through the details panel.

@@ -12,6 +12,8 @@ Do not copy proprietary ZZZ models, environments, UI, logos, or exact assets. Th
 - Git repo initialized with incremental commits.
 - `PBR_PIPELINE.md` tracks the render-pipeline learning checklist and implementation plan.
 - `ENGINE_ARCHITECTURE.md` tracks the long-term editor/engine skeleton.
+- `src/engine.rs` owns placeholder engine subsystem slots.
+- `src/shaders.rs` owns GLSL shader source strings.
 - Drag/drop import for `.glb`, `.gltf`, and `.obj`.
 - glTF node transforms are applied so multi-part models stay assembled.
 - glTF base color factors, vertex colors, UVs, and base color textures are preserved.
@@ -80,7 +82,7 @@ Do not copy proprietary ZZZ models, environments, UI, logos, or exact assets. Th
 - Split editor UI code into `src/editor.rs`, removed the default floor, and added outliner creation/deletion for primitives and lights.
 - Added light actor icons, light selection/gizmo transforms, grid snap toggle, larger camera-following editor grid, corrected generated sphere triangle winding, and moved outlines after opaque rendering so depth clipping is more reliable.
 - Reworked scene ownership so meshes and lights are both component-driven actors in one outliner list, removed the fake contact-shadow pass from the grid, and removed all Y=0 movement locking.
-- Added root scene components, component lists, static mesh components, light components, and placeholder component types for scripts, audio, animation, and input.
+- Added root scene components, component lists, static mesh components, light components, and placeholder component types for scripts, audio, animation, input, camera, collision, physics, skeletal meshes, UI, particles, nav/AI, post-process volumes, and network replication.
 
 ## Known Limitations
 

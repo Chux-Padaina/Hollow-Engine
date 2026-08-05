@@ -124,10 +124,7 @@ fn actor_details(ui: &mut egui::Ui, actor: &mut Actor) {
         match component {
             Component::StaticMesh(mesh) => mesh_details(ui, &mut mesh.parts),
             Component::Light(light) => light_details(ui, &mut light.light),
-            Component::Script(_) => {}
-            Component::Audio(_) => {}
-            Component::Animation(_) => {}
-            Component::Input(_) => {}
+            _ => {}
         }
     }
 }

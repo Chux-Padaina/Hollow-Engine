@@ -1,6 +1,8 @@
 #![allow(deprecated, unsafe_op_in_unsafe_fn)]
 
 mod editor;
+mod engine;
+mod shaders;
 
 use std::ffi::CString;
 use std::num::NonZeroU32;
@@ -22,6 +24,8 @@ use winit::event::{ElementState, Event, MouseButton, MouseScrollDelta, WindowEve
 use winit::event_loop::{ControlFlow, EventLoop};
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::{Window, WindowAttributes};
+
+use engine::Engine;
 
 const WINDOW_TITLE: &str = "ZZZ Style Engine Prototype - drop .glb/.gltf/.obj, left-drag to move";
 const MAX_POINT_LIGHTS: usize = 8;
@@ -233,64 +237,6 @@ struct EditorLayer {
     clipped_primitives: Vec<egui::ClippedPrimitive>,
     textures_delta: egui::TexturesDelta,
     pixels_per_point: f32,
-}
-
-#[allow(dead_code)]
-struct Engine {
-    input: InputSystem,
-    assets: AssetSystem,
-    audio: AudioSystem,
-    animation: AnimationSystem,
-    scripting: ScriptingSystem,
-    post_process: PostProcessSystem,
-    settings: EngineSettings,
-}
-
-impl Default for Engine {
-    fn default() -> Self {
-        Self {
-            input: InputSystem,
-            assets: AssetSystem,
-            audio: AudioSystem,
-            animation: AnimationSystem,
-            scripting: ScriptingSystem,
-            post_process: PostProcessSystem,
-            settings: EngineSettings::default(),
-        }
-    }
-}
-
-#[allow(dead_code)]
-struct InputSystem;
-
-#[allow(dead_code)]
-struct AssetSystem;
-
-#[allow(dead_code)]
-struct AudioSystem;
-
-#[allow(dead_code)]
-struct AnimationSystem;
-
-#[allow(dead_code)]
-struct ScriptingSystem;
-
-#[allow(dead_code)]
-struct PostProcessSystem;
-
-#[allow(dead_code)]
-struct EngineSettings {
-    project_name: String,
-    target_frame_rate: Option<u32>,
-}
-
-impl Default for EngineSettings {
-    fn default() -> Self {
-        Self {
-            project_name: "ZZZ Style Engine Prototype".to_string(),
-            target_frame_rate: None,
-        }
-    }
 }
 
 impl EditorLayer {
@@ -1621,11 +1567,21 @@ enum Mobility {
 #[allow(dead_code)]
 enum Component {
     StaticMesh(StaticMeshComponent),
+    SkeletalMesh(SkeletalMeshComponent),
     Light(LightComponent),
+    Camera(CameraComponent),
+    Collision(CollisionComponent),
+    PhysicsBody(PhysicsBodyComponent),
     Script(ScriptComponent),
     Audio(AudioComponent),
     Animation(AnimationComponent),
     Input(InputComponent),
+    Ui(UiComponent),
+    ParticleSystem(ParticleSystemComponent),
+    NavigationAgent(NavigationAgentComponent),
+    AiController(AiControllerComponent),
+    PostProcessVolume(PostProcessVolumeComponent),
+    NetworkReplication(NetworkReplicationComponent),
 }
 
 struct StaticMeshComponent {
@@ -1635,6 +1591,35 @@ struct StaticMeshComponent {
 
 struct LightComponent {
     light: Light,
+}
+
+#[allow(dead_code)]
+struct CameraComponent {
+    fov_y_radians: f32,
+    near_clip: f32,
+    far_clip: f32,
+    active: bool,
+}
+
+#[allow(dead_code)]
+struct CollisionComponent {
+    shape: CollisionShape,
+    enabled: bool,
+}
+
+#[allow(dead_code)]
+enum CollisionShape {
+    Box,
+    Sphere,
+    Capsule,
+    Mesh,
+}
+
+#[allow(dead_code)]
+struct PhysicsBodyComponent {
+    mass: f32,
+    simulated: bool,
+    gravity_enabled: bool,
 }
 
 #[allow(dead_code)]
@@ -1659,6 +1644,51 @@ struct AnimationComponent {
 struct InputComponent {
     mapping_context_id: String,
     enabled: bool,
+}
+
+#[allow(dead_code)]
+struct SkeletalMeshComponent {
+    skeleton_id: String,
+    mesh_id: String,
+    visible: bool,
+}
+
+#[allow(dead_code)]
+struct UiComponent {
+    widget_id: String,
+    visible: bool,
+}
+
+#[allow(dead_code)]
+struct ParticleSystemComponent {
+    effect_id: String,
+    enabled: bool,
+}
+
+#[allow(dead_code)]
+struct NavigationAgentComponent {
+    radius: f32,
+    height: f32,
+    enabled: bool,
+}
+
+#[allow(dead_code)]
+struct AiControllerComponent {
+    behavior_tree_id: String,
+    enabled: bool,
+}
+
+#[allow(dead_code)]
+struct PostProcessVolumeComponent {
+    priority: f32,
+    blend_weight: f32,
+    enabled: bool,
+}
+
+#[allow(dead_code)]
+struct NetworkReplicationComponent {
+    replicated: bool,
+    authority_only: bool,
 }
 
 struct MeshPart {
@@ -2494,10 +2524,16 @@ struct Renderer {
 
 impl Renderer {
     unsafe fn new(gl: Arc<glow::Context>) -> Result<Self, String> {
-        let object_program = compile_program(&gl, OBJECT_VERTEX, OBJECT_FRAGMENT)?;
-        let outline_program = compile_program(&gl, OUTLINE_VERTEX, OUTLINE_FRAGMENT)?;
-        let editor_grid_program = compile_program(&gl, EDITOR_GRID_VERTEX, EDITOR_GRID_FRAGMENT)?;
-        let unlit_program = compile_program(&gl, UNLIT_VERTEX, UNLIT_FRAGMENT)?;
+        let object_program =
+            compile_program(&gl, shaders::OBJECT_VERTEX, shaders::OBJECT_FRAGMENT)?;
+        let outline_program =
+            compile_program(&gl, shaders::OUTLINE_VERTEX, shaders::OUTLINE_FRAGMENT)?;
+        let editor_grid_program = compile_program(
+            &gl,
+            shaders::EDITOR_GRID_VERTEX,
+            shaders::EDITOR_GRID_FRAGMENT,
+        )?;
+        let unlit_program = compile_program(&gl, shaders::UNLIT_VERTEX, shaders::UNLIT_FRAGMENT)?;
         let editor_grid = MeshGpu::from_cpu(gl.clone(), &editor_grid_mesh())?;
         let light_gizmo = MeshGpu::from_cpu(gl.clone(), &MeshCpu::cube())?;
         let arrow_gizmo = MeshGpu::from_cpu(gl.clone(), &arrow_gizmo_mesh())?;
@@ -3467,279 +3503,3 @@ unsafe fn set_i32(gl: &glow::Context, program: glow::NativeProgram, name: &str, 
         gl.uniform_1_i32(Some(&location), value);
     }
 }
-
-const OBJECT_VERTEX: &str = r#"#version 330 core
-layout (location = 0) in vec3 a_position;
-layout (location = 1) in vec3 a_normal;
-layout (location = 2) in vec4 a_color;
-layout (location = 3) in vec2 a_tex_coord;
-
-uniform mat4 u_model;
-uniform mat4 u_view;
-uniform mat4 u_projection;
-
-out vec3 v_world_position;
-out vec3 v_normal;
-out vec4 v_color;
-out vec2 v_tex_coord;
-
-void main() {
-    vec4 world = u_model * vec4(a_position, 1.0);
-    v_world_position = world.xyz;
-    v_normal = normalize(mat3(transpose(inverse(u_model))) * a_normal);
-    v_color = a_color;
-    v_tex_coord = a_tex_coord;
-    gl_Position = u_projection * u_view * world;
-}
-"#;
-
-const OBJECT_FRAGMENT: &str = r#"#version 330 core
-in vec3 v_world_position;
-in vec3 v_normal;
-in vec4 v_color;
-in vec2 v_tex_coord;
-
-uniform vec3 u_camera_position;
-uniform vec3 u_directional_light_direction;
-uniform vec3 u_directional_light_color;
-uniform float u_directional_light_intensity;
-uniform float u_selected;
-uniform float u_has_texture;
-uniform float u_metallic;
-uniform float u_roughness;
-uniform sampler2D u_base_texture;
-uniform int u_debug_view;
-uniform int u_local_light_count;
-uniform vec3 u_local_light_positions[8];
-uniform vec3 u_local_light_colors[8];
-uniform vec3 u_local_light_directions[8];
-uniform vec4 u_local_light_params[8];
-
-out vec4 out_color;
-
-const float PI = 3.14159265359;
-
-float distributionGGX(vec3 normal, vec3 half_dir, float roughness) {
-    float a = roughness * roughness;
-    float a2 = a * a;
-    float ndh = max(dot(normal, half_dir), 0.0);
-    float ndh2 = ndh * ndh;
-    float denom = ndh2 * (a2 - 1.0) + 1.0;
-    return a2 / max(PI * denom * denom, 0.0001);
-}
-
-float geometrySchlickGGX(float ndv, float roughness) {
-    float r = roughness + 1.0;
-    float k = (r * r) / 8.0;
-    return ndv / max(ndv * (1.0 - k) + k, 0.0001);
-}
-
-float geometrySmith(vec3 normal, vec3 view_dir, vec3 light_dir, float roughness) {
-    float ndv = max(dot(normal, view_dir), 0.0);
-    float ndl = max(dot(normal, light_dir), 0.0);
-    return geometrySchlickGGX(ndv, roughness) * geometrySchlickGGX(ndl, roughness);
-}
-
-vec3 fresnelSchlick(float cos_theta, vec3 f0) {
-    return f0 + (1.0 - f0) * pow(clamp(1.0 - cos_theta, 0.0, 1.0), 5.0);
-}
-
-vec3 pbrLight(
-    vec3 albedo,
-    float metallic,
-    float roughness,
-    vec3 normal,
-    vec3 view_dir,
-    vec3 light_dir,
-    vec3 radiance
-) {
-    vec3 half_dir = normalize(view_dir + light_dir);
-    float ndl = max(dot(normal, light_dir), 0.0);
-    float ndv = max(dot(normal, view_dir), 0.0);
-    if (ndl <= 0.0 || ndv <= 0.0) {
-        return vec3(0.0);
-    }
-
-    vec3 f0 = mix(vec3(0.04), albedo, metallic);
-    float d = distributionGGX(normal, half_dir, roughness);
-    float g = geometrySmith(normal, view_dir, light_dir, roughness);
-    vec3 f = fresnelSchlick(max(dot(half_dir, view_dir), 0.0), f0);
-
-    vec3 numerator = d * g * f;
-    float denominator = max(4.0 * ndv * ndl, 0.0001);
-    vec3 specular = numerator / denominator;
-
-    vec3 ks = f;
-    vec3 kd = (1.0 - ks) * (1.0 - metallic);
-    vec3 diffuse = kd * albedo / PI;
-
-    return (diffuse + specular) * radiance * ndl;
-}
-
-void main() {
-    vec3 normal = normalize(v_normal);
-    vec3 view_dir = normalize(u_camera_position - v_world_position);
-    vec3 key_dir = normalize(-u_directional_light_direction);
-    vec3 sampled = u_has_texture > 0.5 ? texture(u_base_texture, v_tex_coord).rgb : vec3(1.0);
-    vec3 albedo = pow(clamp(v_color.rgb * sampled, 0.0, 1.0), vec3(2.2));
-    float metallic = clamp(u_metallic, 0.0, 1.0);
-    float roughness = clamp(u_roughness, 0.04, 1.0);
-
-    vec3 direct_light = pbrLight(
-        albedo,
-        metallic,
-        roughness,
-        normal,
-        view_dir,
-        key_dir,
-        u_directional_light_color * max(u_directional_light_intensity, 0.0) * 3.2
-    );
-    for (int i = 0; i < 8; ++i) {
-        if (i >= u_local_light_count) {
-            break;
-        }
-        vec3 to_light = u_local_light_positions[i] - v_world_position;
-        float distance_to_light = length(to_light);
-        vec3 light_dir = to_light / max(distance_to_light, 0.001);
-        vec4 params = u_local_light_params[i];
-        float attenuation = 1.0 - smoothstep(params.x * 0.18, params.x, distance_to_light);
-        float cone = 1.0;
-        if (params.w > -1.5) {
-            float spot_dot = dot(normalize(u_local_light_directions[i]), -light_dir);
-            cone = smoothstep(params.w, params.z, spot_dot);
-        }
-        float visibility = attenuation * cone * params.y;
-        direct_light += pbrLight(
-            albedo,
-            metallic,
-            roughness,
-            normal,
-            view_dir,
-            light_dir,
-            u_local_light_colors[i] * visibility * 14.0
-        );
-    }
-
-    vec3 ambient = albedo * vec3(0.03) * (1.0 - metallic);
-    vec3 color = ambient + direct_light;
-    color += vec3(1.0, 0.82, 0.18) * u_selected * 0.08;
-
-    if (u_debug_view == 1) {
-        out_color = vec4(pow(clamp(albedo, 0.0, 1.0), vec3(1.0 / 2.2)), v_color.a);
-        return;
-    }
-    if (u_debug_view == 2) {
-        out_color = vec4(normal * 0.5 + 0.5, 1.0);
-        return;
-    }
-    if (u_debug_view == 3) {
-        vec3 lighting_only = clamp(ambient + direct_light, 0.0, 8.0);
-        out_color = vec4(pow(lighting_only / (lighting_only + vec3(1.0)), vec3(1.0 / 2.2)), 1.0);
-        return;
-    }
-    if (u_debug_view == 4) {
-        out_color = vec4(vec3(roughness), 1.0);
-        return;
-    }
-    if (u_debug_view == 5) {
-        out_color = vec4(vec3(metallic), 1.0);
-        return;
-    }
-
-    float camera_distance = length(u_camera_position - v_world_position);
-    vec3 fog_color = vec3(0.10, 0.11, 0.10);
-    color = mix(color, fog_color, smoothstep(18.0, 38.0, camera_distance) * 0.25);
-    color = color / (color + vec3(1.0));
-    color = pow(color, vec3(1.0 / 2.2));
-    out_color = vec4(color, v_color.a);
-}
-"#;
-
-const OUTLINE_VERTEX: &str = r#"#version 330 core
-layout (location = 0) in vec3 a_position;
-layout (location = 1) in vec3 a_normal;
-
-uniform mat4 u_model;
-uniform mat4 u_view;
-uniform mat4 u_projection;
-uniform float u_outline_width;
-uniform vec2 u_viewport;
-
-out float v_world_y;
-
-void main() {
-    vec4 world = u_model * vec4(a_position, 1.0);
-    v_world_y = world.y;
-    vec3 view_normal = normalize(mat3(u_view * u_model) * a_normal);
-    vec4 clip = u_projection * u_view * world;
-    vec2 dir = normalize(view_normal.xy + vec2(0.0001, 0.0001));
-    vec2 pixel = vec2(2.0 / u_viewport.x, 2.0 / u_viewport.y);
-    clip.xy += dir * pixel * u_outline_width * clip.w;
-    gl_Position = clip;
-}
-"#;
-
-const OUTLINE_FRAGMENT: &str = r#"#version 330 core
-in float v_world_y;
-uniform vec3 u_outline_color;
-uniform float u_ground_clip_y;
-out vec4 out_color;
-
-void main() {
-    if (v_world_y < u_ground_clip_y) {
-        discard;
-    }
-    out_color = vec4(u_outline_color, 1.0);
-}
-"#;
-
-const UNLIT_VERTEX: &str = r#"#version 330 core
-layout (location = 0) in vec3 a_position;
-
-uniform mat4 u_model;
-uniform mat4 u_view;
-uniform mat4 u_projection;
-
-void main() {
-    gl_Position = u_projection * u_view * u_model * vec4(a_position, 1.0);
-}
-"#;
-
-const UNLIT_FRAGMENT: &str = r#"#version 330 core
-uniform vec3 u_color;
-out vec4 out_color;
-
-void main() {
-    vec3 color = u_color / (u_color + vec3(1.0));
-    out_color = vec4(pow(color, vec3(0.72)), 1.0);
-}
-"#;
-
-const EDITOR_GRID_VERTEX: &str = r#"#version 330 core
-layout (location = 0) in vec3 a_position;
-layout (location = 2) in vec4 a_color;
-
-uniform mat4 u_model;
-uniform mat4 u_view;
-uniform mat4 u_projection;
-uniform float u_time;
-
-out vec4 v_color;
-
-void main() {
-    v_color = a_color;
-    gl_Position = u_projection * u_view * u_model * vec4(a_position, 1.0);
-}
-"#;
-
-const EDITOR_GRID_FRAGMENT: &str = r#"#version 330 core
-in vec4 v_color;
-out vec4 out_color;
-
-void main() {
-    vec3 color = v_color.rgb;
-    float glow = max(max(color.r, color.g), color.b);
-    color += color * smoothstep(0.55, 1.0, glow) * 0.35;
-    out_color = vec4(color, v_color.a);
-}
-"#;
