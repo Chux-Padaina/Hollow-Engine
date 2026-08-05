@@ -17,8 +17,9 @@ Implemented:
 - Direct-light Cook-Torrance/GGX PBR shader.
 - Per-mesh metallic and roughness factors.
 - glTF metallic and roughness factors.
+- Details-panel material sliders for selected-group metallic and roughness.
 - Lit floor cube, editor grid, simple planar projected shadows.
-- Albedo, normals, and lighting-only debug views.
+- Albedo, normals, lighting-only, roughness, and metallic debug views.
 
 Not yet implemented:
 
@@ -81,9 +82,34 @@ Why this matters:
 
 Before importing all texture maps, sliders let us validate the math with simple cubes and known values.
 
-Status: pending.
+Status: partially implemented.
 
-### 3. glTF Metallic-Roughness Import
+Implementation notes:
+
+- The details panel exposes metallic and roughness sliders for the selected object group.
+- The current control applies the same factor values to every mesh in the selected group. That keeps testing simple, but later we should expose per-material slots so imported multi-material assets can preserve different settings per part.
+- Base color, emissive, and normal strength controls are still pending.
+
+### 3. PBR Debug Views
+
+Add debug views for:
+
+- roughness
+- metallic
+
+Why this matters:
+
+When a model looks wrong, these views answer a basic question quickly: did the material values make it into the shader, or is the lighting model the problem?
+
+Status: implemented for factor/uniform values.
+
+Implementation notes:
+
+- `F5` displays roughness as grayscale.
+- `F6` displays metallic as grayscale.
+- These views currently show the scalar material factors. Once metallic-roughness textures are imported, they should show the final combined factor multiplied by the texture channel.
+
+### 4. glTF Metallic-Roughness Texture Import
 
 Read glTF material properties:
 
@@ -104,7 +130,7 @@ This is the standard Sketchfab/glTF workflow. Without it, imported assets cannot
 
 Status: pending.
 
-### 4. Normal Mapping And Tangents
+### 5. Normal Mapping And Tangents
 
 Add tangent-space normal mapping.
 
@@ -121,7 +147,7 @@ Normal maps carry most of the small surface detail in modern assets: tire tread,
 
 Status: pending.
 
-### 5. Emissive And Ambient Occlusion
+### 6. Emissive And Ambient Occlusion
 
 Read and use:
 
@@ -135,7 +161,7 @@ Emissive surfaces will be important for signs, screens, decals, and ZZZ-style ac
 
 Status: pending.
 
-### 6. Real Directional Shadow Map
+### 7. Real Directional Shadow Map
 
 Replace planar blob shadows with a basic shadow map.
 
@@ -152,7 +178,7 @@ Real shadows prove that objects can cast onto other objects, not just the floor.
 
 Status: pending.
 
-### 7. HDR Framebuffer And Tonemapping
+### 8. HDR Framebuffer And Tonemapping
 
 Render the scene into an HDR color buffer instead of directly to the window.
 
@@ -169,7 +195,7 @@ PBR lighting often exceeds `0..1`. HDR lets bright lights, emissive materials, a
 
 Status: pending.
 
-### 8. Basic Environment Lighting
+### 9. Basic Environment Lighting
 
 Start simple, then improve.
 
@@ -191,7 +217,7 @@ Metals and glossy surfaces look wrong without environment reflections. Direct li
 
 Status: pending.
 
-### 9. PBR Debug Views
+### 10. Full PBR Debug Views
 
 Add debug views for:
 
@@ -209,9 +235,14 @@ Why this matters:
 
 Debug views make asset import problems obvious. They also make this project better as a learning/portfolio piece.
 
-Status: pending.
+Status: partially implemented.
 
-### 10. Stylized PBR Pass
+Implementation notes:
+
+- Base color, normals, lighting-only, roughness, metallic, and final shaded views are implemented.
+- Occlusion, emissive, shadow, and texture-specific debug views are still pending.
+
+### 11. Stylized PBR Pass
 
 After the basic PBR renderer is stable, add stylization.
 
@@ -234,12 +265,10 @@ Status: pending.
 
 ## Recommended Immediate Next Steps
 
-1. Add material sliders to the details panel for metallic and roughness.
-2. Add debug views for roughness and metallic.
-3. Import glTF metallic-roughness texture.
-4. Add tangent support and normal maps.
-5. Replace planar shadows with a directional shadow map.
-6. Add basic environment lighting so metals have something to reflect.
+1. Import glTF metallic-roughness texture.
+2. Add tangent support and normal maps.
+3. Replace planar shadows with a directional shadow map.
+4. Add basic environment lighting so metals have something to reflect.
 
 Direct-light PBR is now implemented. The next material-control milestone should make it easy to demonstrate:
 

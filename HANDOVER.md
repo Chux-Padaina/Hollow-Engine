@@ -32,6 +32,7 @@ Do not copy proprietary ZZZ models, environments, UI, logos, or exact assets. Th
   - Schlick Fresnel
   - Lambert diffuse energy split for non-metals
   - per-mesh metallic and roughness factors
+  - details-panel sliders for selected-group metallic and roughness
   - simple planar projected shadows onto the floor cube
   - simple fog and tonemapping
   - inverted-hull outline
@@ -40,6 +41,8 @@ Do not copy proprietary ZZZ models, environments, UI, logos, or exact assets. Th
   - `F2`: albedo
   - `F3`: normals
   - `F4`: lighting only
+  - `F5`: roughness
+  - `F6`: metallic
 - Editor UI:
   - outliner with object groups and lights
   - details panel for object transforms and light properties
@@ -66,6 +69,7 @@ Do not copy proprietary ZZZ models, environments, UI, logos, or exact assets. Th
 - Added a Global/Local transform-space toggle; constrained gizmo handles now draw, pick, and move in the selected space, while clicking the selected object body uses the active tool's free transform behavior.
 - Fixed constrained rotation by applying quaternion deltas around the displayed gizmo axis instead of directly editing Euler components; move gizmos now use cone arrowheads.
 - Implemented the first PBR milestone: direct-light Cook-Torrance/GGX shading with per-mesh metallic/roughness factors and glTF metallic/roughness factor import.
+- Added selected-group material sliders for metallic/roughness and debug views for roughness/metallic masks.
 
 ## Known Limitations
 
@@ -83,12 +87,10 @@ Do not copy proprietary ZZZ models, environments, UI, logos, or exact assets. Th
 
 Move into the basic PBR pipeline described in `PBR_PIPELINE.md`:
 
-1. Add material sliders for metallic and roughness.
-2. Add roughness and metallic debug views.
-3. Import glTF metallic-roughness textures.
-4. Add tangent support and normal mapping.
-5. Replace planar shadows with a directional shadow map.
-6. Add basic environment lighting for more convincing metals.
+1. Import glTF metallic-roughness textures.
+2. Add tangent support and normal mapping.
+3. Replace planar shadows with a directional shadow map.
+4. Add basic environment lighting for more convincing metals.
 
 ## Project Taste Direction
 

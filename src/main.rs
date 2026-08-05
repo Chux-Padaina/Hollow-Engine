@@ -135,6 +135,12 @@ fn run() -> Result<(), String> {
                                         PhysicalKey::Code(KeyCode::F4) => {
                                             app.debug_view = DebugView::LightingOnly
                                         }
+                                        PhysicalKey::Code(KeyCode::F5) => {
+                                            app.debug_view = DebugView::Roughness
+                                        }
+                                        PhysicalKey::Code(KeyCode::F6) => {
+                                            app.debug_view = DebugView::Metallic
+                                        }
                                         PhysicalKey::Code(KeyCode::KeyQ) => {
                                             app.editor_tool = EditorTool::Select
                                         }
@@ -403,6 +409,28 @@ fn object_details(ui: &mut egui::Ui, scene: &mut Scene) {
         if changed {
             for object in scene.selected_group_mut() {
                 object.transform = transform;
+            }
+        }
+    }
+    if let Some(material) = scene
+        .selected_group()
+        .first()
+        .map(|object| object.mesh.material)
+    {
+        let mut material = material;
+        let mut changed = false;
+        ui.separator();
+        ui.label("Material");
+        changed |= ui
+            .add(egui::Slider::new(&mut material.metallic, 0.0..=1.0).text("Metallic"))
+            .changed();
+        changed |= ui
+            .add(egui::Slider::new(&mut material.roughness, 0.04..=1.0).text("Roughness"))
+            .changed();
+        ui.label("Applies to all meshes in the selected group.");
+        if changed {
+            for object in scene.selected_group_mut() {
+                object.mesh.material = material;
             }
         }
     }
@@ -1229,6 +1257,8 @@ enum DebugView {
     Albedo,
     Normals,
     LightingOnly,
+    Roughness,
+    Metallic,
 }
 
 impl DebugView {
@@ -1238,6 +1268,8 @@ impl DebugView {
             Self::Albedo => "albedo",
             Self::Normals => "normals",
             Self::LightingOnly => "lighting-only",
+            Self::Roughness => "roughness",
+            Self::Metallic => "metallic",
         }
     }
 
@@ -1247,6 +1279,8 @@ impl DebugView {
             Self::Albedo => 1,
             Self::Normals => 2,
             Self::LightingOnly => 3,
+            Self::Roughness => 4,
+            Self::Metallic => 5,
         }
     }
 }
@@ -3367,6 +3401,14 @@ void main() {
     if (u_debug_view == 3) {
         vec3 lighting_only = clamp(ambient + direct_light, 0.0, 8.0);
         out_color = vec4(pow(lighting_only / (lighting_only + vec3(1.0)), vec3(1.0 / 2.2)), 1.0);
+        return;
+    }
+    if (u_debug_view == 4) {
+        out_color = vec4(vec3(roughness), 1.0);
+        return;
+    }
+    if (u_debug_view == 5) {
+        out_color = vec4(vec3(metallic), 1.0);
         return;
     }
 

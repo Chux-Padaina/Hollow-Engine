@@ -8,6 +8,7 @@ Small native Rust/OpenGL editor prototype for importing meshes and rendering the
 - Drag and drop `.glb`, `.gltf`, or `.obj` files into the window.
 - Basic CPU import path for mesh positions, normals, indices, and base material color.
 - GPU mesh upload with a direct-light Cook-Torrance/GGX PBR shader and a backface-expanded outline pass.
+- Details-panel material controls for selected object groups: metallic and roughness.
 - Default lighting test scene with warm/cool colored cubes, a darker flattened gray cube floor, one directional light, one point light, simple planar projected shadows, and a non-scene editor/world grid overlay.
 - Scene-owned lights affect object shading through the details panel.
 - Viewport outliner/details panels for scene objects, transforms, and lights.
@@ -25,6 +26,8 @@ Small native Rust/OpenGL editor prototype for importing meshes and rendering the
   - `F2`: albedo/base color debug view
   - `F3`: normal debug view
   - `F4`: lighting-only debug view
+  - `F5`: roughness debug view
+  - `F6`: metallic debug view
   - `Q`: select tool
   - `W`: move tool
   - `E`: rotate tool
@@ -84,9 +87,7 @@ For the basic PBR renderer checklist and learning notes, see [PBR_PIPELINE.md](P
 
 ## Next Engineering Steps
 
-1. Add material sliders for metallic and roughness.
-2. Add debug views for roughness and metallic.
-3. Import glTF metallic-roughness textures.
-4. Add tangent support and normal mapping.
-5. Replace planar shadows with a directional shadow map.
-6. Add basic environment lighting for more convincing metals.
+1. Import glTF metallic-roughness textures.
+2. Add tangent support and normal mapping.
+3. Replace planar shadows with a directional shadow map.
+4. Add basic environment lighting for more convincing metals.
