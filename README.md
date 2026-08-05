@@ -18,11 +18,13 @@ The project originally started as a Rust prototype. The active implementation is
 - C++ renderer draws the world grid, actors, light icons, local/world-aware gizmos, and an in-viewport editor overlay.
 - C++ editor controls now include:
   - top toolbar for select/move/rotate/scale, local/world, and snap
-  - left outliner with actor selection, primitive creation, light creation, and deletion
+  - left outliner with actor selection, primitive creation, directional/point/spot light creation, and deletion
   - right details panel with selected actor transform/type/light/mesh info
   - right mouse orbit, middle mouse pan, and mouse wheel zoom
+  - camera-following editor grid like the Rust prototype
   - click selection for actors/lights
   - mouse-drag move, rotate, and scale handles
+  - Home reset
 
 Legacy Rust reference still contains:
 
@@ -136,8 +138,8 @@ For the long-term engine/editor architecture notes, see [ENGINE_ARCHITECTURE.md]
 
 ## Next Engineering Steps
 
-1. Replace the lightweight C++ overlay with Dear ImGui or a similar retained editor UI layer.
+1. Replace the lightweight C++ overlay with Dear ImGui or a similar retained editor UI layer so details values become editable again.
 2. Move the graphics pipeline into modern OpenGL shader/VBO code.
-3. Add glTF import in C++.
+3. Add glTF/OBJ drag-drop import in C++.
 4. Rebuild the direct-light PBR shader in C++.
 5. Continue the PBR pipeline: metallic-roughness textures, tangent-space normal maps, shadow maps, HDR, and environment lighting.

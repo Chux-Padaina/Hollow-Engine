@@ -43,7 +43,7 @@ private:
     int height_ = 720;
     unsigned int font_base_ = 0;
 
-    void draw_grid() const;
+    void draw_grid(const Camera& camera) const;
     void draw_actor(const Actor& actor, bool selected) const;
     void draw_mesh_part(const MeshPart& part, const Transform& transform) const;
     void draw_cube(const Material& material) const;
@@ -53,7 +53,10 @@ private:
     void draw_gizmo(const Actor& actor, EditorTool tool, TransformSpace space) const;
     void draw_text(float x, float y, const std::string& text, Vec3 color = {0.86f, 0.9f, 0.88f}) const;
     void draw_rect(float x, float y, float w, float h, Vec3 color, float alpha = 1.0f) const;
+    void draw_rect_outline(float x, float y, float w, float h, Vec3 color, float alpha = 1.0f) const;
     void draw_button(float x, float y, float w, float h, const std::string& label, bool active) const;
+    void draw_section_header(float x, float y, float w, const std::string& label) const;
+    void draw_vec3_row(float x, float y, const std::string& label, Vec3 value, bool degrees = false) const;
 };
 
 } // namespace Forge

@@ -40,6 +40,7 @@ private:
     void drag_selected_actor(float dx, float dy);
     void add_mesh(MeshPrimitive primitive);
     void add_light(LightKind kind);
+    void reset_scene();
     ActorId pick_actor(int x, int y) const;
     DragMode pick_gizmo(int x, int y) const;
     bool is_over_editor_ui(int x, int y) const;

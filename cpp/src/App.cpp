@@ -104,6 +104,9 @@ void App::handle_keyboard() {
     if (key_pressed(VK_DELETE)) {
         scene_.destroy_selected_actor();
     }
+    if (key_pressed(VK_HOME)) {
+        reset_scene();
+    }
     if (key_pressed('1')) {
         add_mesh(MeshPrimitive::Cube);
     }
@@ -112,6 +115,15 @@ void App::handle_keyboard() {
     }
     if (key_pressed('3')) {
         add_mesh(MeshPrimitive::Sphere);
+    }
+    if (key_pressed('4')) {
+        add_light(LightKind::Directional);
+    }
+    if (key_pressed('5')) {
+        add_light(LightKind::Point);
+    }
+    if (key_pressed('6')) {
+        add_light(LightKind::Spot);
     }
 }
 
@@ -170,24 +182,22 @@ void App::handle_ui_click(int x, int y) {
     if (point_in_rect(x, y, 414, 9, 88, 25)) engine_.toggle_transform_space();
     if (point_in_rect(x, y, 510, 9, 92, 25)) snap_to_grid_ = !snap_to_grid_;
 
-    int row_y = 79;
+    if (point_in_rect(x, y, 14, 130, 64, 24)) add_mesh(MeshPrimitive::Cube);
+    if (point_in_rect(x, y, 84, 130, 64, 24)) add_mesh(MeshPrimitive::Plane);
+    if (point_in_rect(x, y, 154, 130, 78, 24)) add_mesh(MeshPrimitive::Sphere);
+    if (point_in_rect(x, y, 14, 160, 104, 24)) add_light(LightKind::Directional);
+    if (point_in_rect(x, y, 124, 160, 72, 24)) add_light(LightKind::Point);
+    if (point_in_rect(x, y, 202, 160, 44, 24)) add_light(LightKind::Spot);
+    if (point_in_rect(x, y, 14, 192, 80, 24)) scene_.destroy_selected_actor();
+
+    int row_y = 252;
     for (const auto& actor : scene_.actors()) {
-        if (point_in_rect(x, y, 10, row_y, 238, 24)) {
+        if (point_in_rect(x, y, 14, row_y, 232, 26)) {
             scene_.select_actor(actor->id());
             return;
         }
         row_y += 27;
     }
-
-    row_y += 14;
-    if (point_in_rect(x, y, 14, row_y, 64, 24)) add_mesh(MeshPrimitive::Cube);
-    if (point_in_rect(x, y, 84, row_y, 64, 24)) add_mesh(MeshPrimitive::Plane);
-    if (point_in_rect(x, y, 154, row_y, 78, 24)) add_mesh(MeshPrimitive::Sphere);
-    row_y += 31;
-    if (point_in_rect(x, y, 14, row_y, 104, 24)) add_light(LightKind::Directional);
-    if (point_in_rect(x, y, 124, row_y, 72, 24)) add_light(LightKind::Point);
-    row_y += 31;
-    if (point_in_rect(x, y, 14, row_y, 80, 24)) scene_.destroy_selected_actor();
 }
 
 void App::begin_drag(DragMode mode) {
@@ -281,7 +291,19 @@ void App::add_mesh(MeshPrimitive primitive) {
 void App::add_light(LightKind kind) {
     Transform t;
     t.translation = camera_.target + camera_.forward() * 1.5f + Vec3{0.0f, 1.0f, 0.0f};
-    scene_.create_light_actor(kind == LightKind::Directional ? "Directional Light" : "Point Light", kind, t);
+    const char* name = "Point Light";
+    if (kind == LightKind::Directional) {
+        name = "Directional Light";
+    } else if (kind == LightKind::Spot) {
+        name = "Spot Light";
+    }
+    scene_.create_light_actor(name, kind, t);
+}
+
+void App::reset_scene() {
+    scene_ = make_default_scene();
+    camera_ = Camera{};
+    drag_mode_ = DragMode::None;
 }
 
 ActorId App::pick_actor(int x, int y) const {
@@ -357,7 +379,7 @@ DragMode App::pick_gizmo(int x, int y) const {
 }
 
 bool App::is_over_editor_ui(int x, int y) const {
-    return y < 42 || x < 258 || x > window_.width() - 306;
+    return y < 44 || x < 260 || x > window_.width() - 322;
 }
 
 Vec3 App::gizmo_axis(DragMode mode, const Transform& transform) const {

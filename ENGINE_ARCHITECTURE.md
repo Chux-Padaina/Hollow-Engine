@@ -73,6 +73,7 @@ Implemented in the Rust reference but pending in C++:
 - polished interactive move/rotate/scale gizmos
 - shader-based PBR rendering
 - material debug views
+- drag/drop file import and asset material preservation
 
 ## Current Editor Shape
 

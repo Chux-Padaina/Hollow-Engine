@@ -2,7 +2,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <iomanip>
 #include <numbers>
+#include <sstream>
 
 #include <Windows.h>
 #include <gl/GL.h>
@@ -45,6 +47,12 @@ void draw_line(Vec3 a, Vec3 b, Vec3 color, float width = 1.0f) {
     vertex(b);
     glEnd();
     glLineWidth(1.0f);
+}
+
+std::string fmt(float value) {
+    std::ostringstream out;
+    out << std::fixed << std::setprecision(2) << value;
+    return out.str();
 }
 
 } // namespace
@@ -107,7 +115,6 @@ void Renderer::resize(int width, int height) {
 }
 
 void Renderer::render_editor_overlay(const Scene& scene, const Camera& camera, const EditorOverlayState& overlay) {
-    (void)camera;
     glMatrixMode(GL_PROJECTION);
     glPushMatrix();
     glLoadIdentity();
@@ -119,58 +126,100 @@ void Renderer::render_editor_overlay(const Scene& scene, const Camera& camera, c
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_CULL_FACE);
 
-    draw_rect(0, 0, static_cast<float>(width_), 42, {0.075f, 0.085f, 0.085f}, 0.96f);
-    draw_rect(0, 42, 258, static_cast<float>(height_ - 42), {0.07f, 0.075f, 0.078f}, 0.94f);
-    draw_rect(static_cast<float>(width_ - 306), 42, 306, static_cast<float>(height_ - 42), {0.07f, 0.075f, 0.078f}, 0.94f);
-    draw_text(14, 25, "Forge Editor");
+    const float left_w = 260.0f;
+    const float right_w = 322.0f;
+    const float right_x = static_cast<float>(width_) - right_w;
+    const Vec3 panel{0.060f, 0.066f, 0.068f};
+    const Vec3 panel_alt{0.078f, 0.086f, 0.088f};
+    const Vec3 stroke{0.16f, 0.20f, 0.20f};
+    const Vec3 muted{0.58f, 0.66f, 0.64f};
+    const Vec3 accent{0.84f, 0.75f, 0.36f};
+
+    draw_rect(0, 0, static_cast<float>(width_), 44, {0.045f, 0.051f, 0.052f}, 0.98f);
+    draw_rect(0, 44, left_w, static_cast<float>(height_ - 44), panel, 0.96f);
+    draw_rect(right_x, 44, right_w, static_cast<float>(height_ - 44), panel, 0.96f);
+    draw_rect_outline(0, 44, left_w, static_cast<float>(height_ - 44), stroke, 1.0f);
+    draw_rect_outline(right_x, 44, right_w, static_cast<float>(height_ - 44), stroke, 1.0f);
+
+    draw_text(14, 27, "Forge Editor", {0.96f, 0.98f, 0.94f});
+    draw_text(82, 27, "Tool", muted);
     draw_button(124, 9, 68, 25, "Q Select", overlay.active_tool == EditorTool::Select);
     draw_button(198, 9, 60, 25, "W Move", overlay.active_tool == EditorTool::Move);
     draw_button(264, 9, 68, 25, "E Rotate", overlay.active_tool == EditorTool::Rotate);
     draw_button(338, 9, 64, 25, "R Scale", overlay.active_tool == EditorTool::Scale);
+    draw_rect(406, 10, 1, 23, stroke, 1.0f);
     draw_button(414, 9, 88, 25, overlay.transform_space == TransformSpace::World ? "World" : "Local", overlay.transform_space == TransformSpace::Local);
     draw_button(510, 9, 92, 25, "Snap Grid", overlay.snap_to_grid);
+    draw_text(620, 27, "View: Final", muted);
+    draw_text(708, 27, "Style: Street", muted);
 
-    draw_text(16, 70, "Outliner");
-    float row_y = 96.0f;
+    draw_text(16, 72, "Outliner", {0.95f, 0.96f, 0.92f});
+    draw_rect(12, 86, 236, 1, stroke, 1.0f);
+    draw_button(14, 98, 104, 25, "Add Object", false);
+    draw_button(124, 98, 92, 25, "Add Light", false);
+    draw_button(14, 130, 64, 24, "+ Cube", false);
+    draw_button(84, 130, 64, 24, "+ Plane", false);
+    draw_button(154, 130, 78, 24, "+ Sphere", false);
+    draw_button(14, 160, 104, 24, "+ Directional", false);
+    draw_button(124, 160, 72, 24, "+ Point", false);
+    draw_button(202, 160, 44, 24, "+ Spot", false);
+    draw_button(14, 192, 80, 24, "Delete", false);
+
+    draw_section_header(14, 240, 232, "Actors");
+    float row_y = 270.0f;
     for (const auto& actor : scene.actors()) {
         const bool selected = actor->id() == scene.selected_actor_id();
-        draw_rect(10, row_y - 17, 238, 24, selected ? Vec3{0.22f, 0.34f, 0.43f} : Vec3{0.09f, 0.10f, 0.105f}, selected ? 0.95f : 0.65f);
-        std::string icon = actor->find_component<LightComponent>() ? "[L] " : "[A] ";
-        draw_text(18, row_y, icon + actor->name(), selected ? Vec3{1.0f, 0.94f, 0.6f} : Vec3{0.78f, 0.84f, 0.82f});
+        draw_rect(14, row_y - 18, 232, 26, selected ? Vec3{0.18f, 0.28f, 0.34f} : panel_alt, selected ? 0.98f : 0.72f);
+        draw_rect_outline(14, row_y - 18, 232, 26, selected ? accent : stroke, selected ? 0.9f : 0.55f);
+        std::string icon = actor->find_component<LightComponent>() ? "Light  " : "Actor  ";
+        draw_text(22, row_y, icon + actor->name(), selected ? Vec3{1.0f, 0.94f, 0.62f} : Vec3{0.78f, 0.84f, 0.82f});
         row_y += 27.0f;
     }
-    row_y += 14.0f;
-    draw_button(14, row_y, 64, 24, "+ Cube", false);
-    draw_button(84, row_y, 64, 24, "+ Plane", false);
-    draw_button(154, row_y, 78, 24, "+ Sphere", false);
-    row_y += 31.0f;
-    draw_button(14, row_y, 104, 24, "+ Directional", false);
-    draw_button(124, row_y, 72, 24, "+ Point", false);
-    row_y += 31.0f;
-    draw_button(14, row_y, 80, 24, "Delete", false);
 
-    const float details_x = static_cast<float>(width_ - 292);
-    draw_text(details_x, 70, "Details");
+    const float details_x = right_x + 16.0f;
+    draw_text(details_x, 72, "Details", {0.95f, 0.96f, 0.92f});
+    draw_rect(details_x - 2, 86, right_w - 30, 1, stroke, 1.0f);
     if (const Actor* selected = scene.selected_actor()) {
         const Transform& t = selected->root().local_transform;
-        draw_text(details_x, 100, selected->name());
-        draw_text(details_x, 132, "Type: " + selected->display_type(), {0.68f, 0.78f, 0.78f});
-        draw_text(details_x, 174, "Transform");
-        draw_text(details_x, 202, "Location  X " + std::to_string(t.translation.x) + "  Y " + std::to_string(t.translation.y) + "  Z " + std::to_string(t.translation.z));
-        draw_text(details_x, 228, "Rotation  X " + std::to_string(t.rotation.x) + "  Y " + std::to_string(t.rotation.y) + "  Z " + std::to_string(t.rotation.z));
-        draw_text(details_x, 254, "Scale     X " + std::to_string(t.scale.x) + "  Y " + std::to_string(t.scale.y) + "  Z " + std::to_string(t.scale.z));
+        draw_rect(details_x, 102, right_w - 34, 54, panel_alt, 0.9f);
+        draw_rect_outline(details_x, 102, right_w - 34, 54, stroke, 0.8f);
+        draw_text(details_x + 10, 124, "Actor: " + selected->name(), {0.94f, 0.95f, 0.90f});
+        draw_text(details_x + 10, 148, "Type: " + selected->display_type(), muted);
+
+        draw_section_header(details_x, 184, right_w - 34, "Transform");
+        draw_vec3_row(details_x, 214, "Position", t.translation);
+        draw_vec3_row(details_x, 244, "Rotation", t.rotation, true);
+        draw_vec3_row(details_x, 274, "Scale", t.scale);
+
+        float component_y = 326.0f;
         if (const auto* light = selected->find_component<LightComponent>()) {
-            draw_text(details_x, 302, "Light");
-            draw_text(details_x, 330, "Intensity " + std::to_string(light->intensity));
-            draw_text(details_x, 356, "Range " + std::to_string(light->range));
+            draw_section_header(details_x, component_y, right_w - 34, "Light");
+            draw_text(details_x + 8, component_y + 31, "Enabled: true");
+            draw_text(details_x + 8, component_y + 57, "Intensity: " + fmt(light->intensity));
+            draw_text(details_x + 8, component_y + 83, "Range: " + fmt(light->range));
+            component_y += 126.0f;
         }
         if (const auto* mesh = selected->find_component<StaticMeshComponent>()) {
-            draw_text(details_x, 302, "Static Mesh");
-            draw_text(details_x, 330, "Parts " + std::to_string(mesh->parts.size()));
+            draw_section_header(details_x, component_y, right_w - 34, "Static Mesh");
+            draw_text(details_x + 8, component_y + 31, "Mesh parts: " + std::to_string(mesh->parts.size()));
+            if (!mesh->parts.empty()) {
+                const Material& material = mesh->parts.front().material;
+                draw_section_header(details_x, component_y + 74, right_w - 34, "Material");
+                draw_text(details_x + 8, component_y + 105, "Metallic: " + fmt(material.metallic));
+                draw_text(details_x + 8, component_y + 131, "Roughness: " + fmt(material.roughness));
+            }
         }
+    } else {
+        draw_text(details_x, 118, "No actor selected", muted);
     }
 
-    draw_text(270, static_cast<float>(height_ - 16), "RMB orbit  |  MMB pan  |  Wheel zoom  |  Click actor/gizmo  |  Del delete", {0.62f, 0.72f, 0.70f});
+    const float camera_y = static_cast<float>(height_ - 116);
+    draw_section_header(details_x, camera_y, right_w - 34, "Camera");
+    draw_vec3_row(details_x, camera_y + 30, "Target", camera.target);
+    draw_text(details_x + 8, camera_y + 84, "Distance: " + fmt(camera.distance), muted);
+
+    draw_rect(left_w, static_cast<float>(height_ - 30), static_cast<float>(width_) - left_w - right_w, 30, {0.045f, 0.052f, 0.052f}, 0.86f);
+    draw_text(left_w + 16, static_cast<float>(height_ - 11), "RMB orbit/look   MMB pan   Wheel zoom   Click actor/gizmo   Home reset   Del delete", {0.62f, 0.72f, 0.70f});
 
     glEnable(GL_DEPTH_TEST);
     glEnable(GL_CULL_FACE);
@@ -210,7 +259,7 @@ void Renderer::render(const Scene& scene, const Camera& camera, const Engine& en
     glLoadMatrixf(view.m.data());
 
     if (engine.render_settings().draw_world_grid) {
-        draw_grid();
+        draw_grid(camera);
     }
 
     for (const auto& actor : scene.actors()) {
@@ -225,16 +274,20 @@ void Renderer::render(const Scene& scene, const Camera& camera, const Engine& en
     }
 }
 
-void Renderer::draw_grid() const {
+void Renderer::draw_grid(const Camera& camera) const {
     glDisable(GL_CULL_FACE);
     const Vec3 minor{0.13f, 0.29f, 0.27f};
     const Vec3 major{0.9f, 0.85f, 0.1f};
     constexpr int half = 80;
+    const Vec3 camera_position = camera.position();
+    const float origin_x = std::round(camera_position.x / 10.0f) * 10.0f;
+    const float origin_z = std::round(camera_position.z / 10.0f) * 10.0f;
     for (int i = -half; i <= half; ++i) {
         const bool axis = i == 0;
         const float width = axis ? 2.0f : 1.0f;
-        draw_line({static_cast<float>(i), 0.0f, -half}, {static_cast<float>(i), 0.0f, half}, axis ? major : minor, width);
-        draw_line({-half, 0.0f, static_cast<float>(i)}, {half, 0.0f, static_cast<float>(i)}, axis ? major : minor, width);
+        const float f = static_cast<float>(i);
+        draw_line({origin_x + f, 0.0f, origin_z - half}, {origin_x + f, 0.0f, origin_z + half}, axis ? major : minor, width);
+        draw_line({origin_x - half, 0.0f, origin_z + f}, {origin_x + half, 0.0f, origin_z + f}, axis ? major : minor, width);
     }
     glEnable(GL_CULL_FACE);
 }
@@ -429,9 +482,40 @@ void Renderer::draw_rect(float x, float y, float w, float h, Vec3 color, float a
     glEnd();
 }
 
+void Renderer::draw_rect_outline(float x, float y, float w, float h, Vec3 color, float alpha) const {
+    set_color(color, alpha);
+    glBegin(GL_LINE_LOOP);
+    glVertex2f(x, y);
+    glVertex2f(x + w, y);
+    glVertex2f(x + w, y + h);
+    glVertex2f(x, y + h);
+    glEnd();
+}
+
 void Renderer::draw_button(float x, float y, float w, float h, const std::string& label, bool active) const {
-    draw_rect(x, y, w, h, active ? Vec3{0.20f, 0.34f, 0.39f} : Vec3{0.12f, 0.13f, 0.14f}, 0.95f);
+    draw_rect(x, y, w, h, active ? Vec3{0.18f, 0.30f, 0.34f} : Vec3{0.095f, 0.105f, 0.110f}, 0.96f);
+    draw_rect_outline(x, y, w, h, active ? Vec3{0.84f, 0.75f, 0.36f} : Vec3{0.18f, 0.21f, 0.21f}, active ? 0.95f : 0.72f);
     draw_text(x + 8.0f, y + 17.0f, label, active ? Vec3{1.0f, 0.94f, 0.58f} : Vec3{0.78f, 0.83f, 0.81f});
+}
+
+void Renderer::draw_section_header(float x, float y, float w, const std::string& label) const {
+    draw_rect(x, y, w, 24, {0.085f, 0.095f, 0.098f}, 0.92f);
+    draw_rect_outline(x, y, w, 24, {0.16f, 0.20f, 0.20f}, 0.8f);
+    draw_text(x + 8, y + 17, label, {0.90f, 0.92f, 0.88f});
+}
+
+void Renderer::draw_vec3_row(float x, float y, const std::string& label, Vec3 value, bool degrees) const {
+    if (degrees) {
+        constexpr float to_degrees = 57.2957795f;
+        value *= to_degrees;
+    }
+    draw_text(x + 8, y, label, {0.60f, 0.68f, 0.66f});
+    draw_rect(x + 76, y - 16, 62, 23, {0.045f, 0.052f, 0.052f}, 0.95f);
+    draw_rect(x + 144, y - 16, 62, 23, {0.045f, 0.052f, 0.052f}, 0.95f);
+    draw_rect(x + 212, y - 16, 62, 23, {0.045f, 0.052f, 0.052f}, 0.95f);
+    draw_text(x + 84, y, "X " + fmt(value.x), {0.86f, 0.62f, 0.58f});
+    draw_text(x + 152, y, "Y " + fmt(value.y), {0.62f, 0.82f, 0.62f});
+    draw_text(x + 220, y, "Z " + fmt(value.z), {0.58f, 0.68f, 0.90f});
 }
 
 } // namespace Forge

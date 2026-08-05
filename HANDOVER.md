@@ -11,7 +11,7 @@ Do not copy proprietary ZZZ models, environments, UI, logos, or exact assets. Th
 - Active migration from Rust/OpenGL to C++/OpenGL.
 - New C++ app builds successfully with Visual Studio build tools through `build_cpp.bat`.
 - C++ source tree lives under `cpp/`.
-- Current C++ app has a native Win32 OpenGL window, a component-driven scene skeleton, two cube actors, one directional light actor, one point light actor, world-grid rendering, light icons, an editor overlay, local/world-aware gizmos, mouse camera controls, actor selection, add/delete controls, and basic mouse-driven move/rotate/scale.
+- Current C++ app has a native Win32 OpenGL window, a component-driven scene skeleton, two cube actors, one directional light actor, one point light actor, camera-following world-grid rendering, light icons, a Rust-inspired editor overlay, local/world-aware gizmos, mouse camera controls, actor selection, primitive/light add controls including spot lights, deletion, Home reset, and mouse-driven move/rotate/scale.
 - Rust/OpenGL desktop app remains in the repo as the feature-rich reference while the C++ version catches up.
 - Git repo initialized with incremental commits.
 - `PBR_PIPELINE.md` tracks the render-pipeline learning checklist and implementation plan.
@@ -94,6 +94,7 @@ Do not copy proprietary ZZZ models, environments, UI, logos, or exact assets. Th
 - C++ rendering currently uses dependency-light immediate-mode OpenGL as a bootstrap layer. It should move to shader/VBO-based modern OpenGL before the PBR pipeline is ported.
 - C++ editor panels are currently a lightweight OpenGL overlay, not egui/ImGui. They visually restore the editor shell but do not yet support editable numeric fields/sliders.
 - C++ drag/drop import, glTF import, material inspector sliders, style/debug view buttons, and full Unreal-quality gizmo hit testing are pending.
+- C++ has a camera-following visual grid now, but it is still immediate-mode line rendering rather than the Rust shader grid with subtle animated/stylized treatment.
 - No shadow maps yet; the previous fake planar/contact shadow pass is currently disabled/removed so the editor grid stays purely visual.
 - No HDR framebuffer or real post-processing yet.
 - No bloom despite emissive-looking showroom panels.
