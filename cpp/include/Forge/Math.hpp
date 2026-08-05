@@ -23,11 +23,15 @@ Vec3 operator+(Vec3 a, Vec3 b);
 Vec3 operator-(Vec3 a, Vec3 b);
 Vec3 operator*(Vec3 value, float scalar);
 Vec3 operator/(Vec3 value, float scalar);
+Vec3& operator+=(Vec3& a, Vec3 b);
+Vec3& operator-=(Vec3& a, Vec3 b);
+Vec3& operator*=(Vec3& value, float scalar);
 
 float dot(Vec3 a, Vec3 b);
 Vec3 cross(Vec3 a, Vec3 b);
 float length(Vec3 value);
 Vec3 normalize(Vec3 value);
+Vec3 clamp(Vec3 value, float min_value, float max_value);
 
 struct Mat4 {
     std::array<float, 16> m{};

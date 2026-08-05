@@ -20,6 +20,21 @@ Vec3 operator/(Vec3 value, float scalar) {
     return {value.x / scalar, value.y / scalar, value.z / scalar};
 }
 
+Vec3& operator+=(Vec3& a, Vec3 b) {
+    a = a + b;
+    return a;
+}
+
+Vec3& operator-=(Vec3& a, Vec3 b) {
+    a = a - b;
+    return a;
+}
+
+Vec3& operator*=(Vec3& value, float scalar) {
+    value = value * scalar;
+    return value;
+}
+
 float dot(Vec3 a, Vec3 b) {
     return a.x * b.x + a.y * b.y + a.z * b.z;
 }
@@ -42,6 +57,14 @@ Vec3 normalize(Vec3 value) {
         return {};
     }
     return value / len;
+}
+
+Vec3 clamp(Vec3 value, float min_value, float max_value) {
+    return {
+        std::clamp(value.x, min_value, max_value),
+        std::clamp(value.y, min_value, max_value),
+        std::clamp(value.z, min_value, max_value),
+    };
 }
 
 Mat4 Mat4::identity() {

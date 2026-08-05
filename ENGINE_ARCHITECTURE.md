@@ -67,10 +67,10 @@ Implemented in the active C++ skeleton:
 
 Implemented in the Rust reference but pending in C++:
 
-- egui editor panels
+- egui/ImGui-style editable editor panels
 - drag/drop glTF/OBJ import
-- full viewport picking
-- interactive move/rotate/scale gizmos
+- precise viewport picking
+- polished interactive move/rotate/scale gizmos
 - shader-based PBR rendering
 - material debug views
 

@@ -2,3 +2,4 @@
 /cpp/build
 /cpp/build-msvc
 /cpp/.idea
+/cpp/cmake-build-*

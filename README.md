@@ -15,7 +15,14 @@ The project originally started as a Rust prototype. The active implementation is
   - active components currently include static meshes and lights
   - placeholders exist for future engine/game systems
 - Default C++ scene with two cube actors, one directional light actor, and one point light actor.
-- Initial C++ renderer draws the world grid, actors, light icons, and a selected actor gizmo.
+- C++ renderer draws the world grid, actors, light icons, local/world-aware gizmos, and an in-viewport editor overlay.
+- C++ editor controls now include:
+  - top toolbar for select/move/rotate/scale, local/world, and snap
+  - left outliner with actor selection, primitive creation, light creation, and deletion
+  - right details panel with selected actor transform/type/light/mesh info
+  - right mouse orbit, middle mouse pan, and mouse wheel zoom
+  - click selection for actors/lights
+  - mouse-drag move, rotate, and scale handles
 
 Legacy Rust reference still contains:
 
@@ -129,7 +136,7 @@ For the long-term engine/editor architecture notes, see [ENGINE_ARCHITECTURE.md]
 
 ## Next Engineering Steps
 
-1. Bring the C++ editor shell up to feature parity with the Rust prototype.
+1. Replace the lightweight C++ overlay with Dear ImGui or a similar retained editor UI layer.
 2. Move the graphics pipeline into modern OpenGL shader/VBO code.
 3. Add glTF import in C++.
 4. Rebuild the direct-light PBR shader in C++.

@@ -1,6 +1,7 @@
 #include "Forge/Win32Window.hpp"
 
 #include <Windows.h>
+#include <windowsx.h>
 #include <gl/GL.h>
 
 namespace Forge {
@@ -101,6 +102,16 @@ bool Win32Window::poll_messages() {
     return !should_close_;
 }
 
+void Win32Window::begin_frame() {
+    mouse_.previous_x = mouse_.x;
+    mouse_.previous_y = mouse_.y;
+    mouse_.delta_x = 0;
+    mouse_.delta_y = 0;
+    mouse_.wheel_delta = 0;
+    mouse_.left_pressed = false;
+    mouse_.left_released = false;
+}
+
 void Win32Window::swap_buffers() {
     SwapBuffers(device_context_);
 }
@@ -124,6 +135,44 @@ LRESULT CALLBACK Win32Window::window_proc(HWND hwnd, UINT message, WPARAM wparam
 
 LRESULT Win32Window::handle_message(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam) {
     switch (message) {
+    case WM_MOUSEMOVE: {
+        const int x = GET_X_LPARAM(lparam);
+        const int y = GET_Y_LPARAM(lparam);
+        mouse_.delta_x += x - mouse_.x;
+        mouse_.delta_y += y - mouse_.y;
+        mouse_.x = x;
+        mouse_.y = y;
+        return 0;
+    }
+    case WM_LBUTTONDOWN:
+        SetCapture(hwnd);
+        mouse_.left_down = true;
+        mouse_.left_pressed = true;
+        return 0;
+    case WM_LBUTTONUP:
+        ReleaseCapture();
+        mouse_.left_down = false;
+        mouse_.left_released = true;
+        return 0;
+    case WM_RBUTTONDOWN:
+        SetCapture(hwnd);
+        mouse_.right_down = true;
+        return 0;
+    case WM_RBUTTONUP:
+        ReleaseCapture();
+        mouse_.right_down = false;
+        return 0;
+    case WM_MBUTTONDOWN:
+        SetCapture(hwnd);
+        mouse_.middle_down = true;
+        return 0;
+    case WM_MBUTTONUP:
+        ReleaseCapture();
+        mouse_.middle_down = false;
+        return 0;
+    case WM_MOUSEWHEEL:
+        mouse_.wheel_delta += GET_WHEEL_DELTA_WPARAM(wparam);
+        return 0;
     case WM_SIZE:
         width_ = LOWORD(lparam);
         height_ = HIWORD(lparam);
