@@ -11,10 +11,11 @@ Do not copy proprietary ZZZ models, environments, UI, logos, or exact assets. Th
 - Rust/OpenGL desktop app.
 - Git repo initialized with incremental commits.
 - `PBR_PIPELINE.md` tracks the render-pipeline learning checklist and implementation plan.
+- `ENGINE_ARCHITECTURE.md` tracks the long-term editor/engine skeleton.
 - Drag/drop import for `.glb`, `.gltf`, and `.obj`.
 - glTF node transforms are applied so multi-part models stay assembled.
 - glTF base color factors, vertex colors, UVs, and base color textures are preserved.
-- Scene data uses one actor list, similar to the Unreal editor mental model: every outliner item is an `Actor`, and actor kinds/components currently cover static mesh actors and light actors.
+- Scene data uses one actor list, similar to the Unreal editor mental model: every outliner item is an `Actor`; actors own root scene components and component lists, and current active components cover static meshes and lights.
 - Imported glTF/OBJ assets become one mesh actor with multiple mesh parts, so dragging moves the whole imported asset.
 - Default editor test scene with two cube actors, a non-scene editor/world grid overlay, one directional light actor, and one point light actor.
 - The old baked-in floor object has been removed. A floor/plane can now be added as a normal scene object from the outliner.
@@ -78,7 +79,8 @@ Do not copy proprietary ZZZ models, environments, UI, logos, or exact assets. Th
 - Added selected mesh actor material sliders for metallic/roughness and debug views for roughness/metallic masks.
 - Split editor UI code into `src/editor.rs`, removed the default floor, and added outliner creation/deletion for primitives and lights.
 - Added light actor icons, light selection/gizmo transforms, grid snap toggle, larger camera-following editor grid, corrected generated sphere triangle winding, and moved outlines after opaque rendering so depth clipping is more reliable.
-- Reworked scene ownership so meshes and lights are both actor kinds in one outliner list, removed the fake contact-shadow pass from the grid, and removed all Y=0 movement locking.
+- Reworked scene ownership so meshes and lights are both component-driven actors in one outliner list, removed the fake contact-shadow pass from the grid, and removed all Y=0 movement locking.
+- Added root scene components, component lists, static mesh components, light components, and placeholder component types for scripts, audio, animation, and input.
 
 ## Known Limitations
 

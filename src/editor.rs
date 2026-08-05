@@ -98,26 +98,37 @@ fn actor_details(ui: &mut egui::Ui, actor: &mut Actor) {
     ui.label(format!("Type: {}", actor.kind_name()));
     ui.separator();
     ui.label("Transform");
-    vec3_drag(ui, "Position", &mut actor.transform.translation, 0.05);
+    vec3_drag(
+        ui,
+        "Position",
+        &mut actor.root.local_transform.translation,
+        0.05,
+    );
     let mut rotation_degrees = Vec3::new(
-        actor.transform.rotation.x.to_degrees(),
-        actor.transform.rotation.y.to_degrees(),
-        actor.transform.rotation.z.to_degrees(),
+        actor.root.local_transform.rotation.x.to_degrees(),
+        actor.root.local_transform.rotation.y.to_degrees(),
+        actor.root.local_transform.rotation.z.to_degrees(),
     );
     if vec3_drag(ui, "Rotation", &mut rotation_degrees, 0.4) {
-        actor.transform.rotation = Vec3::new(
+        actor.root.local_transform.rotation = Vec3::new(
             rotation_degrees.x.to_radians(),
             rotation_degrees.y.to_radians(),
             rotation_degrees.z.to_radians(),
         );
     }
-    if matches!(actor.kind, ActorKind::Mesh { .. }) {
-        vec3_drag(ui, "Scale", &mut actor.transform.scale, 0.02);
+    if actor.static_mesh_component().is_some() {
+        vec3_drag(ui, "Scale", &mut actor.root.local_transform.scale, 0.02);
     }
 
-    match &mut actor.kind {
-        ActorKind::Mesh { parts } => mesh_details(ui, parts),
-        ActorKind::Light(light) => light_details(ui, light),
+    for component in &mut actor.components {
+        match component {
+            Component::StaticMesh(mesh) => mesh_details(ui, &mut mesh.parts),
+            Component::Light(light) => light_details(ui, &mut light.light),
+            Component::Script(_) => {}
+            Component::Audio(_) => {}
+            Component::Animation(_) => {}
+            Component::Input(_) => {}
+        }
     }
 }
 
