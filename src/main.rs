@@ -215,6 +215,8 @@ struct App {
     drag_start_transform: Option<Transform>,
     rotate_drag_last_angle: Option<f32>,
     rotate_drag_amount: f32,
+    snap_to_grid: bool,
+    grid_size: f32,
     start_time: Instant,
     style: StylePreset,
     debug_view: DebugView,
@@ -358,6 +360,8 @@ impl App {
             drag_start_transform: None,
             rotate_drag_last_angle: None,
             rotate_drag_amount: 0.0,
+            snap_to_grid: false,
+            grid_size: 1.0,
             start_time: Instant::now(),
             style: StylePreset::Street,
             debug_view: DebugView::Final,
@@ -564,11 +568,7 @@ impl App {
     fn begin_tool_drag(&mut self) {
         self.drag_start_cursor = self.cursor;
         self.drag_offset = Vec3::ZERO;
-        self.drag_start_transform = self
-            .scene
-            .selected_group()
-            .first()
-            .map(|object| object.transform);
+        self.drag_start_transform = self.selected_transform();
         let ray = self.cursor_ray();
         if let Some(ray) = ray {
             if let Some(handle) = self.hit_test_gizmo(ray) {
@@ -584,6 +584,10 @@ impl App {
                     .first()
                     .map(|object| object.transform);
                 self.active_gizmo = Some(GizmoHandle::Center);
+            } else if let Some(light_index) = self.pick_light(ray) {
+                self.scene.select_light(light_index);
+                self.drag_start_transform = self.selected_transform();
+                self.active_gizmo = Some(GizmoHandle::Center);
             } else {
                 self.active_gizmo = None;
             }
@@ -595,11 +599,11 @@ impl App {
         }
 
         if matches!(self.editor_tool, EditorTool::Select | EditorTool::Move) {
-            if let Some(object) = self.scene.selected_group().first() {
-                let origin = object.transform.translation;
+            if let Some(selected) = self.selected_transform() {
+                let origin = selected.translation;
                 let hit_point = match self.active_gizmo {
                     Some(GizmoHandle::Plane(plane)) => self.cursor_ray().and_then(|ray| {
-                        let (a, b) = self.gizmo_plane_axes(plane, object.transform);
+                        let (a, b) = self.gizmo_plane_axes(plane, selected);
                         ray.intersect_plane(origin, a.cross(b).normalize_or_zero())
                     }),
                     Some(GizmoHandle::Axis(Axis::Y)) => None,
@@ -619,12 +623,7 @@ impl App {
         };
         let start_transform = self
             .drag_start_transform
-            .or_else(|| {
-                self.scene
-                    .selected_group()
-                    .first()
-                    .map(|object| object.transform)
-            })
+            .or_else(|| self.selected_transform())
             .unwrap_or_default();
         let mut transform = start_transform;
         let total_delta = self.cursor - self.drag_start_cursor;
@@ -634,6 +633,7 @@ impl App {
                 GizmoHandle::Center => {
                     if let Some(point) = self.cursor_ground_point() {
                         transform.translation = point + self.drag_offset;
+                        transform.translation = self.snap_translation(transform.translation);
                     }
                 }
                 GizmoHandle::Axis(axis) => {
@@ -644,7 +644,11 @@ impl App {
                         total_delta,
                     );
                     transform.translation = start_transform.translation + axis_vec * amount;
-                    if matches!(self.transform_space, TransformSpace::Global) && axis == Axis::Y {
+                    transform.translation = self.snap_translation(transform.translation);
+                    if self.scene.selected_light.is_none()
+                        && matches!(self.transform_space, TransformSpace::Global)
+                        && axis == Axis::Y
+                    {
                         transform.translation.y = transform.translation.y.max(GROUND_CLEARANCE);
                     }
                 }
@@ -659,6 +663,7 @@ impl App {
                         let delta = target - start_transform.translation;
                         transform.translation =
                             start_transform.translation + a * delta.dot(a) + b * delta.dot(b);
+                        transform.translation = self.snap_translation(transform.translation);
                     }
                 }
                 GizmoHandle::Ring(_) => {}
@@ -667,9 +672,7 @@ impl App {
                 if matches!(handle, GizmoHandle::Center) {
                     transform.rotation = start_transform.rotation
                         + Vec3::new(total_delta.y * 0.01, total_delta.x * 0.01, 0.0);
-                    for object in self.scene.selected_group_mut() {
-                        object.transform = transform;
-                    }
+                    self.apply_selected_transform(transform);
                     return;
                 }
                 let axis = match handle {
@@ -722,9 +725,41 @@ impl App {
             }
         }
 
+        self.apply_selected_transform(transform);
+    }
+
+    fn selected_transform(&self) -> Option<Transform> {
+        if let Some(light_index) = self.scene.selected_light {
+            return self.scene.lights.get(light_index).map(Light::transform);
+        }
+        self.scene
+            .selected_group()
+            .first()
+            .map(|object| object.transform)
+    }
+
+    fn apply_selected_transform(&mut self, transform: Transform) {
+        if let Some(light_index) = self.scene.selected_light {
+            if let Some(light) = self.scene.lights.get_mut(light_index) {
+                light.apply_transform(transform);
+            }
+            return;
+        }
         for object in self.scene.selected_group_mut() {
             object.transform = transform;
         }
+    }
+
+    fn snap_translation(&self, translation: Vec3) -> Vec3 {
+        if !self.snap_to_grid {
+            return translation;
+        }
+        let grid = self.grid_size.max(0.001);
+        Vec3::new(
+            (translation.x / grid).round() * grid,
+            translation.y,
+            (translation.z / grid).round() * grid,
+        )
     }
 
     fn mouse_wheel(&mut self, delta: MouseScrollDelta) {
@@ -784,7 +819,7 @@ impl App {
     }
 
     fn cursor_angle_around_selected(&self) -> Option<f32> {
-        let origin = self.scene.selected_group().first()?.transform.translation;
+        let origin = self.selected_transform()?.translation;
         let screen_origin = self.project_world_to_screen(origin)?;
         let offset = self.cursor - screen_origin;
         (offset.length_squared() > 16.0).then_some(offset.y.atan2(offset.x))
@@ -863,8 +898,26 @@ impl App {
             .map(|(_, group_id)| group_id)
     }
 
+    fn pick_light(&self, ray: Ray) -> Option<usize> {
+        self.scene
+            .lights
+            .iter()
+            .enumerate()
+            .filter_map(|(index, light)| {
+                let radius = match light.kind {
+                    LightKind::Directional => 0.42,
+                    LightKind::Point => 0.34,
+                    LightKind::Spot => 0.38,
+                };
+                ray.intersect_sphere(light.position, radius)
+                    .map(|distance| (distance, index))
+            })
+            .min_by(|a, b| a.0.total_cmp(&b.0))
+            .map(|(_, index)| index)
+    }
+
     fn hit_test_gizmo(&self, ray: Ray) -> Option<GizmoHandle> {
-        let transform = self.scene.selected_group().first()?.transform;
+        let transform = self.selected_transform()?;
         let origin = transform.translation;
         if ray.intersect_sphere(origin, 0.22).is_some() {
             return Some(GizmoHandle::Center);
@@ -912,15 +965,24 @@ impl App {
     }
 
     fn update_title(&self, window: &Window) {
-        window.set_title(&format!(
-            "{WINDOW_TITLE} | style: {} | view: {} | selected: {} | objects: {} | lights: {} | key: {} | {}",
-            self.style.name(),
-            self.debug_view.name(),
+        let selected_name = if let Some(light_index) = self.scene.selected_light {
+            self.scene
+                .lights
+                .get(light_index)
+                .map(|light| light.name.as_str())
+                .unwrap_or("none")
+        } else {
             self.scene
                 .objects
                 .get(self.scene.selected)
                 .map(|object| object.name.as_str())
-                .unwrap_or("none"),
+                .unwrap_or("none")
+        };
+        window.set_title(&format!(
+            "{WINDOW_TITLE} | style: {} | view: {} | selected: {} | objects: {} | lights: {} | key: {} | {}",
+            self.style.name(),
+            self.debug_view.name(),
+            selected_name,
             self.scene.objects.len(),
             self.scene.lights.len(),
             self.scene.key_light_name(),
@@ -1379,7 +1441,7 @@ impl Light {
         Self {
             name: name.to_string(),
             kind: LightKind::Directional,
-            position: Vec3::ZERO,
+            position: -direction.normalize_or_zero() * 3.0,
             direction: direction.normalize_or_zero(),
             color,
             intensity,
@@ -1437,6 +1499,28 @@ impl Light {
 
     fn animated_intensity(&self, time: f32) -> f32 {
         self.intensity * (1.0 + self.pulse * time.sin())
+    }
+
+    fn transform(&self) -> Transform {
+        let direction = self.direction.normalize_or(Vec3::NEG_Y);
+        let rotation = Quat::from_rotation_arc(Vec3::NEG_Y, direction);
+        let mut transform = Transform {
+            translation: self.position,
+            scale: Vec3::splat((self.range / 5.0).clamp(0.12, 4.0)),
+            ..Transform::default()
+        };
+        transform.set_rotation_quat(rotation);
+        transform
+    }
+
+    fn apply_transform(&mut self, transform: Transform) {
+        self.position = transform.translation;
+        if matches!(self.kind, LightKind::Directional | LightKind::Spot) {
+            self.direction = (transform.rotation_quat() * Vec3::NEG_Y).normalize_or(Vec3::NEG_Y);
+        }
+        if !matches!(self.kind, LightKind::Directional) {
+            self.range = (transform.scale.max_element() * 5.0).clamp(0.1, 80.0);
+        }
     }
 }
 
@@ -1636,10 +1720,11 @@ impl Scene {
             .count() as i32
     }
 
-    fn visible_gizmo_lights(&self) -> impl Iterator<Item = &Light> {
-        self.lights
-            .iter()
-            .filter(|light| light.enabled && !matches!(light.kind, LightKind::Directional))
+    fn selected_transform(&self) -> Option<Transform> {
+        if let Some(light_index) = self.selected_light {
+            return self.lights.get(light_index).map(Light::transform);
+        }
+        self.selected_group().first().map(|object| object.transform)
     }
 
     fn key_light_name(&self) -> &str {
@@ -1943,7 +2028,7 @@ impl MeshCpu {
                 let row = longitude_segments + 1;
                 let a = (lat * row + lon) as u32;
                 let b = a + row as u32;
-                indices.extend_from_slice(&[a, b, a + 1, a + 1, b, b + 1]);
+                indices.extend_from_slice(&[a, a + 1, b, a + 1, b + 1, b]);
             }
         }
 
@@ -2311,14 +2396,22 @@ impl Renderer {
         self.begin_pass(RenderPass::Environment);
         self.draw_editor_grid(frame);
 
-        self.begin_pass(RenderPass::Outlines);
-        for object in &scene.objects {
-            self.draw_object_outline(object, object.group_id == scene.selected_group, frame);
-        }
-
         self.begin_pass(RenderPass::Opaque);
         for object in &scene.objects {
-            self.draw_object_surface(object, object.group_id == scene.selected_group, frame);
+            self.draw_object_surface(
+                object,
+                scene.selected_light.is_none() && object.group_id == scene.selected_group,
+                frame,
+            );
+        }
+
+        self.begin_pass(RenderPass::Outlines);
+        for object in &scene.objects {
+            self.draw_object_outline(
+                object,
+                scene.selected_light.is_none() && object.group_id == scene.selected_group,
+                frame,
+            );
         }
 
         self.begin_pass(RenderPass::Decals);
@@ -2370,11 +2463,16 @@ impl Renderer {
 
     unsafe fn draw_editor_grid(&self, frame: &FrameData) {
         self.gl.use_program(Some(self.editor_grid_program));
+        let grid_origin = Vec3::new(
+            (frame.camera_position.x / 10.0).round() * 10.0,
+            0.0,
+            (frame.camera_position.z / 10.0).round() * 10.0,
+        );
         set_mat4(
             &self.gl,
             self.editor_grid_program,
             "u_model",
-            Mat4::IDENTITY,
+            Mat4::from_translation(grid_origin),
         );
         set_mat4(&self.gl, self.editor_grid_program, "u_view", frame.view);
         set_mat4(
@@ -2404,38 +2502,104 @@ impl Renderer {
             "u_projection",
             frame.projection,
         );
-        self.gl
-            .bind_vertex_array(Some(self.light_gizmo.vertex_array));
-        for light in scene.visible_gizmo_lights() {
-            let type_scale = match light.kind {
-                LightKind::Point => Vec3::splat(0.055 + light.intensity * 0.045),
-                LightKind::Spot => Vec3::new(0.07, 0.12, 0.07),
-                LightKind::Directional => Vec3::splat(0.08),
-            };
-            let model = Mat4::from_translation(light.position) * Mat4::from_scale(type_scale);
-            set_mat4(&self.gl, self.unlit_program, "u_model", model);
-            set_vec3(
-                &self.gl,
-                self.unlit_program,
-                "u_color",
-                light.color * (0.55 + light.intensity * 0.65),
-            );
-            self.gl.draw_elements(
-                glow::TRIANGLES,
-                self.light_gizmo.index_count,
-                glow::UNSIGNED_INT,
-                0,
-            );
+        for (index, light) in scene.lights.iter().enumerate() {
+            self.draw_light_icon(light, scene.selected_light == Some(index));
         }
         self.gl.bind_vertex_array(None);
     }
 
+    unsafe fn draw_light_icon(&self, light: &Light, selected: bool) {
+        let base_color = if selected {
+            Vec3::new(1.0, 0.92, 0.18)
+        } else {
+            light.color * (0.65 + light.intensity * 0.35)
+        };
+        let highlight = if selected { 1.25 } else { 1.0 };
+        match light.kind {
+            LightKind::Point => {
+                self.gl
+                    .bind_vertex_array(Some(self.light_gizmo.vertex_array));
+                self.draw_gizmo_box(
+                    light.position,
+                    Mat4::IDENTITY,
+                    Vec3::splat(0.16 * highlight),
+                    base_color,
+                );
+                self.draw_gizmo_box(
+                    light.position,
+                    Mat4::IDENTITY,
+                    Vec3::new(0.5, 0.045, 0.045) * highlight,
+                    base_color,
+                );
+                self.draw_gizmo_box(
+                    light.position,
+                    Mat4::IDENTITY,
+                    Vec3::new(0.045, 0.5, 0.045) * highlight,
+                    base_color,
+                );
+                self.draw_gizmo_box(
+                    light.position,
+                    Mat4::IDENTITY,
+                    Vec3::new(0.045, 0.045, 0.5) * highlight,
+                    base_color,
+                );
+            }
+            LightKind::Directional => {
+                let direction = light.direction.normalize_or(Vec3::NEG_Y);
+                let rotation = Quat::from_rotation_arc(Vec3::Y, direction);
+                let basis = Mat4::from_quat(rotation);
+                self.gl
+                    .bind_vertex_array(Some(self.light_gizmo.vertex_array));
+                self.draw_gizmo_box(
+                    light.position - direction * 0.24,
+                    basis,
+                    Vec3::new(0.055, 0.48, 0.055) * highlight,
+                    base_color,
+                );
+                let model = Mat4::from_translation(light.position + direction * 0.18)
+                    * basis
+                    * Mat4::from_scale(Vec3::splat(0.22 * highlight));
+                set_mat4(&self.gl, self.unlit_program, "u_model", model);
+                set_vec3(&self.gl, self.unlit_program, "u_color", base_color);
+                self.gl
+                    .bind_vertex_array(Some(self.arrow_gizmo.vertex_array));
+                self.gl.draw_elements(
+                    glow::TRIANGLES,
+                    self.arrow_gizmo.index_count,
+                    glow::UNSIGNED_INT,
+                    0,
+                );
+            }
+            LightKind::Spot => {
+                let direction = light.direction.normalize_or(Vec3::NEG_Y);
+                let rotation = Quat::from_rotation_arc(Vec3::Y, direction);
+                let model = Mat4::from_translation(light.position)
+                    * Mat4::from_quat(rotation)
+                    * Mat4::from_scale(Vec3::splat(0.34 * highlight));
+                set_mat4(&self.gl, self.unlit_program, "u_model", model);
+                set_vec3(&self.gl, self.unlit_program, "u_color", base_color);
+                self.gl
+                    .bind_vertex_array(Some(self.arrow_gizmo.vertex_array));
+                self.gl.draw_elements(
+                    glow::TRIANGLES,
+                    self.arrow_gizmo.index_count,
+                    glow::UNSIGNED_INT,
+                    0,
+                );
+                self.gl
+                    .bind_vertex_array(Some(self.light_gizmo.vertex_array));
+                self.draw_gizmo_box(
+                    light.position - direction * 0.16,
+                    Mat4::from_quat(rotation),
+                    Vec3::splat(0.11 * highlight),
+                    base_color,
+                );
+            }
+        }
+    }
+
     unsafe fn draw_transform_gizmo(&self, scene: &Scene, frame: &FrameData) {
-        let Some(transform) = scene
-            .selected_group()
-            .first()
-            .map(|object| object.transform)
-        else {
+        let Some(transform) = scene.selected_transform() else {
             return;
         };
         let origin = transform.translation;
@@ -2910,8 +3074,8 @@ fn editor_grid_mesh() -> MeshCpu {
         indices.extend_from_slice(&[base, base + 1, base + 2, base, base + 2, base + 3]);
     };
 
-    let size = 12;
-    let half_width = 0.01;
+    let size = 240;
+    let half_width = 0.012;
     let grid_y = 0.018;
     for i in -size..=size {
         let f = i as f32;

@@ -12,6 +12,7 @@ pub(crate) fn editor_ui(ctx: &egui::Context, app: &mut App) {
             if ui.button(app.transform_space.name()).clicked() {
                 app.transform_space = app.transform_space.toggle();
             }
+            ui.checkbox(&mut app.snap_to_grid, "Snap");
             ui.separator();
             ui.label(format!("View: {}", app.debug_view.name()));
             ui.label(format!("Style: {}", app.style.name()));

@@ -48,6 +48,10 @@ Do not copy proprietary ZZZ models, environments, UI, logos, or exact assets. Th
   - `src/editor.rs` owns the toolbar, outliner, details panel, and small egui widgets
   - outliner with object groups and lights
   - add/delete controls for cube, plane, sphere, directional light, point light, and spot light
+  - distinct viewport icons for directional, point, and spot lights
+  - viewport and outliner light selection
+  - transform gizmos for selected lights; movement changes position and rotation changes direction
+  - toolbar snap toggle for X/Z grid-snapped movement
   - details panel for object transforms and light properties
   - toolbar for select/move/rotate/scale tools
   - orbit/pan/zoom editor camera controls
@@ -74,6 +78,7 @@ Do not copy proprietary ZZZ models, environments, UI, logos, or exact assets. Th
 - Implemented the first PBR milestone: direct-light Cook-Torrance/GGX shading with per-mesh metallic/roughness factors and glTF metallic/roughness factor import.
 - Added selected-group material sliders for metallic/roughness and debug views for roughness/metallic masks.
 - Split editor UI code into `src/editor.rs`, removed the default floor, and added outliner creation/deletion for primitives and lights.
+- Added light actor icons, light selection/gizmo transforms, grid snap toggle, larger camera-following editor grid, corrected generated sphere triangle winding, and moved outlines after opaque rendering so depth clipping is more reliable.
 
 ## Known Limitations
 
@@ -86,7 +91,8 @@ Do not copy proprietary ZZZ models, environments, UI, logos, or exact assets. Th
 - Editor panels and clickable transform gizmos exist. Gizmo behavior covers the core Unreal-style center/axis/plane/ring workflow, but scale visuals still use cube/bar primitives rather than proper polished handle meshes.
 - Inverted-hull outlines can still be imperfect on thin/open geometry; screen-space outlines should come later.
 - Scene save/load is not implemented yet, so editor changes are session-only.
-- Lights can be created/deleted from the outliner and edited in the details panel, but viewport click-picking/gizmo transforms for lights are not implemented yet.
+- Grid snapping currently affects X/Z movement only. It does not snap rotation or scale yet.
+- Light scale gizmo changes local light range; directional light scale is intentionally ignored.
 - Code is only partially split so far. Editor UI is separated; renderer, import, scene, mesh, and shader code still need their own modules.
 
 ## Next Step

@@ -15,6 +15,8 @@ Small native Rust/OpenGL editor prototype for importing meshes and rendering the
 - Outliner creation/deletion for scene primitives and lights:
   - objects: cube, plane, sphere
   - lights: directional, point, spot
+- Lights use distinct editor icons and can be selected from the outliner or viewport, then moved/rotated with the active gizmo.
+- Toolbar snap toggle for grid-snapped movement on the X/Z plane.
 - Click selection plus active 3D transform gizmos:
   - move lines with cone arrowheads, center free-move, and two-axis plane handles
   - smooth rotate axis rings with angle-based drag
@@ -36,6 +38,7 @@ Small native Rust/OpenGL editor prototype for importing meshes and rendering the
   - `E`: rotate tool
   - `R`: scale tool
   - `Delete`: delete selected object group or light
+  - `Snap`: toggle grid snapping while moving
   - `Global`/`Local` toolbar button: toggle transform space
   - `Home`: reset scene
   - Right mouse drag: orbit camera
