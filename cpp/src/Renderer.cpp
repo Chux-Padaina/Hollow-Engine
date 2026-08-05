@@ -351,7 +351,8 @@ void Renderer::draw_light_icon(const Actor& actor, const LightComponent& light, 
 void Renderer::draw_gizmo(const Actor& actor, EditorTool tool, TransformSpace space) const {
     const Vec3 origin = actor.root().local_transform.translation;
     const float scale = tool == EditorTool::Scale ? 0.85f : 1.35f;
-    const Mat4 rotation = space == TransformSpace::Local ? Mat4::rotation_xyz(actor.root().local_transform.rotation) : Mat4::identity();
+    const bool scale_tool = tool == EditorTool::Scale;
+    const Mat4 rotation = (space == TransformSpace::Local || scale_tool) ? Mat4::rotation_xyz(actor.root().local_transform.rotation) : Mat4::identity();
     auto axis = [&rotation](Vec3 a) {
         return normalize({
             a.x * rotation.m[0] + a.y * rotation.m[4] + a.z * rotation.m[8],

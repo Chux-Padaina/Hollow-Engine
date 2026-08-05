@@ -218,14 +218,14 @@ void App::drag_selected_actor(float dx, float dy) {
         next.translation = drag_start_transform_.translation + gizmo_axis(drag_mode_, drag_start_transform_) * (scalar * move_scale);
         break;
     case DragMode::RotateX:
-        next.rotation.x = drag_start_transform_.rotation.x + scalar * 0.012f;
-        break;
     case DragMode::RotateY:
-        next.rotation.y = drag_start_transform_.rotation.y + scalar * 0.012f;
+    case DragMode::RotateZ: {
+        const Vec3 axis = gizmo_axis(drag_mode_, drag_start_transform_);
+        const Mat4 delta = Mat4::rotation_axis_angle(axis, scalar * 0.012f);
+        const Mat4 start = Mat4::rotation_xyz(drag_start_transform_.rotation);
+        next.rotation = euler_from_rotation_xyz(delta * start);
         break;
-    case DragMode::RotateZ:
-        next.rotation.z = drag_start_transform_.rotation.z + scalar * 0.012f;
-        break;
+    }
     case DragMode::ScaleCenter: {
         const float factor = std::max(0.05f, 1.0f + scalar * 0.008f);
         next.scale = drag_start_transform_.scale * factor;
@@ -356,7 +356,8 @@ Vec3 App::gizmo_axis(DragMode mode, const Transform& transform) const {
     Vec3 axis{1.0f, 0.0f, 0.0f};
     if (mode == DragMode::MoveY || mode == DragMode::ScaleY || mode == DragMode::RotateY) axis = {0.0f, 1.0f, 0.0f};
     if (mode == DragMode::MoveZ || mode == DragMode::ScaleZ || mode == DragMode::RotateZ) axis = {0.0f, 0.0f, 1.0f};
-    if (engine_.transform_space() == TransformSpace::World) {
+    const bool scale_axis = mode == DragMode::ScaleX || mode == DragMode::ScaleY || mode == DragMode::ScaleZ;
+    if (engine_.transform_space() == TransformSpace::World && !scale_axis) {
         return axis;
     }
     const Mat4 rotation = Mat4::rotation_xyz(transform.rotation);

@@ -123,6 +123,27 @@ Mat4 Mat4::rotation_xyz(Vec3 radians) {
     return rz * ry * rx;
 }
 
+Mat4 Mat4::rotation_axis_angle(Vec3 axis, float radians) {
+    axis = normalize(axis);
+    const float c = std::cos(radians);
+    const float s = std::sin(radians);
+    const float t = 1.0f - c;
+
+    Mat4 out = identity();
+    out.m[0] = t * axis.x * axis.x + c;
+    out.m[1] = t * axis.x * axis.y + s * axis.z;
+    out.m[2] = t * axis.x * axis.z - s * axis.y;
+
+    out.m[4] = t * axis.x * axis.y - s * axis.z;
+    out.m[5] = t * axis.y * axis.y + c;
+    out.m[6] = t * axis.y * axis.z + s * axis.x;
+
+    out.m[8] = t * axis.x * axis.z + s * axis.y;
+    out.m[9] = t * axis.y * axis.z - s * axis.x;
+    out.m[10] = t * axis.z * axis.z + c;
+    return out;
+}
+
 Mat4 Mat4::perspective(float fov_y_radians, float aspect, float near_z, float far_z) {
     const float f = 1.0f / std::tan(fov_y_radians * 0.5f);
     Mat4 out{};
@@ -167,6 +188,22 @@ Mat4 operator*(const Mat4& a, const Mat4& b) {
         }
     }
     return out;
+}
+
+Vec3 euler_from_rotation_xyz(const Mat4& rotation) {
+    const float r20 = rotation.m[2];
+    Vec3 euler;
+    euler.y = std::asin(std::clamp(-r20, -1.0f, 1.0f));
+
+    const float cy = std::cos(euler.y);
+    if (std::abs(cy) > 0.0001f) {
+        euler.x = std::atan2(rotation.m[6], rotation.m[10]);
+        euler.z = std::atan2(rotation.m[1], rotation.m[0]);
+    } else {
+        euler.x = 0.0f;
+        euler.z = std::atan2(-rotation.m[4], rotation.m[5]);
+    }
+    return euler;
 }
 
 Mat4 Transform::matrix() const {

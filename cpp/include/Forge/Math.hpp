@@ -40,11 +40,13 @@ struct Mat4 {
     static Mat4 translation(Vec3 value);
     static Mat4 scale(Vec3 value);
     static Mat4 rotation_xyz(Vec3 radians);
+    static Mat4 rotation_axis_angle(Vec3 axis, float radians);
     static Mat4 perspective(float fov_y_radians, float aspect, float near_z, float far_z);
     static Mat4 look_at(Vec3 eye, Vec3 target, Vec3 up);
 };
 
 Mat4 operator*(const Mat4& a, const Mat4& b);
+Vec3 euler_from_rotation_xyz(const Mat4& rotation);
 
 struct Transform {
     Vec3 translation = Vec3::zero();
