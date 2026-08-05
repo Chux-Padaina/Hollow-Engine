@@ -207,39 +207,48 @@ void App::drag_selected_actor(float dx, float dy) {
 
     Transform next = drag_start_transform_;
     const float move_scale = camera_.distance * 0.0025f;
-    const float scalar = (std::abs(dx) > std::abs(dy) ? dx : -dy);
+    const float fallback_scalar = (std::abs(dx) > std::abs(dy) ? dx : -dy);
     switch (drag_mode_) {
     case DragMode::MoveCenter:
         next.translation = drag_start_transform_.translation + camera_.right() * (dx * move_scale) - camera_.up() * (dy * move_scale);
         break;
     case DragMode::MoveX:
     case DragMode::MoveY:
-    case DragMode::MoveZ:
+    case DragMode::MoveZ: {
+        const float scalar = screen_axis_drag_delta(drag_mode_, drag_start_transform_, dx, dy);
         next.translation = drag_start_transform_.translation + gizmo_axis(drag_mode_, drag_start_transform_) * (scalar * move_scale);
         break;
+    }
     case DragMode::RotateX:
     case DragMode::RotateY:
     case DragMode::RotateZ: {
         const Vec3 axis = gizmo_axis(drag_mode_, drag_start_transform_);
-        const Mat4 delta = Mat4::rotation_axis_angle(axis, scalar * 0.012f);
+        const float angle = screen_ring_drag_delta(drag_mode_, drag_start_transform_, window_.mouse().x, window_.mouse().y);
+        const Mat4 delta = Mat4::rotation_axis_angle(axis, angle);
         const Mat4 start = Mat4::rotation_xyz(drag_start_transform_.rotation);
         next.rotation = euler_from_rotation_xyz(delta * start);
         break;
     }
     case DragMode::ScaleCenter: {
-        const float factor = std::max(0.05f, 1.0f + scalar * 0.008f);
+        const float factor = std::max(0.05f, 1.0f + fallback_scalar * 0.008f);
         next.scale = drag_start_transform_.scale * factor;
         break;
     }
-    case DragMode::ScaleX:
+    case DragMode::ScaleX: {
+        const float scalar = screen_axis_drag_delta(drag_mode_, drag_start_transform_, dx, dy);
         next.scale.x = std::max(0.05f, drag_start_transform_.scale.x + scalar * 0.01f);
         break;
-    case DragMode::ScaleY:
+    }
+    case DragMode::ScaleY: {
+        const float scalar = screen_axis_drag_delta(drag_mode_, drag_start_transform_, dx, dy);
         next.scale.y = std::max(0.05f, drag_start_transform_.scale.y + scalar * 0.01f);
         break;
-    case DragMode::ScaleZ:
+    }
+    case DragMode::ScaleZ: {
+        const float scalar = screen_axis_drag_delta(drag_mode_, drag_start_transform_, dx, dy);
         next.scale.z = std::max(0.05f, drag_start_transform_.scale.z + scalar * 0.01f);
         break;
+    }
     case DragMode::None:
     case DragMode::CameraOrbit:
     case DragMode::CameraPan:
@@ -303,24 +312,22 @@ DragMode App::pick_gizmo(int x, int y) const {
     if (distance_2d(mouse, center) < 18.0f) {
         return engine_.active_tool() == EditorTool::Scale ? DragMode::ScaleCenter : DragMode::MoveCenter;
     }
-    const float len = 1.35f;
+    const bool scale_tool = engine_.active_tool() == EditorTool::Scale;
+    const float len = scale_tool ? 1.15f : 1.35f;
     struct Candidate { DragMode mode; DragMode axis_mode; };
     Candidate candidates[] = {
-        {engine_.active_tool() == EditorTool::Rotate ? DragMode::RotateX : engine_.active_tool() == EditorTool::Scale ? DragMode::ScaleX : DragMode::MoveX, DragMode::MoveX},
-        {engine_.active_tool() == EditorTool::Rotate ? DragMode::RotateY : engine_.active_tool() == EditorTool::Scale ? DragMode::ScaleY : DragMode::MoveY, DragMode::MoveY},
-        {engine_.active_tool() == EditorTool::Rotate ? DragMode::RotateZ : engine_.active_tool() == EditorTool::Scale ? DragMode::ScaleZ : DragMode::MoveZ, DragMode::MoveZ},
+        {axis_mode_for_tool(DragMode::MoveX), axis_mode_for_tool(DragMode::MoveX)},
+        {axis_mode_for_tool(DragMode::MoveY), axis_mode_for_tool(DragMode::MoveY)},
+        {axis_mode_for_tool(DragMode::MoveZ), axis_mode_for_tool(DragMode::MoveZ)},
     };
 
     float best_score = 1000000.0f;
     DragMode best_mode = DragMode::None;
     for (const Candidate& c : candidates) {
-        const Vec3 axis = gizmo_axis(c.axis_mode, actor->root().local_transform);
         if (engine_.active_tool() == EditorTool::Rotate) {
-            Vec3 tangent_a = normalize(cross(axis, camera_.forward()));
-            if (length(tangent_a) <= 0.001f) {
-                tangent_a = normalize(cross(axis, camera_.right()));
-            }
-            const Vec3 tangent_b = normalize(cross(axis, tangent_a));
+            Vec3 tangent_a;
+            Vec3 tangent_b;
+            ring_basis_for_mode(c.mode, actor->root().local_transform, tangent_a, tangent_b);
             constexpr int segments = 96;
             for (int i = 0; i < segments; ++i) {
                 const float t0 = static_cast<float>(i) / segments * 6.2831853f;
@@ -334,6 +341,7 @@ DragMode App::pick_gizmo(int x, int y) const {
                 }
             }
         } else {
+            const Vec3 axis = gizmo_axis(c.axis_mode, actor->root().local_transform);
             const Vec2 tip = renderer_.project(origin + axis * len, camera_);
             const float line_score = distance_to_segment_2d(mouse, center, tip);
             const float tip_score = distance_2d(mouse, tip);
@@ -344,7 +352,7 @@ DragMode App::pick_gizmo(int x, int y) const {
             }
         }
     }
-    const float threshold = engine_.active_tool() == EditorTool::Rotate ? 14.0f : 18.0f;
+    const float threshold = engine_.active_tool() == EditorTool::Rotate ? 16.0f : 22.0f;
     return best_score <= threshold ? best_mode : DragMode::None;
 }
 
@@ -353,9 +361,7 @@ bool App::is_over_editor_ui(int x, int y) const {
 }
 
 Vec3 App::gizmo_axis(DragMode mode, const Transform& transform) const {
-    Vec3 axis{1.0f, 0.0f, 0.0f};
-    if (mode == DragMode::MoveY || mode == DragMode::ScaleY || mode == DragMode::RotateY) axis = {0.0f, 1.0f, 0.0f};
-    if (mode == DragMode::MoveZ || mode == DragMode::ScaleZ || mode == DragMode::RotateZ) axis = {0.0f, 0.0f, 1.0f};
+    const Vec3 axis = base_axis_for_mode(mode);
     const bool scale_axis = mode == DragMode::ScaleX || mode == DragMode::ScaleY || mode == DragMode::ScaleZ;
     if (engine_.transform_space() == TransformSpace::World && !scale_axis) {
         return axis;
@@ -366,6 +372,75 @@ Vec3 App::gizmo_axis(DragMode mode, const Transform& transform) const {
         axis.x * rotation.m[1] + axis.y * rotation.m[5] + axis.z * rotation.m[9],
         axis.x * rotation.m[2] + axis.y * rotation.m[6] + axis.z * rotation.m[10],
     });
+}
+
+Vec3 App::base_axis_for_mode(DragMode mode) const {
+    if (mode == DragMode::MoveY || mode == DragMode::ScaleY || mode == DragMode::RotateY) {
+        return {0.0f, 1.0f, 0.0f};
+    }
+    if (mode == DragMode::MoveZ || mode == DragMode::ScaleZ || mode == DragMode::RotateZ) {
+        return {0.0f, 0.0f, 1.0f};
+    }
+    return {1.0f, 0.0f, 0.0f};
+}
+
+DragMode App::axis_mode_for_tool(DragMode move_axis_mode) const {
+    if (engine_.active_tool() == EditorTool::Rotate) {
+        if (move_axis_mode == DragMode::MoveY) return DragMode::RotateY;
+        if (move_axis_mode == DragMode::MoveZ) return DragMode::RotateZ;
+        return DragMode::RotateX;
+    }
+    if (engine_.active_tool() == EditorTool::Scale) {
+        if (move_axis_mode == DragMode::MoveY) return DragMode::ScaleY;
+        if (move_axis_mode == DragMode::MoveZ) return DragMode::ScaleZ;
+        return DragMode::ScaleX;
+    }
+    return move_axis_mode;
+}
+
+void App::ring_basis_for_mode(DragMode rotate_mode, const Transform& transform, Vec3& a, Vec3& b) const {
+    if (rotate_mode == DragMode::RotateX) {
+        a = gizmo_axis(DragMode::MoveY, transform);
+        b = gizmo_axis(DragMode::MoveZ, transform);
+    } else if (rotate_mode == DragMode::RotateY) {
+        a = gizmo_axis(DragMode::MoveX, transform);
+        b = gizmo_axis(DragMode::MoveZ, transform);
+    } else {
+        a = gizmo_axis(DragMode::MoveX, transform);
+        b = gizmo_axis(DragMode::MoveY, transform);
+    }
+}
+
+float App::screen_axis_drag_delta(DragMode axis_mode, const Transform& transform, float dx, float dy) const {
+    const Vec3 origin = transform.translation;
+    const float len = (axis_mode == DragMode::ScaleX || axis_mode == DragMode::ScaleY || axis_mode == DragMode::ScaleZ) ? 1.15f : 1.35f;
+    const Vec2 center = renderer_.project(origin, camera_);
+    const Vec2 tip = renderer_.project(origin + gizmo_axis(axis_mode, transform) * len, camera_);
+    Vec2 direction{tip.x - center.x, tip.y - center.y};
+    const float direction_length = std::sqrt(direction.x * direction.x + direction.y * direction.y);
+    if (direction_length <= 0.001f) {
+        return std::abs(dx) > std::abs(dy) ? dx : -dy;
+    }
+    direction.x /= direction_length;
+    direction.y /= direction_length;
+    return dx * direction.x + dy * direction.y;
+}
+
+float App::screen_ring_drag_delta(DragMode rotate_mode, const Transform& transform, int current_x, int current_y) const {
+    const Vec2 center = renderer_.project(transform.translation, camera_);
+    const float start_angle = std::atan2(static_cast<float>(drag_start_y_) - center.y, static_cast<float>(drag_start_x_) - center.x);
+    const float current_angle = std::atan2(static_cast<float>(current_y) - center.y, static_cast<float>(current_x) - center.x);
+    float delta = current_angle - start_angle;
+    while (delta > 3.14159265f) delta -= 6.2831853f;
+    while (delta < -3.14159265f) delta += 6.2831853f;
+
+    Vec3 ring_a;
+    Vec3 ring_b;
+    ring_basis_for_mode(rotate_mode, transform, ring_a, ring_b);
+    const Vec2 screen_a = renderer_.project(transform.translation + ring_a, camera_);
+    const Vec2 screen_b = renderer_.project(transform.translation + ring_b, camera_);
+    const float handedness = ((screen_a.x - center.x) * (screen_b.y - center.y)) - ((screen_a.y - center.y) * (screen_b.x - center.x));
+    return handedness < 0.0f ? -delta : delta;
 }
 
 void App::update_window_title() {

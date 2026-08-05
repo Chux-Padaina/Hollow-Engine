@@ -44,6 +44,11 @@ private:
     DragMode pick_gizmo(int x, int y) const;
     bool is_over_editor_ui(int x, int y) const;
     Vec3 gizmo_axis(DragMode mode, const Transform& transform) const;
+    Vec3 base_axis_for_mode(DragMode mode) const;
+    DragMode axis_mode_for_tool(DragMode move_axis_mode) const;
+    void ring_basis_for_mode(DragMode rotate_mode, const Transform& transform, Vec3& a, Vec3& b) const;
+    float screen_axis_drag_delta(DragMode axis_mode, const Transform& transform, float dx, float dy) const;
+    float screen_ring_drag_delta(DragMode rotate_mode, const Transform& transform, int current_x, int current_y) const;
     void update_window_title();
 
     Engine engine_;
