@@ -12,7 +12,7 @@ Small native Rust/OpenGL editor prototype for importing meshes and rendering the
 - Scene-owned lights affect object shading through the details panel.
 - Viewport outliner/details panels for scene objects, transforms, and lights.
 - Click selection plus active 3D transform gizmos:
-  - move arrows, center free-move, and two-axis plane handles
+  - move lines with cone arrowheads, center free-move, and two-axis plane handles
   - smooth rotate axis rings with angle-based drag
   - scale axis boxes, center uniform scale, and two-axis plane handles
   - hover/active highlighting for the handle being targeted

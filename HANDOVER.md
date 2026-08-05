@@ -61,6 +61,7 @@ Do not copy proprietary ZZZ models, environments, UI, logos, or exact assets. Th
 - Replaced pixelated box-built rotation rings with a generated torus mesh and fixed rotation drags so rings can rotate through larger angles intuitively.
 - Temporarily reset object lighting to a generic diffuse/specular shader, added warm/cool test cubes and a darker flattened gray cube floor, simplified the default scene to one directional and one point light, made shadow decals project from the directional light, and moved the grid into a non-scene world overlay.
 - Added a Global/Local transform-space toggle; constrained gizmo handles now draw, pick, and move in the selected space, while clicking the selected object body uses the active tool's free transform behavior.
+- Fixed constrained rotation by applying quaternion deltas around the displayed gizmo axis instead of directly editing Euler components; move gizmos now use cone arrowheads.
 
 ## Known Limitations
 
@@ -70,7 +71,7 @@ Do not copy proprietary ZZZ models, environments, UI, logos, or exact assets. Th
 - No area lights.
 - No reflection probes.
 - No normal/emissive/roughness/metallic texture support yet.
-- Editor panels and clickable transform gizmos exist. Gizmo behavior covers the core Unreal-style center/axis/plane/ring workflow, but move/scale visuals still use cube/bar primitives rather than proper arrow/cone meshes.
+- Editor panels and clickable transform gizmos exist. Gizmo behavior covers the core Unreal-style center/axis/plane/ring workflow, but scale visuals still use cube/bar primitives rather than proper polished handle meshes.
 - Inverted-hull outlines can still be imperfect on thin/open geometry; screen-space outlines should come later.
 - Scene save/load is not implemented yet, so editor changes are session-only.
 

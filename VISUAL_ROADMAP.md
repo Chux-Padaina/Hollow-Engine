@@ -90,7 +90,8 @@ Current status:
 - Gizmo handles now provide hover and active highlighting.
 - Rotate rings use a smooth torus mesh and angle-based drag accumulation.
 - Global/Local transform-space toggle exists for gizmo orientation and constrained transform handles.
-- Polished Unreal-style arrow/cone handle meshes are still pending for move/scale.
+- Move gizmos use cone arrowheads.
+- Polished Unreal-style scale handle meshes are still pending.
 
 ## Phase 7: Stylized Rendering Identity
 

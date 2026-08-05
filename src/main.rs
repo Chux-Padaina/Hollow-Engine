@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
 
-use glam::{Mat4, Vec2, Vec3, Vec4};
+use glam::{Mat4, Quat, Vec2, Vec3, Vec4};
 use glow::HasContext;
 use glutin::config::{ConfigTemplateBuilder, GlConfig};
 use glutin::context::{ContextApi, ContextAttributesBuilder};
@@ -747,8 +747,10 @@ impl App {
                 } else {
                     (total_delta.x - total_delta.y) * 0.012
                 };
-                let current = axis.component(transform.rotation);
-                axis.set_component(&mut transform.rotation, current + amount);
+                let axis_vec = self.gizmo_axis_vector(axis, start_transform);
+                let start_rotation = start_transform.rotation_quat();
+                let delta_rotation = Quat::from_axis_angle(axis_vec.normalize_or_zero(), amount);
+                transform.set_rotation_quat(delta_rotation * start_rotation);
             }
             EditorTool::Scale => {
                 let factor =
@@ -1589,12 +1591,21 @@ impl Transform {
     }
 
     fn rotation_matrix(self) -> Mat4 {
-        Mat4::from_euler(
+        Mat4::from_quat(self.rotation_quat())
+    }
+
+    fn rotation_quat(self) -> Quat {
+        Quat::from_euler(
             glam::EulerRot::XYZ,
             self.rotation.x,
             self.rotation.y,
             self.rotation.z,
         )
+    }
+
+    fn set_rotation_quat(&mut self, rotation: Quat) {
+        let (x, y, z) = rotation.normalize().to_euler(glam::EulerRot::XYZ);
+        self.rotation = Vec3::new(x, y, z);
     }
 }
 
@@ -2146,6 +2157,7 @@ struct Renderer {
     contact_shadow_program: glow::NativeProgram,
     editor_grid: MeshGpu,
     light_gizmo: MeshGpu,
+    arrow_gizmo: MeshGpu,
     rotation_gizmo: MeshGpu,
     contact_shadow: MeshGpu,
 }
@@ -2160,6 +2172,7 @@ impl Renderer {
             compile_program(&gl, CONTACT_SHADOW_VERTEX, CONTACT_SHADOW_FRAGMENT)?;
         let editor_grid = MeshGpu::from_cpu(gl.clone(), &editor_grid_mesh())?;
         let light_gizmo = MeshGpu::from_cpu(gl.clone(), &MeshCpu::cube())?;
+        let arrow_gizmo = MeshGpu::from_cpu(gl.clone(), &arrow_gizmo_mesh())?;
         let rotation_gizmo = MeshGpu::from_cpu(gl.clone(), &rotation_gizmo_mesh())?;
         let contact_shadow = MeshGpu::from_cpu(gl.clone(), &contact_shadow_mesh())?;
         Ok(Self {
@@ -2171,6 +2184,7 @@ impl Renderer {
             contact_shadow_program,
             editor_grid,
             light_gizmo,
+            arrow_gizmo,
             rotation_gizmo,
             contact_shadow,
         })
@@ -2439,14 +2453,7 @@ impl Renderer {
         self.draw_gizmo_handle_box(center, basis, scale, color, handle, frame);
         if arrow_head {
             let tip = origin + axis_vec * 1.14;
-            let tip_scale = if axis == Axis::X {
-                Vec3::new(0.2, 0.09, 0.09)
-            } else if axis == Axis::Y {
-                Vec3::new(0.09, 0.2, 0.09)
-            } else {
-                Vec3::new(0.09, 0.09, 0.2)
-            };
-            self.draw_gizmo_handle_box(tip, basis, tip_scale, color, handle, frame);
+            self.draw_gizmo_arrowhead(tip, basis, axis, color, handle, frame);
         }
     }
 
@@ -2528,6 +2535,38 @@ impl Renderer {
         frame: &FrameData,
     ) {
         self.draw_gizmo_box(position, basis, scale, gizmo_color(color, handle, frame));
+    }
+
+    unsafe fn draw_gizmo_arrowhead(
+        &self,
+        position: Vec3,
+        basis: Mat4,
+        axis: Axis,
+        color: Vec3,
+        handle: GizmoHandle,
+        frame: &FrameData,
+    ) {
+        let model = Mat4::from_translation(position)
+            * basis
+            * arrow_axis_model(axis)
+            * Mat4::from_scale(Vec3::splat(0.18));
+        set_mat4(&self.gl, self.unlit_program, "u_model", model);
+        set_vec3(
+            &self.gl,
+            self.unlit_program,
+            "u_color",
+            gizmo_color(color, handle, frame),
+        );
+        self.gl
+            .bind_vertex_array(Some(self.arrow_gizmo.vertex_array));
+        self.gl.draw_elements(
+            glow::TRIANGLES,
+            self.arrow_gizmo.index_count,
+            glow::UNSIGNED_INT,
+            0,
+        );
+        self.gl
+            .bind_vertex_array(Some(self.light_gizmo.vertex_array));
     }
 
     unsafe fn draw_gizmo_cube(&self, position: Vec3, scale: Vec3, color: Vec3) {
@@ -2815,6 +2854,52 @@ fn contact_shadow_mesh() -> MeshCpu {
     }
 }
 
+fn arrow_gizmo_mesh() -> MeshCpu {
+    let segments = 24;
+    let radius = 0.42;
+    let length = 1.0;
+    let mut vertices = Vec::new();
+    let mut indices = Vec::new();
+
+    vertices.push(Vertex {
+        position: [0.0, length, 0.0],
+        normal: [0.0, 1.0, 0.0],
+        color: [1.0, 1.0, 1.0, 1.0],
+        tex_coord: [0.5, 1.0],
+    });
+    vertices.push(Vertex {
+        position: [0.0, 0.0, 0.0],
+        normal: [0.0, -1.0, 0.0],
+        color: [1.0, 1.0, 1.0, 1.0],
+        tex_coord: [0.5, 0.5],
+    });
+
+    for index in 0..segments {
+        let angle = index as f32 / segments as f32 * std::f32::consts::TAU;
+        let (s, c) = angle.sin_cos();
+        vertices.push(Vertex {
+            position: [c * radius, 0.0, s * radius],
+            normal: Vec3::new(c, radius / length, s).normalize().to_array(),
+            color: [1.0, 1.0, 1.0, 1.0],
+            tex_coord: [index as f32 / segments as f32, 0.0],
+        });
+    }
+
+    for index in 0..segments {
+        let current = 2 + index as u32;
+        let next = 2 + ((index + 1) % segments) as u32;
+        indices.extend_from_slice(&[0, current, next]);
+        indices.extend_from_slice(&[1, next, current]);
+    }
+
+    MeshCpu {
+        name: "arrow gizmo".to_string(),
+        vertices,
+        indices,
+        texture: None,
+    }
+}
+
 fn rotation_gizmo_mesh() -> MeshCpu {
     let ring_segments = 128;
     let tube_segments = 10;
@@ -2883,6 +2968,14 @@ fn ring_axis_model(axis: Axis) -> Mat4 {
         Axis::X => Mat4::from_rotation_y(std::f32::consts::FRAC_PI_2),
         Axis::Y => Mat4::from_rotation_x(-std::f32::consts::FRAC_PI_2),
         Axis::Z => Mat4::IDENTITY,
+    }
+}
+
+fn arrow_axis_model(axis: Axis) -> Mat4 {
+    match axis {
+        Axis::X => Mat4::from_rotation_z(-std::f32::consts::FRAC_PI_2),
+        Axis::Y => Mat4::IDENTITY,
+        Axis::Z => Mat4::from_rotation_x(std::f32::consts::FRAC_PI_2),
     }
 }
 
