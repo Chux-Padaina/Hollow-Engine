@@ -15,7 +15,8 @@ Do not copy proprietary ZZZ models, environments, UI, logos, or exact assets. Th
 - glTF node transforms are applied so multi-part models stay assembled.
 - glTF base color factors, vertex colors, UVs, and base color textures are preserved.
 - Imported primitives are grouped so dragging moves the whole imported asset.
-- Default editor test scene with warm/cool colored cubes, a darker flattened gray cube floor, a non-scene editor/world grid overlay, one directional light, and one point light.
+- Default editor test scene with two ordinary cube objects, a non-scene editor/world grid overlay, one directional light, and one point light.
+- The old baked-in floor object has been removed. A floor/plane can now be added as a normal scene object from the outliner.
 - Explicit render passes:
   1. Editor/world grid guide
   2. Object outlines
@@ -44,7 +45,9 @@ Do not copy proprietary ZZZ models, environments, UI, logos, or exact assets. Th
   - `F5`: roughness
   - `F6`: metallic
 - Editor UI:
+  - `src/editor.rs` owns the toolbar, outliner, details panel, and small egui widgets
   - outliner with object groups and lights
+  - add/delete controls for cube, plane, sphere, directional light, point light, and spot light
   - details panel for object transforms and light properties
   - toolbar for select/move/rotate/scale tools
   - orbit/pan/zoom editor camera controls
@@ -70,6 +73,7 @@ Do not copy proprietary ZZZ models, environments, UI, logos, or exact assets. Th
 - Fixed constrained rotation by applying quaternion deltas around the displayed gizmo axis instead of directly editing Euler components; move gizmos now use cone arrowheads.
 - Implemented the first PBR milestone: direct-light Cook-Torrance/GGX shading with per-mesh metallic/roughness factors and glTF metallic/roughness factor import.
 - Added selected-group material sliders for metallic/roughness and debug views for roughness/metallic masks.
+- Split editor UI code into `src/editor.rs`, removed the default floor, and added outliner creation/deletion for primitives and lights.
 
 ## Known Limitations
 
@@ -82,15 +86,18 @@ Do not copy proprietary ZZZ models, environments, UI, logos, or exact assets. Th
 - Editor panels and clickable transform gizmos exist. Gizmo behavior covers the core Unreal-style center/axis/plane/ring workflow, but scale visuals still use cube/bar primitives rather than proper polished handle meshes.
 - Inverted-hull outlines can still be imperfect on thin/open geometry; screen-space outlines should come later.
 - Scene save/load is not implemented yet, so editor changes are session-only.
+- Lights can be created/deleted from the outliner and edited in the details panel, but viewport click-picking/gizmo transforms for lights are not implemented yet.
+- Code is only partially split so far. Editor UI is separated; renderer, import, scene, mesh, and shader code still need their own modules.
 
 ## Next Step
 
 Move into the basic PBR pipeline described in `PBR_PIPELINE.md`:
 
-1. Import glTF metallic-roughness textures.
-2. Add tangent support and normal mapping.
-3. Replace planar shadows with a directional shadow map.
-4. Add basic environment lighting for more convincing metals.
+1. Continue code split: renderer/shaders/import/scene modules.
+2. Import glTF metallic-roughness textures.
+3. Add tangent support and normal mapping.
+4. Replace planar shadows with a directional shadow map.
+5. Add basic environment lighting for more convincing metals.
 
 ## Project Taste Direction
 

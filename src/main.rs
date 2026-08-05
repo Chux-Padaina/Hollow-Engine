@@ -1,5 +1,7 @@
 #![allow(deprecated, unsafe_op_in_unsafe_fn)]
 
+mod editor;
+
 use std::ffi::CString;
 use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
@@ -154,6 +156,9 @@ fn run() -> Result<(), String> {
                                             app.editor_tool = EditorTool::Scale
                                         }
                                         PhysicalKey::Code(KeyCode::Home) => app.reset_scene(),
+                                        PhysicalKey::Code(KeyCode::Delete) => {
+                                            app.delete_selection()
+                                        }
                                         _ => {}
                                     }
                                 }
@@ -262,7 +267,7 @@ impl EditorLayer {
     fn run(&mut self, window: &Window, app: &mut App) {
         let raw_input = self.egui_state.take_egui_input(window);
         let output = self.egui_ctx.run(raw_input, |ctx| {
-            editor_ui(ctx, app);
+            editor::editor_ui(ctx, app);
         });
         self.egui_state
             .handle_platform_output(window, output.platform_output);
@@ -285,207 +290,6 @@ impl EditorLayer {
         self.clipped_primitives.clear();
         self.textures_delta = egui::TexturesDelta::default();
     }
-}
-
-fn editor_ui(ctx: &egui::Context, app: &mut App) {
-    egui::TopBottomPanel::top("toolbar").show(ctx, |ui| {
-        ui.horizontal(|ui| {
-            ui.label("Tool");
-            tool_button(ui, app, EditorTool::Select, "Q Select");
-            tool_button(ui, app, EditorTool::Move, "W Move");
-            tool_button(ui, app, EditorTool::Rotate, "E Rotate");
-            tool_button(ui, app, EditorTool::Scale, "R Scale");
-            ui.separator();
-            if ui.button(app.transform_space.name()).clicked() {
-                app.transform_space = app.transform_space.toggle();
-            }
-            ui.separator();
-            ui.label(format!("View: {}", app.debug_view.name()));
-            ui.label(format!("Style: {}", app.style.name()));
-        });
-    });
-
-    egui::SidePanel::left("outliner")
-        .default_width(260.0)
-        .show(ctx, |ui| {
-            ui.heading("Outliner");
-            ui.separator();
-            ui.collapsing("Objects", |ui| {
-                let mut groups = Vec::<(u32, String, usize)>::new();
-                for object in &app.scene.objects {
-                    if let Some((_, _, count)) =
-                        groups.iter_mut().find(|(id, _, _)| *id == object.group_id)
-                    {
-                        *count += 1;
-                    } else {
-                        groups.push((object.group_id, object.name.clone(), 1));
-                    }
-                }
-                for (group_id, name, count) in groups {
-                    let selected =
-                        app.scene.selected_light.is_none() && app.scene.selected_group == group_id;
-                    let label = if count > 1 {
-                        format!("{name} ({count} meshes)")
-                    } else {
-                        name
-                    };
-                    if ui.selectable_label(selected, label).clicked() {
-                        app.scene.select_group(group_id);
-                    }
-                }
-            });
-            ui.collapsing("Lights", |ui| {
-                for index in 0..app.scene.lights.len() {
-                    let light = &app.scene.lights[index];
-                    let selected = app.scene.selected_light == Some(index);
-                    if ui
-                        .selectable_label(
-                            selected,
-                            format!("{} [{}]", light.name, light.kind.name()),
-                        )
-                        .clicked()
-                    {
-                        app.scene.select_light(index);
-                    }
-                }
-            });
-        });
-
-    egui::SidePanel::right("details")
-        .default_width(320.0)
-        .show(ctx, |ui| {
-            ui.heading("Details");
-            ui.separator();
-            if let Some(light_index) = app.scene.selected_light {
-                light_details(ui, &mut app.scene.lights[light_index]);
-            } else {
-                object_details(ui, &mut app.scene);
-            }
-            ui.separator();
-            camera_details(ui, &mut app.camera);
-        });
-}
-
-fn tool_button(ui: &mut egui::Ui, app: &mut App, tool: EditorTool, label: &str) {
-    if ui
-        .selectable_label(app.editor_tool == tool, label)
-        .on_hover_text(tool.name())
-        .clicked()
-    {
-        app.editor_tool = tool;
-    }
-}
-
-fn object_details(ui: &mut egui::Ui, scene: &mut Scene) {
-    ui.label(format!("Selected group: {}", scene.selected_group));
-    let count = scene
-        .objects
-        .iter()
-        .filter(|object| object.group_id == scene.selected_group)
-        .count();
-    ui.label(format!("Meshes: {count}"));
-    if let Some(transform) = scene
-        .selected_group()
-        .first()
-        .map(|object| object.transform)
-    {
-        let mut transform = transform;
-        let mut changed = false;
-        ui.separator();
-        ui.label("Transform");
-        changed |= vec3_drag(ui, "Position", &mut transform.translation, 0.05);
-        let mut rotation_degrees = Vec3::new(
-            transform.rotation.x.to_degrees(),
-            transform.rotation.y.to_degrees(),
-            transform.rotation.z.to_degrees(),
-        );
-        changed |= vec3_drag(ui, "Rotation", &mut rotation_degrees, 0.4);
-        transform.rotation = Vec3::new(
-            rotation_degrees.x.to_radians(),
-            rotation_degrees.y.to_radians(),
-            rotation_degrees.z.to_radians(),
-        );
-        changed |= vec3_drag(ui, "Scale", &mut transform.scale, 0.02);
-        if changed {
-            for object in scene.selected_group_mut() {
-                object.transform = transform;
-            }
-        }
-    }
-    if let Some(material) = scene
-        .selected_group()
-        .first()
-        .map(|object| object.mesh.material)
-    {
-        let mut material = material;
-        let mut changed = false;
-        ui.separator();
-        ui.label("Material");
-        changed |= ui
-            .add(egui::Slider::new(&mut material.metallic, 0.0..=1.0).text("Metallic"))
-            .changed();
-        changed |= ui
-            .add(egui::Slider::new(&mut material.roughness, 0.04..=1.0).text("Roughness"))
-            .changed();
-        ui.label("Applies to all meshes in the selected group.");
-        if changed {
-            for object in scene.selected_group_mut() {
-                object.mesh.material = material;
-            }
-        }
-    }
-}
-
-fn light_details(ui: &mut egui::Ui, light: &mut Light) {
-    ui.label(format!("Light: {}", light.name));
-    ui.label(format!("Type: {}", light.kind.name()));
-    ui.checkbox(&mut light.enabled, "Enabled");
-    let mut color = [light.color.x, light.color.y, light.color.z];
-    if ui.color_edit_button_rgb(&mut color).changed() {
-        light.color = Vec3::new(color[0], color[1], color[2]);
-    }
-    ui.add(egui::Slider::new(&mut light.intensity, 0.0..=4.0).text("Intensity"));
-    if !matches!(light.kind, LightKind::Directional) {
-        vec3_drag(ui, "Position", &mut light.position, 0.05);
-        ui.add(egui::Slider::new(&mut light.range, 0.1..=20.0).text("Range"));
-    }
-    if matches!(light.kind, LightKind::Directional | LightKind::Spot) {
-        vec3_drag(ui, "Direction", &mut light.direction, 0.02);
-        light.direction = light.direction.normalize_or_zero();
-    }
-    if matches!(light.kind, LightKind::Spot) {
-        let mut angle = light.spot_angle_radians.to_degrees();
-        if ui
-            .add(egui::Slider::new(&mut angle, 5.0..=90.0).text("Spot angle"))
-            .changed()
-        {
-            light.spot_angle_radians = angle.to_radians();
-        }
-    }
-}
-
-fn camera_details(ui: &mut egui::Ui, camera: &mut EditorCamera) {
-    ui.label("Camera");
-    ui.label("RMB orbit/look, MMB pan, wheel zoom");
-    vec3_drag(ui, "Target", &mut camera.target, 0.05);
-    ui.add(egui::Slider::new(&mut camera.distance, 1.2..=30.0).text("Distance"));
-}
-
-fn vec3_drag(ui: &mut egui::Ui, label: &str, value: &mut Vec3, speed: f64) -> bool {
-    let mut changed = false;
-    ui.label(label);
-    ui.horizontal(|ui| {
-        changed |= ui
-            .add(egui::DragValue::new(&mut value.x).speed(speed).prefix("X "))
-            .changed();
-        changed |= ui
-            .add(egui::DragValue::new(&mut value.y).speed(speed).prefix("Y "))
-            .changed();
-        changed |= ui
-            .add(egui::DragValue::new(&mut value.z).speed(speed).prefix("Z "))
-            .changed();
-    });
-    changed
 }
 
 impl App {
@@ -536,27 +340,7 @@ impl App {
                 ..Transform::default()
             },
         });
-        scene.objects.push(SceneObject {
-            name: "Floor".to_string(),
-            mesh: MeshGpu::from_cpu(
-                gl.clone(),
-                &MeshCpu::cube_with_material(
-                    "Floor",
-                    [0.34, 0.35, 0.33, 1.0],
-                    MaterialProperties {
-                        metallic: 0.0,
-                        roughness: 0.88,
-                    },
-                ),
-            )?,
-            group_id: 2,
-            transform: Transform {
-                translation: Vec3::new(0.0, -0.04, 0.0),
-                scale: Vec3::new(8.0, 0.08, 8.0),
-                ..Transform::default()
-            },
-        });
-        scene.next_group_id = 3;
+        scene.next_group_id = 2;
         Ok(Self {
             gl,
             renderer,
@@ -623,6 +407,113 @@ impl App {
             }
             Err(error) => self.status = format!("Import failed: {error}"),
         }
+    }
+
+    fn add_primitive(&mut self, kind: PrimitiveKind) {
+        let group_id = self.scene.next_group_id;
+        self.scene.next_group_id += 1;
+        let name = self.scene.unique_object_name(kind.name());
+        let mesh = match kind {
+            PrimitiveKind::Cube => MeshCpu::cube_with_color(&name, [0.78, 0.72, 0.56, 1.0]),
+            PrimitiveKind::Plane => MeshCpu::plane_with_color(&name, [0.46, 0.48, 0.46, 1.0]),
+            PrimitiveKind::Sphere => MeshCpu::sphere_with_color(&name, [0.58, 0.68, 0.84, 1.0]),
+        };
+        match unsafe { MeshGpu::from_cpu(self.gl.clone(), &mesh) } {
+            Ok(gpu_mesh) => {
+                let transform = Transform {
+                    translation: Vec3::new(0.0, kind.default_height(), 0.0),
+                    scale: kind.default_scale(),
+                    ..Transform::default()
+                };
+                self.scene.objects.push(SceneObject {
+                    name,
+                    mesh: gpu_mesh,
+                    group_id,
+                    transform,
+                });
+                self.scene.select_group(group_id);
+                self.status = format!("Added {}", kind.name());
+            }
+            Err(error) => self.status = format!("Primitive creation failed: {error}"),
+        }
+    }
+
+    fn add_light(&mut self, kind: LightKind) {
+        let mut light = Light::new(
+            &self.scene.unique_light_name(kind.name()),
+            kind,
+            match kind {
+                LightKind::Directional => Vec3::new(1.0, 0.98, 0.9),
+                LightKind::Point => Vec3::new(0.35, 0.75, 1.0),
+                LightKind::Spot => Vec3::new(1.0, 0.68, 0.32),
+            },
+            match kind {
+                LightKind::Directional => 1.2,
+                LightKind::Point => 1.5,
+                LightKind::Spot => 1.7,
+            },
+        );
+        match kind {
+            LightKind::Directional => {
+                light.direction = Vec3::new(-0.35, -0.82, -0.46).normalize();
+                light.position = Vec3::new(0.0, 3.0, 0.0);
+            }
+            LightKind::Point => {
+                light.position = Vec3::new(2.0, 2.2, 1.5);
+                light.range = 8.0;
+            }
+            LightKind::Spot => {
+                light.position = Vec3::new(-2.0, 3.0, 1.0);
+                light.direction = Vec3::new(0.45, -0.88, -0.18).normalize();
+                light.range = 9.0;
+                light.spot_angle_radians = 32.0_f32.to_radians();
+            }
+        }
+        self.scene.lights.push(light);
+        self.scene.select_light(self.scene.lights.len() - 1);
+        self.status = format!("Added {} light", kind.name());
+    }
+
+    fn delete_selection(&mut self) {
+        if let Some(light_index) = self.scene.selected_light {
+            if light_index < self.scene.lights.len() {
+                let name = self.scene.lights[light_index].name.clone();
+                self.scene.lights.remove(light_index);
+                self.scene.selected_light = None;
+                if !self.scene.lights.is_empty() {
+                    self.scene
+                        .select_light(light_index.min(self.scene.lights.len() - 1));
+                }
+                self.status = format!("Deleted light {name}");
+            }
+            return;
+        }
+
+        let group_id = self.scene.selected_group;
+        let deleted_name = self
+            .scene
+            .objects
+            .iter()
+            .find(|object| object.group_id == group_id)
+            .map(|object| object.name.clone())
+            .unwrap_or_else(|| "object".to_string());
+        let before = self.scene.objects.len();
+        self.scene
+            .objects
+            .retain(|object| object.group_id != group_id);
+        if self.scene.objects.len() == before {
+            return;
+        }
+        if let Some(object) = self.scene.objects.first() {
+            self.scene.select_group(object.group_id);
+        } else {
+            self.scene.selected = 0;
+            self.scene.selected_group = 0;
+            self.scene.selected_light = None;
+        }
+        self.active_gizmo = None;
+        self.hovered_gizmo = None;
+        self.status = format!("Deleted {deleted_name}");
     }
 
     fn resize(&mut self, viewport: PhysicalSize<u32>) {
@@ -853,8 +744,6 @@ impl App {
                 Vec3::new(-1.2, 0.5 + GROUND_CLEARANCE, 0.0)
             } else if object.group_id == 1 {
                 Vec3::new(1.2, 0.5 + GROUND_CLEARANCE, 0.0)
-            } else if object.is_floor() {
-                Vec3::new(0.0, -0.04, 0.0)
             } else {
                 Vec3::new(index as f32 * 0.02, GROUND_CLEARANCE, 0.0)
             };
@@ -964,7 +853,6 @@ impl App {
         self.scene
             .objects
             .iter()
-            .filter(|object| !object.is_floor())
             .filter_map(|object| {
                 let scale = object.transform.scale.max_element().max(0.001);
                 let radius = object.mesh.bounds_radius * scale;
@@ -1441,7 +1329,7 @@ impl Default for GpuLocalLight {
     }
 }
 
-#[allow(dead_code)]
+#[derive(Clone, Copy)]
 enum LightKind {
     Directional,
     Point,
@@ -1472,6 +1360,21 @@ struct Light {
 }
 
 impl Light {
+    fn new(name: &str, kind: LightKind, color: Vec3, intensity: f32) -> Self {
+        Self {
+            name: name.to_string(),
+            kind,
+            position: Vec3::ZERO,
+            direction: Vec3::NEG_Y,
+            color,
+            intensity,
+            range: 1.0,
+            spot_angle_radians: 0.0,
+            enabled: true,
+            pulse: 0.0,
+        }
+    }
+
     fn directional(name: &str, direction: Vec3, color: Vec3, intensity: f32) -> Self {
         Self {
             name: name.to_string(),
@@ -1681,12 +1584,6 @@ struct SceneObject {
     transform: Transform,
 }
 
-impl SceneObject {
-    fn is_floor(&self) -> bool {
-        self.name == "Floor"
-    }
-}
-
 impl Scene {
     fn primary_directional_light(&self) -> GpuDirectionalLight {
         self.lights
@@ -1782,6 +1679,59 @@ impl Scene {
     fn select_light(&mut self, index: usize) {
         if index < self.lights.len() {
             self.selected_light = Some(index);
+        }
+    }
+
+    fn unique_object_name(&self, base: &str) -> String {
+        self.unique_name(base, self.objects.iter().map(|object| object.name.as_str()))
+    }
+
+    fn unique_light_name(&self, base: &str) -> String {
+        self.unique_name(base, self.lights.iter().map(|light| light.name.as_str()))
+    }
+
+    fn unique_name<'a>(&self, base: &str, existing: impl Iterator<Item = &'a str>) -> String {
+        let existing = existing.collect::<Vec<_>>();
+        if !existing.contains(&base) {
+            return base.to_string();
+        }
+        for index in 2.. {
+            let candidate = format!("{base} {index}");
+            if !existing.contains(&candidate.as_str()) {
+                return candidate;
+            }
+        }
+        unreachable!()
+    }
+}
+
+#[derive(Clone, Copy)]
+enum PrimitiveKind {
+    Cube,
+    Plane,
+    Sphere,
+}
+
+impl PrimitiveKind {
+    fn name(self) -> &'static str {
+        match self {
+            Self::Cube => "Cube",
+            Self::Plane => "Plane",
+            Self::Sphere => "Sphere",
+        }
+    }
+
+    fn default_height(self) -> f32 {
+        match self {
+            Self::Cube | Self::Sphere => 0.5 + GROUND_CLEARANCE,
+            Self::Plane => 0.01,
+        }
+    }
+
+    fn default_scale(self) -> Vec3 {
+        match self {
+            Self::Cube | Self::Sphere => Vec3::ONE,
+            Self::Plane => Vec3::splat(3.0),
         }
     }
 }
@@ -1923,6 +1873,89 @@ impl MeshCpu {
             indices,
             texture: None,
             material,
+        }
+    }
+
+    fn plane_with_color(name: &str, color: [f32; 4]) -> Self {
+        Self {
+            name: name.to_string(),
+            vertices: vec![
+                Vertex {
+                    position: [-0.5, 0.0, -0.5],
+                    normal: [0.0, 1.0, 0.0],
+                    color,
+                    tex_coord: [0.0, 0.0],
+                },
+                Vertex {
+                    position: [0.5, 0.0, -0.5],
+                    normal: [0.0, 1.0, 0.0],
+                    color,
+                    tex_coord: [1.0, 0.0],
+                },
+                Vertex {
+                    position: [0.5, 0.0, 0.5],
+                    normal: [0.0, 1.0, 0.0],
+                    color,
+                    tex_coord: [1.0, 1.0],
+                },
+                Vertex {
+                    position: [-0.5, 0.0, 0.5],
+                    normal: [0.0, 1.0, 0.0],
+                    color,
+                    tex_coord: [0.0, 1.0],
+                },
+            ],
+            indices: vec![0, 1, 2, 0, 2, 3],
+            texture: None,
+            material: MaterialProperties {
+                metallic: 0.0,
+                roughness: 0.86,
+            },
+        }
+    }
+
+    fn sphere_with_color(name: &str, color: [f32; 4]) -> Self {
+        let latitude_segments = 18;
+        let longitude_segments = 32;
+        let mut vertices = Vec::new();
+        let mut indices = Vec::new();
+
+        for lat in 0..=latitude_segments {
+            let v = lat as f32 / latitude_segments as f32;
+            let theta = v * std::f32::consts::PI;
+            let sin_theta = theta.sin();
+            let cos_theta = theta.cos();
+            for lon in 0..=longitude_segments {
+                let u = lon as f32 / longitude_segments as f32;
+                let phi = u * std::f32::consts::TAU;
+                let normal = Vec3::new(phi.cos() * sin_theta, cos_theta, phi.sin() * sin_theta);
+                vertices.push(Vertex {
+                    position: (normal * 0.5).to_array(),
+                    normal: normal.to_array(),
+                    color,
+                    tex_coord: [u, v],
+                });
+            }
+        }
+
+        for lat in 0..latitude_segments {
+            for lon in 0..longitude_segments {
+                let row = longitude_segments + 1;
+                let a = (lat * row + lon) as u32;
+                let b = a + row as u32;
+                indices.extend_from_slice(&[a, b, a + 1, a + 1, b, b + 1]);
+            }
+        }
+
+        Self {
+            name: name.to_string(),
+            vertices,
+            indices,
+            texture: None,
+            material: MaterialProperties {
+                metallic: 0.0,
+                roughness: 0.48,
+            },
         }
     }
 
@@ -2280,9 +2313,7 @@ impl Renderer {
 
         self.begin_pass(RenderPass::Outlines);
         for object in &scene.objects {
-            if !object.is_floor() {
-                self.draw_object_outline(object, object.group_id == scene.selected_group, frame);
-            }
+            self.draw_object_outline(object, object.group_id == scene.selected_group, frame);
         }
 
         self.begin_pass(RenderPass::Opaque);
@@ -2292,9 +2323,7 @@ impl Renderer {
 
         self.begin_pass(RenderPass::Decals);
         for object in &scene.objects {
-            if !object.is_floor() {
-                self.draw_contact_shadow(object, frame);
-            }
+            self.draw_contact_shadow(object, frame);
         }
 
         self.begin_pass(RenderPass::Gizmos);

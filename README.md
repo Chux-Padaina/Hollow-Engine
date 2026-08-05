@@ -9,9 +9,12 @@ Small native Rust/OpenGL editor prototype for importing meshes and rendering the
 - Basic CPU import path for mesh positions, normals, indices, and base material color.
 - GPU mesh upload with a direct-light Cook-Torrance/GGX PBR shader and a backface-expanded outline pass.
 - Details-panel material controls for selected object groups: metallic and roughness.
-- Default lighting test scene with warm/cool colored cubes, a darker flattened gray cube floor, one directional light, one point light, simple planar projected shadows, and a non-scene editor/world grid overlay.
+- Default lighting test scene with two ordinary cube objects, one directional light, one point light, simple planar projected shadows, and a non-scene editor/world grid overlay.
 - Scene-owned lights affect object shading through the details panel.
 - Viewport outliner/details panels for scene objects, transforms, and lights.
+- Outliner creation/deletion for scene primitives and lights:
+  - objects: cube, plane, sphere
+  - lights: directional, point, spot
 - Click selection plus active 3D transform gizmos:
   - move lines with cone arrowheads, center free-move, and two-axis plane handles
   - smooth rotate axis rings with angle-based drag
@@ -32,6 +35,7 @@ Small native Rust/OpenGL editor prototype for importing meshes and rendering the
   - `W`: move tool
   - `E`: rotate tool
   - `R`: scale tool
+  - `Delete`: delete selected object group or light
   - `Global`/`Local` toolbar button: toggle transform space
   - `Home`: reset scene
   - Right mouse drag: orbit camera
@@ -87,7 +91,8 @@ For the basic PBR renderer checklist and learning notes, see [PBR_PIPELINE.md](P
 
 ## Next Engineering Steps
 
-1. Import glTF metallic-roughness textures.
-2. Add tangent support and normal mapping.
-3. Replace planar shadows with a directional shadow map.
-4. Add basic environment lighting for more convincing metals.
+1. Continue code split: move renderer/shader/import code out of `src/main.rs`.
+2. Import glTF metallic-roughness textures.
+3. Add tangent support and normal mapping.
+4. Replace planar shadows with a directional shadow map.
+5. Add basic environment lighting for more convincing metals.
