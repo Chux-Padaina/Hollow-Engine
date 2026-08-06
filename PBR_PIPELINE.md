@@ -41,10 +41,10 @@ Recently added in the new C++ implementation:
 - Windows WIC texture loading for common image formats.
 - OBJ `.mtl` texture path import.
 - Base-color and combined metallic/roughness texture sampling in the C++ PBR shader.
+- Static `.gltf`/`.glb` mesh and material import in C++.
 
 Not yet implemented in either path:
 
-- glTF metallic-roughness texture import.
 - Normal maps and tangent-space shading.
 - Occlusion and emissive texture import.
 - Real shadow maps.
@@ -85,7 +85,7 @@ Implementation notes:
 - The shader uses metallic-roughness Cook-Torrance lighting for directional and point lights.
 - The BRDF uses GGX distribution, Smith-Schlick visibility, and Schlick Fresnel.
 - Meshes now carry `MaterialProperties` with `metallic` and `roughness`.
-- glTF `metallicFactor` and `roughnessFactor` are still pending in C++; OBJ material factors and editor factor controls are active.
+- glTF `metallicFactor` and `roughnessFactor`, OBJ material factors, and editor factor controls are active.
 - The default test scene uses a rough non-metal cube, a smoother metal cube, and a rough non-metal floor.
 - This is not full engine PBR yet because it does not include normal maps, metallic-roughness textures, real shadow maps, or image-based lighting.
 
@@ -123,13 +123,13 @@ Why this matters:
 
 When a model looks wrong, these views answer a basic question quickly: did the material values make it into the shader, or is the lighting model the problem?
 
-Status: implemented for active C++ scene meshes using scalar/factor material values.
+Status: implemented for active C++ scene meshes using scalar/factor material values and sampled metallic/roughness textures.
 
 Implementation notes:
 
 - `F5` displays roughness as grayscale.
 - `F6` displays metallic as grayscale.
-- These views currently show the scalar material factors. Once metallic-roughness textures are imported, they should show the final combined factor multiplied by the texture channel.
+- These views show the final scalar material factor multiplied by the sampled metallic/roughness texture channel when present.
 
 ### 4. Render Pass Hygiene And Stylized Outlines
 
@@ -172,14 +172,16 @@ Why this matters:
 
 This is the standard Sketchfab/glTF workflow. Without it, imported assets cannot preserve their intended material response.
 
-Status: partially implemented for the renderer path, pending for glTF import.
+Status: implemented for the static mesh renderer/import path.
 
 Implementation notes:
 
 - The C++ material struct now has texture slots for base color, combined metallic/roughness, normal, and emissive maps.
 - The C++ renderer can load PNG/JPG-style image files through Windows Imaging Component and upload them as OpenGL textures.
 - The object shader samples base-color textures and combined metallic/roughness textures.
-- OBJ `.mtl` import records common texture map references. glTF/GLB material import is still pending, so this is not yet a full Sketchfab/glTF PBR material path.
+- OBJ `.mtl` import records common texture map references.
+- glTF/GLB import now reads static triangle meshes, node transforms, UVs, vertex colors, base color factors, metallic/roughness factors, and texture references.
+- This is still not a complete glTF renderer path because skins, animation, morph targets, tangent-space normal maps, camera import, and light extensions are pending.
 
 ### 6. Normal Mapping And Tangents
 

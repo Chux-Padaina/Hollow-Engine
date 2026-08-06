@@ -31,6 +31,7 @@ add_executable(ForgeEngine
     src/EditorUi.cpp
     src/Engine.cpp
     src/Importer.cpp
+    src/Json.cpp
     src/Main.cpp
     src/Math.cpp
     src/Renderer.cpp

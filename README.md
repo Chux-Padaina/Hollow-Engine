@@ -33,7 +33,9 @@ The project originally started as a Rust prototype. The active implementation is
   - click selection for actors/lights
   - mouse-drag move, rotate, and scale handles
   - Home reset
-- C++ import currently supports `.obj` by command-line argument or drag/drop. glTF/GLB import remains in the Rust reference and is tracked in [RUST_PARITY_AUDIT.md](RUST_PARITY_AUDIT.md).
+- C++ import currently supports `.obj`, `.gltf`, and `.glb` by command-line argument or drag/drop.
+- C++ glTF/GLB import currently covers static triangle meshes, node transforms, vertex normals, UVs, vertex colors, base material factors, external buffers, embedded GLB buffers, external image references, data URI images, and embedded GLB image buffer views.
+- C++ glTF/GLB import does not yet cover skins, animation clips, morph targets, cameras, light extensions, or tangent-space normal map shading.
 
 Legacy Rust reference still contains:
 
@@ -150,6 +152,6 @@ For the Rust-to-C++ feature parity ledger, see [RUST_PARITY_AUDIT.md](RUST_PARIT
 
 1. Visual QA textured OBJ materials, the light workspace background, mesh outline pass, C++ PBR shader, and debug views in the app.
 2. Add glTF/GLB drag-drop import in C++.
-3. Add tangent generation and tangent-space normal maps.
-4. Move remaining editor-only rendering helpers, especially gizmos and grid, away from immediate mode.
+3. Visual QA `.glb/.gltf` imports from Sketchfab-style assets, especially multi-material textured models.
+4. Add tangent generation and tangent-space normal maps.
 5. Continue the PBR pipeline: shadow maps, HDR, tonemapping, and environment lighting.

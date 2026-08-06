@@ -45,6 +45,11 @@ This file tracks what exists in the Rust prototype and whether it has been porte
 - OBJ `.mtl` base-color texture path import.
 - Base-color texture loading and sampling in the C++ object shader.
 - Combined metallic/roughness texture loading and sampling in the C++ object shader.
+- Static `.gltf`/`.glb` import in C++ by command-line argument and drag/drop.
+- glTF node transform preservation for imported static meshes.
+- glTF base color, metallic, and roughness factor import.
+- glTF vertex color and UV import.
+- glTF external buffers, embedded GLB buffer chunks, external image references, data URI images, and embedded image buffer views.
 
 ## Partially Ported
 
@@ -65,19 +70,14 @@ This file tracks what exists in the Rust prototype and whether it has been porte
   - C++ now follows the camera but is still line-rendered.
 - Material/display state:
   - Rust has metallic/roughness sliders and debug views connected to shader uniforms.
-  - C++ now renders material factors, texture-backed base color, and texture-backed combined metallic/roughness maps in the object shader, but glTF material import and normal-map shading are still pending.
+  - C++ now renders material factors, texture-backed base color, and texture-backed combined metallic/roughness maps in the object shader, but normal-map shading is still pending.
 
 ## Not Yet Ported
 
-- glTF drag/drop model import.
-- glTF command-line model import.
-- glTF loading.
-- glTF node transform preservation.
-- glTF base color factor import.
-- Vertex color import.
-- UV import.
-- glTF base-color texture import/upload.
-- glTF metallic-roughness texture import/upload.
+- glTF skins and skeletal animation.
+- glTF morph targets.
+- glTF camera import.
+- glTF light extension import.
 - Spot lighting in shader.
 - Screen-pixel-stable outline widths.
 - Smooth stylized lighting bands.
