@@ -1,4 +1,5 @@
 #include "Forge/App.hpp"
+#include "Forge/Importer.hpp"
 
 #include <Windows.h>
 
@@ -6,6 +7,7 @@
 #include <cmath>
 #include <iostream>
 #include <sstream>
+#include <stdexcept>
 
 namespace Forge {
 namespace {
@@ -41,13 +43,16 @@ std::wstring widen(const std::string& value) {
 
 } // namespace
 
-int App::run() {
+int App::run(const std::vector<std::filesystem::path>& startup_imports) {
     if (!window_.create(L"Forge Engine C++ Prototype", 1280, 720)) {
         std::wcerr << L"Failed to create Forge window: " << window_.last_error() << L"\n";
         return 1;
     }
 
     renderer_.initialize(window_.device_context());
+    for (const auto& path : startup_imports) {
+        import_model(path);
+    }
     last_frame_ = std::chrono::steady_clock::now();
 
     while (!window_.should_close()) {
@@ -62,6 +67,7 @@ int App::run() {
 
         begin_frame();
         handle_keyboard();
+        import_pending_drops();
         handle_mouse();
         engine_.tick(delta);
         renderer_.resize(window_.width(), window_.height());
@@ -321,6 +327,29 @@ void App::reset_scene() {
     camera_ = Camera{};
     drag_mode_ = DragMode::None;
     status_ = "Scene reset";
+}
+
+void App::import_model(const std::filesystem::path& path) {
+    try {
+        ImportedModel model = import_model_file(path);
+        if (model.parts.empty()) {
+            status_ = "Import produced no mesh parts";
+            return;
+        }
+        Transform transform;
+        std::string name = path.stem().string().empty() ? "Imported Model" : path.stem().string();
+        const std::size_t count = model.parts.size();
+        scene_.create_mesh_actor(name, std::move(model.parts), transform);
+        status_ = "Imported " + std::to_string(count) + " mesh part(s): " + path.filename().string();
+    } catch (const std::exception& error) {
+        status_ = std::string("Import failed: ") + error.what();
+    }
+}
+
+void App::import_pending_drops() {
+    for (const std::wstring& file : window_.take_dropped_files()) {
+        import_model(std::filesystem::path(file));
+    }
 }
 
 ActorId App::pick_actor(int x, int y) const {

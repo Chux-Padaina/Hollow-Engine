@@ -3,6 +3,7 @@
 #include <Windows.h>
 #include <windowsx.h>
 #include <gl/GL.h>
+#include <shellapi.h>
 
 namespace Forge {
 
@@ -90,6 +91,7 @@ bool Win32Window::create(const wchar_t* title, int width, int height) {
     }
 
     ShowWindow(hwnd_, SW_SHOW);
+    DragAcceptFiles(hwnd_, TRUE);
     return true;
 }
 
@@ -114,6 +116,12 @@ void Win32Window::begin_frame() {
 
 void Win32Window::swap_buffers() {
     SwapBuffers(device_context_);
+}
+
+std::vector<std::wstring> Win32Window::take_dropped_files() {
+    std::vector<std::wstring> files = std::move(dropped_files_);
+    dropped_files_.clear();
+    return files;
 }
 
 LRESULT CALLBACK Win32Window::window_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam) {
@@ -173,6 +181,18 @@ LRESULT Win32Window::handle_message(HWND hwnd, UINT message, WPARAM wparam, LPAR
     case WM_MOUSEWHEEL:
         mouse_.wheel_delta += GET_WHEEL_DELTA_WPARAM(wparam);
         return 0;
+    case WM_DROPFILES: {
+        HDROP drop = reinterpret_cast<HDROP>(wparam);
+        const UINT count = DragQueryFileW(drop, 0xFFFFFFFF, nullptr, 0);
+        for (UINT i = 0; i < count; ++i) {
+            const UINT length = DragQueryFileW(drop, i, nullptr, 0);
+            std::wstring path(length, L'\0');
+            DragQueryFileW(drop, i, path.data(), length + 1);
+            dropped_files_.push_back(path);
+        }
+        DragFinish(drop);
+        return 0;
+    }
     case WM_SIZE:
         width_ = LOWORD(lparam);
         height_ = HIWORD(lparam);

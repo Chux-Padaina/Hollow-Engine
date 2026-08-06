@@ -58,16 +58,27 @@ struct Material {
     float roughness = 0.55f;
 };
 
+struct Vertex {
+    Vec3 position{};
+    Vec3 normal{0.0f, 1.0f, 0.0f};
+    Vec2 uv{};
+    Vec3 color{1.0f, 1.0f, 1.0f};
+};
+
 enum class MeshPrimitive {
     Cube,
     Plane,
     Sphere,
+    Custom,
 };
 
 struct MeshPart {
     std::string name;
     MeshPrimitive primitive = MeshPrimitive::Cube;
     Material material;
+    std::vector<Vertex> vertices;
+    std::vector<std::uint32_t> indices;
+    float bounds_radius = 0.75f;
 };
 
 class StaticMeshComponent final : public Component {
@@ -168,6 +179,7 @@ class Scene {
 public:
     Actor& create_actor(std::string name);
     Actor& create_static_mesh_actor(std::string name, MeshPrimitive primitive, Transform transform);
+    Actor& create_mesh_actor(std::string name, std::vector<MeshPart> parts, Transform transform);
     Actor& create_light_actor(std::string name, LightKind kind, Transform transform);
     void destroy_selected_actor();
 

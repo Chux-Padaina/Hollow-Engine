@@ -70,6 +70,15 @@ Actor& Scene::create_static_mesh_actor(std::string name, MeshPrimitive primitive
     return actor;
 }
 
+Actor& Scene::create_mesh_actor(std::string name, std::vector<MeshPart> parts, Transform transform) {
+    Actor& actor = create_actor(unique_actor_name(name));
+    actor.root().local_transform = transform;
+    auto& mesh = actor.add_component<StaticMeshComponent>();
+    mesh.parts = std::move(parts);
+    selected_actor_id_ = actor.id();
+    return actor;
+}
+
 Actor& Scene::create_light_actor(std::string name, LightKind kind, Transform transform) {
     Actor& actor = create_actor(unique_actor_name(name));
     actor.root().local_transform = transform;

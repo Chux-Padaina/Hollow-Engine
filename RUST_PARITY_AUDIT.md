@@ -29,6 +29,11 @@ This file tracks what exists in the Rust prototype and whether it has been porte
 - Basic light icons and transform gizmo rendering.
 - Basic click selection for actors and lights.
 - Basic mouse-driven transform gizmo interaction.
+- Command-line OBJ import.
+- Drag/drop OBJ import.
+- OBJ material diffuse color import from `.mtl` files.
+- Mesh normalization after import.
+- Custom imported mesh part rendering.
 
 ## Partially Ported
 
@@ -50,17 +55,15 @@ This file tracks what exists in the Rust prototype and whether it has been porte
 
 ## Not Yet Ported
 
-- Drag/drop model import.
-- Command-line model import.
+- glTF drag/drop model import.
+- glTF command-line model import.
 - glTF loading.
-- OBJ loading.
 - glTF node transform preservation.
 - glTF base color factor import.
 - Vertex color import.
 - UV import.
 - Base-color texture import/upload.
 - Texture sampling.
-- Mesh normalization after import.
 - GPU VBO/VAO mesh upload for arbitrary imported meshes.
 - Cook-Torrance/GGX direct-light PBR shader.
 - Directional/point/spot lighting in shader.
@@ -86,11 +89,10 @@ This file tracks what exists in the Rust prototype and whether it has been porte
 
 ## Recommended Port Order
 
-1. Replace the custom OpenGL overlay with Dear ImGui so the C++ editor can match the Rust egui controls and become editable.
+1. Add Dear ImGui so the C++ editor can match the Rust egui controls and become editable.
 2. Move C++ rendering from immediate mode to shader/VBO/VAO rendering.
-3. Port CPU mesh types, primitive mesh builders, bounds radius, and GPU mesh upload.
-4. Port glTF/OBJ import and drag/drop.
-5. Port Rust render passes and shader uniforms.
-6. Port direct-light PBR and debug views.
-7. Port outline pass and polished gizmo meshes.
-8. Continue the planned full PBR pipeline: metallic-roughness textures, normal maps, shadow maps, HDR, and environment lighting.
+3. Port glTF import and texture preservation.
+4. Port Rust render passes and shader uniforms.
+5. Port direct-light PBR and debug views.
+6. Port outline pass and polished gizmo meshes.
+7. Continue the planned full PBR pipeline: metallic-roughness textures, normal maps, shadow maps, HDR, and environment lighting.

@@ -25,6 +25,7 @@ The project originally started as a Rust prototype. The active implementation is
   - click selection for actors/lights
   - mouse-drag move, rotate, and scale handles
   - Home reset
+- C++ import currently supports `.obj` by command-line argument or drag/drop. glTF/GLB import remains in the Rust reference and is tracked in [RUST_PARITY_AUDIT.md](RUST_PARITY_AUDIT.md).
 
 Legacy Rust reference still contains:
 
@@ -141,6 +142,6 @@ For the Rust-to-C++ feature parity ledger, see [RUST_PARITY_AUDIT.md](RUST_PARIT
 
 1. Replace the lightweight C++ overlay with Dear ImGui or a similar retained editor UI layer so details values become editable again.
 2. Move the graphics pipeline into modern OpenGL shader/VBO code.
-3. Add glTF/OBJ drag-drop import in C++.
+3. Add glTF/GLB drag-drop import in C++.
 4. Rebuild the direct-light PBR shader in C++.
 5. Continue the PBR pipeline: metallic-roughness textures, tangent-space normal maps, shadow maps, HDR, and environment lighting.

@@ -338,6 +338,18 @@ void Renderer::draw_mesh_part(const MeshPart& part, const Transform& transform) 
     case MeshPrimitive::Sphere:
         draw_sphere();
         break;
+    case MeshPrimitive::Custom:
+        glBegin(GL_TRIANGLES);
+        for (std::uint32_t index : part.indices) {
+            if (index >= part.vertices.size()) {
+                continue;
+            }
+            const Vertex& v = part.vertices[index];
+            set_color(shade(part.material, v.normal));
+            vertex(v.position);
+        }
+        glEnd();
+        break;
     }
     glPopMatrix();
 }

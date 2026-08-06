@@ -3,6 +3,7 @@
 #include <Windows.h>
 
 #include <string>
+#include <vector>
 
 namespace Forge {
 
@@ -41,6 +42,7 @@ public:
     bool should_close() const { return should_close_; }
     const std::wstring& last_error() const { return last_error_; }
     const MouseState& mouse() const { return mouse_; }
+    std::vector<std::wstring> take_dropped_files();
 
 private:
     static LRESULT CALLBACK window_proc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam);
@@ -55,6 +57,7 @@ private:
     bool should_close_ = false;
     std::wstring last_error_;
     MouseState mouse_;
+    std::vector<std::wstring> dropped_files_;
 };
 
 } // namespace Forge

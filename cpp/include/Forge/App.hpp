@@ -6,8 +6,10 @@
 #include "Forge/Win32Window.hpp"
 
 #include <chrono>
+#include <filesystem>
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace Forge {
 
@@ -30,7 +32,7 @@ enum class DragMode {
 
 class App {
 public:
-    int run();
+    int run(const std::vector<std::filesystem::path>& startup_imports = {});
 
 private:
     void begin_frame();
@@ -42,6 +44,8 @@ private:
     void add_mesh(MeshPrimitive primitive);
     void add_light(LightKind kind);
     void reset_scene();
+    void import_model(const std::filesystem::path& path);
+    void import_pending_drops();
     ActorId pick_actor(int x, int y) const;
     DragMode pick_gizmo(int x, int y) const;
     bool is_over_editor_ui(int x, int y) const;

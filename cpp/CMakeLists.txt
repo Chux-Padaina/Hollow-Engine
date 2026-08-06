@@ -9,6 +9,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 add_executable(ForgeEngine
     src/App.cpp
     src/Engine.cpp
+    src/Importer.cpp
     src/Main.cpp
     src/Math.cpp
     src/Renderer.cpp
@@ -26,6 +27,10 @@ endif()
 
 find_package(OpenGL REQUIRED)
 target_link_libraries(ForgeEngine PRIVATE OpenGL::GL)
+
+if (WIN32)
+    target_link_libraries(ForgeEngine PRIVATE shell32)
+endif()
 
 if (WIN32)
     target_compile_definitions(ForgeEngine PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
