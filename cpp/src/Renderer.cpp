@@ -2,7 +2,11 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <numbers>
+#include <stdexcept>
+#include <string>
+#include <vector>
 
 #include <Windows.h>
 #include <gl/GL.h>
@@ -11,6 +15,207 @@ namespace Forge {
 namespace {
 
 constexpr float kPi = std::numbers::pi_v<float>;
+
+constexpr unsigned int kArrayBuffer = 0x8892;
+constexpr unsigned int kElementArrayBuffer = 0x8893;
+constexpr unsigned int kStaticDraw = 0x88E4;
+constexpr unsigned int kFloat = 0x1406;
+constexpr unsigned int kFalse = 0;
+constexpr unsigned int kTriangles = 0x0004;
+constexpr unsigned int kUnsignedInt = 0x1405;
+constexpr unsigned int kVertexShader = 0x8B31;
+constexpr unsigned int kFragmentShader = 0x8B30;
+constexpr unsigned int kCompileStatus = 0x8B81;
+constexpr unsigned int kLinkStatus = 0x8B82;
+constexpr unsigned int kInfoLogLength = 0x8B84;
+
+using GlCreateShader = unsigned int(APIENTRY*)(unsigned int shader_type);
+using GlShaderSource = void(APIENTRY*)(unsigned int shader, int count, const char* const* string, const int* length);
+using GlCompileShader = void(APIENTRY*)(unsigned int shader);
+using GlGetShaderiv = void(APIENTRY*)(unsigned int shader, unsigned int pname, int* params);
+using GlGetShaderInfoLog = void(APIENTRY*)(unsigned int shader, int max_length, int* length, char* info_log);
+using GlDeleteShader = void(APIENTRY*)(unsigned int shader);
+using GlCreateProgram = unsigned int(APIENTRY*)();
+using GlAttachShader = void(APIENTRY*)(unsigned int program, unsigned int shader);
+using GlBindAttribLocation = void(APIENTRY*)(unsigned int program, unsigned int index, const char* name);
+using GlLinkProgram = void(APIENTRY*)(unsigned int program);
+using GlGetProgramiv = void(APIENTRY*)(unsigned int program, unsigned int pname, int* params);
+using GlGetProgramInfoLog = void(APIENTRY*)(unsigned int program, int max_length, int* length, char* info_log);
+using GlDeleteProgram = void(APIENTRY*)(unsigned int program);
+using GlUseProgram = void(APIENTRY*)(unsigned int program);
+using GlGetUniformLocation = int(APIENTRY*)(unsigned int program, const char* name);
+using GlUniformMatrix4fv = void(APIENTRY*)(int location, int count, unsigned char transpose, const float* value);
+using GlUniform3f = void(APIENTRY*)(int location, float v0, float v1, float v2);
+using GlUniform1f = void(APIENTRY*)(int location, float v0);
+using GlGenBuffers = void(APIENTRY*)(int count, unsigned int* buffers);
+using GlBindBuffer = void(APIENTRY*)(unsigned int target, unsigned int buffer);
+using GlBufferData = void(APIENTRY*)(unsigned int target, std::ptrdiff_t size, const void* data, unsigned int usage);
+using GlDeleteBuffers = void(APIENTRY*)(int count, const unsigned int* buffers);
+using GlEnableVertexAttribArray = void(APIENTRY*)(unsigned int index);
+using GlDisableVertexAttribArray = void(APIENTRY*)(unsigned int index);
+using GlVertexAttribPointer = void(APIENTRY*)(unsigned int index, int size, unsigned int type, unsigned char normalized, int stride, const void* pointer);
+using GlGenVertexArrays = void(APIENTRY*)(int count, unsigned int* arrays);
+using GlBindVertexArray = void(APIENTRY*)(unsigned int array);
+using GlDeleteVertexArrays = void(APIENTRY*)(int count, const unsigned int* arrays);
+
+struct ModernGl {
+    GlCreateShader create_shader = nullptr;
+    GlShaderSource shader_source = nullptr;
+    GlCompileShader compile_shader = nullptr;
+    GlGetShaderiv get_shader_iv = nullptr;
+    GlGetShaderInfoLog get_shader_info_log = nullptr;
+    GlDeleteShader delete_shader = nullptr;
+    GlCreateProgram create_program = nullptr;
+    GlAttachShader attach_shader = nullptr;
+    GlBindAttribLocation bind_attrib_location = nullptr;
+    GlLinkProgram link_program = nullptr;
+    GlGetProgramiv get_program_iv = nullptr;
+    GlGetProgramInfoLog get_program_info_log = nullptr;
+    GlDeleteProgram delete_program = nullptr;
+    GlUseProgram use_program = nullptr;
+    GlGetUniformLocation get_uniform_location = nullptr;
+    GlUniformMatrix4fv uniform_matrix_4fv = nullptr;
+    GlUniform3f uniform_3f = nullptr;
+    GlUniform1f uniform_1f = nullptr;
+    GlGenBuffers gen_buffers = nullptr;
+    GlBindBuffer bind_buffer = nullptr;
+    GlBufferData buffer_data = nullptr;
+    GlDeleteBuffers delete_buffers = nullptr;
+    GlEnableVertexAttribArray enable_vertex_attrib_array = nullptr;
+    GlDisableVertexAttribArray disable_vertex_attrib_array = nullptr;
+    GlVertexAttribPointer vertex_attrib_pointer = nullptr;
+    GlGenVertexArrays gen_vertex_arrays = nullptr;
+    GlBindVertexArray bind_vertex_array = nullptr;
+    GlDeleteVertexArrays delete_vertex_arrays = nullptr;
+
+    bool ready() const {
+        return create_shader != nullptr
+            && shader_source != nullptr
+            && compile_shader != nullptr
+            && get_shader_iv != nullptr
+            && get_shader_info_log != nullptr
+            && delete_shader != nullptr
+            && create_program != nullptr
+            && attach_shader != nullptr
+            && bind_attrib_location != nullptr
+            && link_program != nullptr
+            && get_program_iv != nullptr
+            && get_program_info_log != nullptr
+            && delete_program != nullptr
+            && use_program != nullptr
+            && get_uniform_location != nullptr
+            && uniform_matrix_4fv != nullptr
+            && uniform_3f != nullptr
+            && uniform_1f != nullptr
+            && gen_buffers != nullptr
+            && bind_buffer != nullptr
+            && buffer_data != nullptr
+            && delete_buffers != nullptr
+            && enable_vertex_attrib_array != nullptr
+            && disable_vertex_attrib_array != nullptr
+            && vertex_attrib_pointer != nullptr;
+    }
+};
+
+ModernGl glx;
+
+template <typename T>
+T load_gl_function(const char* name) {
+    void* proc = reinterpret_cast<void*>(wglGetProcAddress(name));
+    if (proc == nullptr || proc == reinterpret_cast<void*>(0x1) || proc == reinterpret_cast<void*>(0x2) || proc == reinterpret_cast<void*>(0x3) || proc == reinterpret_cast<void*>(-1)) {
+        proc = reinterpret_cast<void*>(GetProcAddress(GetModuleHandleW(L"opengl32.dll"), name));
+    }
+    return reinterpret_cast<T>(proc);
+}
+
+bool load_modern_gl() {
+    glx.create_shader = load_gl_function<GlCreateShader>("glCreateShader");
+    glx.shader_source = load_gl_function<GlShaderSource>("glShaderSource");
+    glx.compile_shader = load_gl_function<GlCompileShader>("glCompileShader");
+    glx.get_shader_iv = load_gl_function<GlGetShaderiv>("glGetShaderiv");
+    glx.get_shader_info_log = load_gl_function<GlGetShaderInfoLog>("glGetShaderInfoLog");
+    glx.delete_shader = load_gl_function<GlDeleteShader>("glDeleteShader");
+    glx.create_program = load_gl_function<GlCreateProgram>("glCreateProgram");
+    glx.attach_shader = load_gl_function<GlAttachShader>("glAttachShader");
+    glx.bind_attrib_location = load_gl_function<GlBindAttribLocation>("glBindAttribLocation");
+    glx.link_program = load_gl_function<GlLinkProgram>("glLinkProgram");
+    glx.get_program_iv = load_gl_function<GlGetProgramiv>("glGetProgramiv");
+    glx.get_program_info_log = load_gl_function<GlGetProgramInfoLog>("glGetProgramInfoLog");
+    glx.delete_program = load_gl_function<GlDeleteProgram>("glDeleteProgram");
+    glx.use_program = load_gl_function<GlUseProgram>("glUseProgram");
+    glx.get_uniform_location = load_gl_function<GlGetUniformLocation>("glGetUniformLocation");
+    glx.uniform_matrix_4fv = load_gl_function<GlUniformMatrix4fv>("glUniformMatrix4fv");
+    glx.uniform_3f = load_gl_function<GlUniform3f>("glUniform3f");
+    glx.uniform_1f = load_gl_function<GlUniform1f>("glUniform1f");
+    glx.gen_buffers = load_gl_function<GlGenBuffers>("glGenBuffers");
+    glx.bind_buffer = load_gl_function<GlBindBuffer>("glBindBuffer");
+    glx.buffer_data = load_gl_function<GlBufferData>("glBufferData");
+    glx.delete_buffers = load_gl_function<GlDeleteBuffers>("glDeleteBuffers");
+    glx.enable_vertex_attrib_array = load_gl_function<GlEnableVertexAttribArray>("glEnableVertexAttribArray");
+    glx.disable_vertex_attrib_array = load_gl_function<GlDisableVertexAttribArray>("glDisableVertexAttribArray");
+    glx.vertex_attrib_pointer = load_gl_function<GlVertexAttribPointer>("glVertexAttribPointer");
+    glx.gen_vertex_arrays = load_gl_function<GlGenVertexArrays>("glGenVertexArrays");
+    glx.bind_vertex_array = load_gl_function<GlBindVertexArray>("glBindVertexArray");
+    glx.delete_vertex_arrays = load_gl_function<GlDeleteVertexArrays>("glDeleteVertexArrays");
+    return glx.ready();
+}
+
+std::string shader_log(unsigned int shader) {
+    int length = 0;
+    glx.get_shader_iv(shader, kInfoLogLength, &length);
+    std::string log(std::max(1, length), '\0');
+    int written = 0;
+    glx.get_shader_info_log(shader, static_cast<int>(log.size()), &written, log.data());
+    log.resize(std::max(0, written));
+    return log;
+}
+
+std::string program_log(unsigned int program) {
+    int length = 0;
+    glx.get_program_iv(program, kInfoLogLength, &length);
+    std::string log(std::max(1, length), '\0');
+    int written = 0;
+    glx.get_program_info_log(program, static_cast<int>(log.size()), &written, log.data());
+    log.resize(std::max(0, written));
+    return log;
+}
+
+unsigned int compile_shader(unsigned int shader_type, const char* source) {
+    const unsigned int shader = glx.create_shader(shader_type);
+    glx.shader_source(shader, 1, &source, nullptr);
+    glx.compile_shader(shader);
+    int ok = 0;
+    glx.get_shader_iv(shader, kCompileStatus, &ok);
+    if (ok == 0) {
+        const std::string log = shader_log(shader);
+        glx.delete_shader(shader);
+        throw std::runtime_error("shader compile failed: " + log);
+    }
+    return shader;
+}
+
+unsigned int create_program(const char* vertex_source, const char* fragment_source) {
+    const unsigned int vertex = compile_shader(kVertexShader, vertex_source);
+    const unsigned int fragment = compile_shader(kFragmentShader, fragment_source);
+    const unsigned int program = glx.create_program();
+    glx.attach_shader(program, vertex);
+    glx.attach_shader(program, fragment);
+    glx.bind_attrib_location(program, 0, "aPosition");
+    glx.bind_attrib_location(program, 1, "aNormal");
+    glx.bind_attrib_location(program, 2, "aColor");
+    glx.link_program(program);
+    glx.delete_shader(vertex);
+    glx.delete_shader(fragment);
+
+    int ok = 0;
+    glx.get_program_iv(program, kLinkStatus, &ok);
+    if (ok == 0) {
+        const std::string log = program_log(program);
+        glx.delete_program(program);
+        throw std::runtime_error("shader link failed: " + log);
+    }
+    return program;
+}
 
 void set_color(Vec3 color, float alpha = 1.0f) {
     glColor4f(color.x, color.y, color.z, alpha);
@@ -25,6 +230,29 @@ Vec3 shade(const Material& material, Vec3 normal) {
     const float ndotl = std::max(0.0f, dot(normalize(normal), light_dir * -1.0f));
     const float wrapped = 0.32f + ndotl * 0.68f;
     return material.base_color * wrapped;
+}
+
+std::vector<RenderVertex> cube_vertices() {
+    auto v = [](Vec3 p, Vec3 n) {
+        return RenderVertex{p, n, {1.0f, 1.0f, 1.0f}};
+    };
+    return {
+        v({-0.5f, -0.5f, 0.5f}, {0, 0, 1}), v({0.5f, -0.5f, 0.5f}, {0, 0, 1}), v({0.5f, 0.5f, 0.5f}, {0, 0, 1}), v({-0.5f, 0.5f, 0.5f}, {0, 0, 1}),
+        v({0.5f, -0.5f, -0.5f}, {0, 0, -1}), v({-0.5f, -0.5f, -0.5f}, {0, 0, -1}), v({-0.5f, 0.5f, -0.5f}, {0, 0, -1}), v({0.5f, 0.5f, -0.5f}, {0, 0, -1}),
+        v({-0.5f, -0.5f, -0.5f}, {-1, 0, 0}), v({-0.5f, -0.5f, 0.5f}, {-1, 0, 0}), v({-0.5f, 0.5f, 0.5f}, {-1, 0, 0}), v({-0.5f, 0.5f, -0.5f}, {-1, 0, 0}),
+        v({0.5f, -0.5f, 0.5f}, {1, 0, 0}), v({0.5f, -0.5f, -0.5f}, {1, 0, 0}), v({0.5f, 0.5f, -0.5f}, {1, 0, 0}), v({0.5f, 0.5f, 0.5f}, {1, 0, 0}),
+        v({-0.5f, 0.5f, 0.5f}, {0, 1, 0}), v({0.5f, 0.5f, 0.5f}, {0, 1, 0}), v({0.5f, 0.5f, -0.5f}, {0, 1, 0}), v({-0.5f, 0.5f, -0.5f}, {0, 1, 0}),
+        v({-0.5f, -0.5f, -0.5f}, {0, -1, 0}), v({0.5f, -0.5f, -0.5f}, {0, -1, 0}), v({0.5f, -0.5f, 0.5f}, {0, -1, 0}), v({-0.5f, -0.5f, 0.5f}, {0, -1, 0}),
+    };
+}
+
+std::vector<std::uint32_t> quad_face_indices() {
+    std::vector<std::uint32_t> indices;
+    for (std::uint32_t face = 0; face < 6; ++face) {
+        const std::uint32_t base = face * 4;
+        indices.insert(indices.end(), {base, base + 1, base + 2, base, base + 2, base + 3});
+    }
+    return indices;
 }
 
 void draw_quad(Vec3 a, Vec3 b, Vec3 c, Vec3 d, Vec3 color) {
@@ -79,6 +307,14 @@ void Renderer::initialize(HDC device_context) {
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     glClearColor(0.08f, 0.10f, 0.09f, 1.0f);
+    try {
+        initialize_modern_pipeline();
+    } catch (const std::exception&) {
+        object_program_ = 0;
+        cube_mesh_ = {};
+        plane_mesh_ = {};
+        sphere_mesh_ = {};
+    }
 }
 
 void Renderer::resize(int width, int height) {
@@ -108,6 +344,7 @@ void Renderer::render(const Scene& scene, const Camera& camera, const Engine& en
     const float aspect = static_cast<float>(width_) / static_cast<float>(height_);
     const Mat4 projection = Mat4::perspective(camera.fov_y_radians, aspect, 0.05f, 500.0f);
     const Mat4 view = Mat4::look_at(camera.position(), camera.target, {0.0f, 1.0f, 0.0f});
+    const Mat4 view_projection = projection * view;
 
     glMatrixMode(GL_PROJECTION);
     glLoadMatrixf(projection.m.data());
@@ -119,7 +356,7 @@ void Renderer::render(const Scene& scene, const Camera& camera, const Engine& en
     }
 
     for (const auto& actor : scene.actors()) {
-        draw_actor(*actor, actor->id() == scene.selected_actor_id());
+        draw_actor(*actor, actor->id() == scene.selected_actor_id(), view_projection);
     }
 
     if (const Actor* selected = scene.selected_actor()) {
@@ -148,11 +385,203 @@ void Renderer::draw_grid(const Camera& camera) const {
     glEnable(GL_CULL_FACE);
 }
 
-void Renderer::draw_actor(const Actor& actor, bool selected) const {
+bool Renderer::initialize_modern_pipeline() {
+    if (!load_modern_gl()) {
+        return false;
+    }
+
+    constexpr const char* vertex_shader = R"(
+#version 120
+attribute vec3 aPosition;
+attribute vec3 aNormal;
+attribute vec3 aColor;
+uniform mat4 uModel;
+uniform mat4 uMvp;
+varying vec3 vNormal;
+varying vec3 vColor;
+void main() {
+    vNormal = normalize(mat3(uModel) * aNormal);
+    vColor = aColor;
+    gl_Position = uMvp * vec4(aPosition, 1.0);
+}
+)";
+
+    constexpr const char* fragment_shader = R"(
+#version 120
+uniform vec3 uBaseColor;
+uniform float uRoughness;
+uniform float uMetallic;
+varying vec3 vNormal;
+varying vec3 vColor;
+void main() {
+    vec3 n = normalize(vNormal);
+    vec3 lightDir = normalize(vec3(0.35, 0.9, 0.28));
+    float ndotl = max(dot(n, lightDir), 0.0);
+    float wrapped = 0.32 + ndotl * 0.68;
+    vec3 color = uBaseColor * vColor * wrapped;
+    color += uBaseColor * (1.0 - uRoughness) * 0.08;
+    color = mix(color, color * vec3(0.9, 0.92, 0.95) + vec3(0.04), clamp(uMetallic, 0.0, 1.0) * 0.35);
+    gl_FragColor = vec4(color, 1.0);
+}
+)";
+
+    object_program_ = create_program(vertex_shader, fragment_shader);
+    cube_mesh_ = create_cube_mesh();
+    plane_mesh_ = create_plane_mesh();
+    sphere_mesh_ = create_sphere_mesh();
+    return true;
+}
+
+GpuMesh Renderer::create_gpu_mesh(const std::vector<RenderVertex>& vertices, const std::vector<std::uint32_t>& indices) const {
+    GpuMesh mesh;
+    if (!glx.ready() || vertices.empty() || indices.empty()) {
+        return mesh;
+    }
+
+    if (glx.gen_vertex_arrays != nullptr && glx.bind_vertex_array != nullptr) {
+        glx.gen_vertex_arrays(1, &mesh.vertex_array);
+        glx.bind_vertex_array(mesh.vertex_array);
+    }
+
+    glx.gen_buffers(1, &mesh.vertex_buffer);
+    glx.bind_buffer(kArrayBuffer, mesh.vertex_buffer);
+    glx.buffer_data(kArrayBuffer, static_cast<std::ptrdiff_t>(vertices.size() * sizeof(RenderVertex)), vertices.data(), kStaticDraw);
+
+    glx.gen_buffers(1, &mesh.index_buffer);
+    glx.bind_buffer(kElementArrayBuffer, mesh.index_buffer);
+    glx.buffer_data(kElementArrayBuffer, static_cast<std::ptrdiff_t>(indices.size() * sizeof(std::uint32_t)), indices.data(), kStaticDraw);
+
+    glx.enable_vertex_attrib_array(0);
+    glx.vertex_attrib_pointer(0, 3, kFloat, kFalse, sizeof(RenderVertex), reinterpret_cast<const void*>(offsetof(RenderVertex, position)));
+    glx.enable_vertex_attrib_array(1);
+    glx.vertex_attrib_pointer(1, 3, kFloat, kFalse, sizeof(RenderVertex), reinterpret_cast<const void*>(offsetof(RenderVertex, normal)));
+    glx.enable_vertex_attrib_array(2);
+    glx.vertex_attrib_pointer(2, 3, kFloat, kFalse, sizeof(RenderVertex), reinterpret_cast<const void*>(offsetof(RenderVertex, color)));
+
+    if (glx.bind_vertex_array != nullptr) {
+        glx.bind_vertex_array(0);
+    }
+    glx.bind_buffer(kArrayBuffer, 0);
+    glx.bind_buffer(kElementArrayBuffer, 0);
+    mesh.index_count = static_cast<int>(indices.size());
+    return mesh;
+}
+
+void Renderer::destroy_gpu_mesh(GpuMesh& mesh) const {
+    if (!glx.ready()) {
+        mesh = {};
+        return;
+    }
+    if (mesh.vertex_buffer != 0) {
+        glx.delete_buffers(1, &mesh.vertex_buffer);
+    }
+    if (mesh.index_buffer != 0) {
+        glx.delete_buffers(1, &mesh.index_buffer);
+    }
+    if (mesh.vertex_array != 0 && glx.delete_vertex_arrays != nullptr) {
+        glx.delete_vertex_arrays(1, &mesh.vertex_array);
+    }
+    mesh = {};
+}
+
+void Renderer::draw_gpu_mesh(const GpuMesh& mesh, const Material& material, const Transform& transform, const Mat4& view_projection) const {
+    if (object_program_ == 0 || mesh.vertex_buffer == 0 || mesh.index_buffer == 0 || mesh.index_count <= 0) {
+        return;
+    }
+
+    const Mat4 model = transform.matrix();
+    const Mat4 mvp = view_projection * model;
+    glx.use_program(object_program_);
+    glx.uniform_matrix_4fv(glx.get_uniform_location(object_program_, "uModel"), 1, kFalse, model.m.data());
+    glx.uniform_matrix_4fv(glx.get_uniform_location(object_program_, "uMvp"), 1, kFalse, mvp.m.data());
+    glx.uniform_3f(glx.get_uniform_location(object_program_, "uBaseColor"), material.base_color.x, material.base_color.y, material.base_color.z);
+    glx.uniform_1f(glx.get_uniform_location(object_program_, "uRoughness"), material.roughness);
+    glx.uniform_1f(glx.get_uniform_location(object_program_, "uMetallic"), material.metallic);
+
+    if (mesh.vertex_array != 0 && glx.bind_vertex_array != nullptr) {
+        glx.bind_vertex_array(mesh.vertex_array);
+    } else {
+        glx.bind_buffer(kArrayBuffer, mesh.vertex_buffer);
+        glx.enable_vertex_attrib_array(0);
+        glx.vertex_attrib_pointer(0, 3, kFloat, kFalse, sizeof(RenderVertex), reinterpret_cast<const void*>(offsetof(RenderVertex, position)));
+        glx.enable_vertex_attrib_array(1);
+        glx.vertex_attrib_pointer(1, 3, kFloat, kFalse, sizeof(RenderVertex), reinterpret_cast<const void*>(offsetof(RenderVertex, normal)));
+        glx.enable_vertex_attrib_array(2);
+        glx.vertex_attrib_pointer(2, 3, kFloat, kFalse, sizeof(RenderVertex), reinterpret_cast<const void*>(offsetof(RenderVertex, color)));
+    }
+    glx.bind_buffer(kElementArrayBuffer, mesh.index_buffer);
+    glDrawElements(kTriangles, mesh.index_count, kUnsignedInt, nullptr);
+
+    if (mesh.vertex_array != 0 && glx.bind_vertex_array != nullptr) {
+        glx.bind_vertex_array(0);
+    } else {
+        glx.disable_vertex_attrib_array(0);
+        glx.disable_vertex_attrib_array(1);
+        glx.disable_vertex_attrib_array(2);
+    }
+    glx.bind_buffer(kArrayBuffer, 0);
+    glx.bind_buffer(kElementArrayBuffer, 0);
+    glx.use_program(0);
+}
+
+GpuMesh Renderer::create_cube_mesh() const {
+    return create_gpu_mesh(cube_vertices(), quad_face_indices());
+}
+
+GpuMesh Renderer::create_plane_mesh() const {
+    std::vector<RenderVertex> vertices{
+        {{-0.5f, 0.0f, -0.5f}, {0, 1, 0}, {1, 1, 1}},
+        {{0.5f, 0.0f, -0.5f}, {0, 1, 0}, {1, 1, 1}},
+        {{0.5f, 0.0f, 0.5f}, {0, 1, 0}, {1, 1, 1}},
+        {{-0.5f, 0.0f, 0.5f}, {0, 1, 0}, {1, 1, 1}},
+    };
+    std::vector<std::uint32_t> indices{0, 1, 2, 0, 2, 3};
+    return create_gpu_mesh(vertices, indices);
+}
+
+GpuMesh Renderer::create_sphere_mesh() const {
+    constexpr int rings = 20;
+    constexpr int segments = 32;
+    std::vector<RenderVertex> vertices;
+    std::vector<std::uint32_t> indices;
+    for (int y = 0; y <= rings; ++y) {
+        const float v = static_cast<float>(y) / rings;
+        const float phi = (v - 0.5f) * kPi;
+        for (int x = 0; x <= segments; ++x) {
+            const float u = static_cast<float>(x) / segments;
+            const float theta = u * kPi * 2.0f;
+            Vec3 normal{std::cos(phi) * std::cos(theta), std::sin(phi), std::cos(phi) * std::sin(theta)};
+            vertices.push_back({normal * 0.5f, normal, {1, 1, 1}});
+        }
+    }
+    for (int y = 0; y < rings; ++y) {
+        for (int x = 0; x < segments; ++x) {
+            const std::uint32_t a = static_cast<std::uint32_t>(y * (segments + 1) + x);
+            const std::uint32_t b = a + 1;
+            const std::uint32_t c = static_cast<std::uint32_t>((y + 1) * (segments + 1) + x);
+            const std::uint32_t d = c + 1;
+            indices.insert(indices.end(), {a, c, b, b, c, d});
+        }
+    }
+    return create_gpu_mesh(vertices, indices);
+}
+
+void Renderer::draw_custom_mesh_part(const MeshPart& part, const Transform& transform, const Mat4& view_projection) const {
+    std::vector<RenderVertex> vertices;
+    vertices.reserve(part.vertices.size());
+    for (const Vertex& vertex : part.vertices) {
+        vertices.push_back({vertex.position, vertex.normal, vertex.color});
+    }
+    GpuMesh mesh = create_gpu_mesh(vertices, part.indices);
+    draw_gpu_mesh(mesh, part.material, transform, view_projection);
+    destroy_gpu_mesh(mesh);
+}
+
+void Renderer::draw_actor(const Actor& actor, bool selected, const Mat4& view_projection) const {
     if (const auto* mesh = actor.find_component<StaticMeshComponent>()) {
         if (mesh->visible) {
             for (const auto& part : mesh->parts) {
-                draw_mesh_part(part, actor.root().local_transform);
+                draw_mesh_part(part, actor.root().local_transform, view_projection);
             }
         }
     }
@@ -177,34 +606,52 @@ void Renderer::draw_actor(const Actor& actor, bool selected) const {
     }
 }
 
-void Renderer::draw_mesh_part(const MeshPart& part, const Transform& transform) const {
-    glPushMatrix();
-    const Mat4 model = transform.matrix();
-    glMultMatrixf(model.m.data());
+void Renderer::draw_mesh_part(const MeshPart& part, const Transform& transform, const Mat4& view_projection) const {
+    if (object_program_ == 0) {
+        glPushMatrix();
+        const Mat4 model = transform.matrix();
+        glMultMatrixf(model.m.data());
+        switch (part.primitive) {
+        case MeshPrimitive::Cube:
+            draw_cube(part.material);
+            break;
+        case MeshPrimitive::Plane:
+            draw_plane();
+            break;
+        case MeshPrimitive::Sphere:
+            draw_sphere();
+            break;
+        case MeshPrimitive::Custom:
+            glBegin(GL_TRIANGLES);
+            for (std::uint32_t index : part.indices) {
+                if (index >= part.vertices.size()) {
+                    continue;
+                }
+                const Vertex& v = part.vertices[index];
+                set_color(shade(part.material, v.normal));
+                vertex(v.position);
+            }
+            glEnd();
+            break;
+        }
+        glPopMatrix();
+        return;
+    }
+
     switch (part.primitive) {
     case MeshPrimitive::Cube:
-        draw_cube(part.material);
+        draw_gpu_mesh(cube_mesh_, part.material, transform, view_projection);
         break;
     case MeshPrimitive::Plane:
-        draw_plane();
+        draw_gpu_mesh(plane_mesh_, part.material, transform, view_projection);
         break;
     case MeshPrimitive::Sphere:
-        draw_sphere();
+        draw_gpu_mesh(sphere_mesh_, part.material, transform, view_projection);
         break;
     case MeshPrimitive::Custom:
-        glBegin(GL_TRIANGLES);
-        for (std::uint32_t index : part.indices) {
-            if (index >= part.vertices.size()) {
-                continue;
-            }
-            const Vertex& v = part.vertices[index];
-            set_color(shade(part.material, v.normal));
-            vertex(v.position);
-        }
-        glEnd();
+        draw_custom_mesh_part(part, transform, view_projection);
         break;
     }
-    glPopMatrix();
 }
 
 void Renderer::draw_cube(const Material& material) const {

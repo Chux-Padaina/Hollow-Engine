@@ -35,6 +35,7 @@ This file tracks what exists in the Rust prototype and whether it has been porte
 - OBJ material diffuse color import from `.mtl` files.
 - Mesh normalization after import.
 - Custom imported mesh part rendering.
+- First C++ shader/VBO path for scene meshes.
 
 ## Partially Ported
 
@@ -46,7 +47,7 @@ This file tracks what exists in the Rust prototype and whether it has been porte
   - C++ has center/axis/ring interaction and improved screen-space dragging, but lacks plane handles, hover highlight, polished arrows, and ray-accurate selection.
 - Renderer pass structure:
   - Rust has explicit environment, opaque, outlines, and gizmo passes with shader state.
-  - C++ has the same conceptual order, but uses immediate-mode OpenGL bootstrap rendering.
+  - C++ has the same conceptual order and now draws scene meshes through shaders/VBOs, but editor grid/gizmos/light icons still use immediate-mode bootstrap rendering.
 - Grid:
   - Rust uses a shader-driven grid mesh with camera-following origin.
   - C++ now follows the camera but is still line-rendered.
@@ -65,7 +66,7 @@ This file tracks what exists in the Rust prototype and whether it has been porte
 - UV import.
 - Base-color texture import/upload.
 - Texture sampling.
-- GPU VBO/VAO mesh upload for arbitrary imported meshes.
+- Persistent GPU VBO/VAO mesh cache for arbitrary imported meshes.
 - Cook-Torrance/GGX direct-light PBR shader.
 - Directional/point/spot lighting in shader.
 - PBR metallic/roughness factors affecting rendering.
@@ -91,7 +92,7 @@ This file tracks what exists in the Rust prototype and whether it has been porte
 ## Recommended Port Order
 
 1. Visually QA the Dear ImGui panels against the Rust egui layout and remove the unused hand-drawn overlay path.
-2. Move C++ rendering from immediate mode to shader/VBO/VAO rendering.
+2. Cache imported C++ meshes on the GPU and move editor gizmos/grid to the modern path.
 3. Port glTF import and texture preservation.
 4. Port Rust render passes and shader uniforms.
 5. Port direct-light PBR and debug views.

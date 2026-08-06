@@ -6,6 +6,9 @@
 
 #include <Windows.h>
 
+#include <cstdint>
+#include <vector>
+
 namespace Forge {
 
 struct Camera {
@@ -21,6 +24,19 @@ struct Camera {
     Vec3 up() const;
 };
 
+struct RenderVertex {
+    Vec3 position;
+    Vec3 normal;
+    Vec3 color;
+};
+
+struct GpuMesh {
+    unsigned int vertex_array = 0;
+    unsigned int vertex_buffer = 0;
+    unsigned int index_buffer = 0;
+    int index_count = 0;
+};
+
 class Renderer {
 public:
     void initialize(HDC device_context);
@@ -31,10 +47,22 @@ public:
 private:
     int width_ = 1280;
     int height_ = 720;
+    unsigned int object_program_ = 0;
+    GpuMesh cube_mesh_;
+    GpuMesh plane_mesh_;
+    GpuMesh sphere_mesh_;
 
+    bool initialize_modern_pipeline();
+    GpuMesh create_gpu_mesh(const std::vector<RenderVertex>& vertices, const std::vector<std::uint32_t>& indices) const;
+    void destroy_gpu_mesh(GpuMesh& mesh) const;
+    void draw_gpu_mesh(const GpuMesh& mesh, const Material& material, const Transform& transform, const Mat4& view_projection) const;
+    GpuMesh create_cube_mesh() const;
+    GpuMesh create_plane_mesh() const;
+    GpuMesh create_sphere_mesh() const;
+    void draw_custom_mesh_part(const MeshPart& part, const Transform& transform, const Mat4& view_projection) const;
     void draw_grid(const Camera& camera) const;
-    void draw_actor(const Actor& actor, bool selected) const;
-    void draw_mesh_part(const MeshPart& part, const Transform& transform) const;
+    void draw_actor(const Actor& actor, bool selected, const Mat4& view_projection) const;
+    void draw_mesh_part(const MeshPart& part, const Transform& transform, const Mat4& view_projection) const;
     void draw_cube(const Material& material) const;
     void draw_plane() const;
     void draw_sphere() const;

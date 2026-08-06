@@ -16,6 +16,7 @@ The project originally started as a Rust prototype. The active implementation is
   - placeholders exist for future engine/game systems
 - Default C++ scene with two cube actors, one directional light actor, and one point light actor.
 - C++ renderer draws the world grid, actors, light icons, and local/world-aware gizmos.
+- Scene mesh drawing now has a first modern OpenGL path using shader programs and GPU vertex/index buffers.
 - Dear ImGui is vendored under `cpp/vendor/imgui` and now drives the C++ editor UI.
 - C++ editor controls now include:
   - top toolbar for select/move/rotate/scale, local/world, and snap
@@ -141,8 +142,8 @@ For the Rust-to-C++ feature parity ledger, see [RUST_PARITY_AUDIT.md](RUST_PARIT
 
 ## Next Engineering Steps
 
-1. Visually QA the Dear ImGui panels in-app and retire the unused hand-drawn overlay code.
-2. Move the graphics pipeline into modern OpenGL shader/VBO/VAO code.
+1. Move remaining editor-only rendering helpers, especially gizmos and grid, away from immediate mode.
+2. Cache imported custom meshes on the GPU instead of uploading them each draw.
 3. Add glTF/GLB drag-drop import in C++.
 4. Rebuild the direct-light PBR shader in C++.
 5. Continue the PBR pipeline: metallic-roughness textures, tangent-space normal maps, shadow maps, HDR, and environment lighting.

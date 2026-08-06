@@ -23,7 +23,7 @@ Implemented in the Rust reference:
 
 Pending in the new C++ implementation:
 
-- Modern OpenGL shader/VBO renderer.
+- Complete modern OpenGL renderer for all scene/editor passes.
 - glTF import.
 - Direct-light Cook-Torrance/GGX PBR shader.
 - Shader-connected material inspector and debug views.
@@ -32,6 +32,7 @@ Recently added in the new C++ implementation:
 
 - Dear ImGui editor UI for actor transforms, light controls, and basic material factors.
 - OBJ import with material diffuse color preservation.
+- First shader/VBO scene mesh path, with immediate-mode fallback if required GL entry points are unavailable.
 
 Not yet implemented in either path:
 
@@ -277,14 +278,14 @@ Status: pending.
 
 ## Recommended Immediate Next Steps
 
-1. Move the C++ renderer to shader/VBO/VAO drawing.
+1. Cache imported C++ meshes on the GPU instead of uploading custom OBJ parts at draw time.
 2. Rebuild direct-light Cook-Torrance/GGX in C++.
 3. Add glTF import with metallic/roughness factors and textures.
 4. Add tangent support and normal maps.
 5. Replace planar shadows with a directional shadow map.
 6. Add basic environment lighting so metals have something to reflect.
 
-Direct-light PBR is now implemented. The next material-control milestone should make it easy to demonstrate:
+Once direct-light PBR is rebuilt in C++, the material-control milestone should make it easy to demonstrate:
 
 - plastic: metallic `0`, roughness medium/high
 - shiny plastic: metallic `0`, roughness low
