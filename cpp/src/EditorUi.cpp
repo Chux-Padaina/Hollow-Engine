@@ -158,6 +158,8 @@ EditorCommand EditorUi::draw(Scene& scene, Engine& engine, Camera& camera, bool&
     ImGui::SameLine();
     ImGui::Checkbox("Snap", &snap_to_grid);
     ImGui::SameLine();
+    ImGui::Checkbox("Shadows", &engine.render_settings().shadows_enabled);
+    ImGui::SameLine();
     ImGui::TextDisabled("View: %s", name_of(engine.debug_view()));
     ImGui::SameLine();
     ImGui::TextDisabled("Style: %s", name_of(engine.style()));

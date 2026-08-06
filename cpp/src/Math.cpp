@@ -155,6 +155,17 @@ Mat4 Mat4::perspective(float fov_y_radians, float aspect, float near_z, float fa
     return out;
 }
 
+Mat4 Mat4::orthographic(float left, float right, float bottom, float top, float near_z, float far_z) {
+    Mat4 out = identity();
+    out.m[0] = 2.0f / std::max(right - left, 0.0001f);
+    out.m[5] = 2.0f / std::max(top - bottom, 0.0001f);
+    out.m[10] = -2.0f / std::max(far_z - near_z, 0.0001f);
+    out.m[12] = -(right + left) / std::max(right - left, 0.0001f);
+    out.m[13] = -(top + bottom) / std::max(top - bottom, 0.0001f);
+    out.m[14] = -(far_z + near_z) / std::max(far_z - near_z, 0.0001f);
+    return out;
+}
+
 Mat4 Mat4::look_at(Vec3 eye, Vec3 target, Vec3 up) {
     const Vec3 f = normalize(target - eye);
     const Vec3 s = normalize(cross(f, up));

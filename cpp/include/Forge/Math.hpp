@@ -42,6 +42,7 @@ struct Mat4 {
     static Mat4 rotation_xyz(Vec3 radians);
     static Mat4 rotation_axis_angle(Vec3 axis, float radians);
     static Mat4 perspective(float fov_y_radians, float aspect, float near_z, float far_z);
+    static Mat4 orthographic(float left, float right, float bottom, float top, float near_z, float far_z);
     static Mat4 look_at(Vec3 eye, Vec3 target, Vec3 up);
 };
 

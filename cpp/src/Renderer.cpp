@@ -43,6 +43,14 @@ constexpr unsigned int kUnpackAlignment = 0x0CF5;
 constexpr unsigned int kTexture0 = 0x84C0;
 constexpr unsigned int kTexture1 = 0x84C1;
 constexpr unsigned int kTexture2 = 0x84C2;
+constexpr unsigned int kTexture3 = 0x84C3;
+constexpr unsigned int kDepthComponent = 0x1902;
+constexpr unsigned int kNearest = 0x2600;
+constexpr unsigned int kClampToEdge = 0x812F;
+constexpr unsigned int kFramebuffer = 0x8D40;
+constexpr unsigned int kDepthAttachment = 0x8D00;
+constexpr unsigned int kFramebufferComplete = 0x8CD5;
+constexpr unsigned int kNone = 0;
 
 using GlCreateShader = unsigned int(APIENTRY*)(unsigned int shader_type);
 using GlShaderSource = void(APIENTRY*)(unsigned int shader, int count, const char* const* string, const int* length);
@@ -74,6 +82,11 @@ using GlVertexAttribPointer = void(APIENTRY*)(unsigned int index, int size, unsi
 using GlGenVertexArrays = void(APIENTRY*)(int count, unsigned int* arrays);
 using GlBindVertexArray = void(APIENTRY*)(unsigned int array);
 using GlDeleteVertexArrays = void(APIENTRY*)(int count, const unsigned int* arrays);
+using GlGenFramebuffers = void(APIENTRY*)(int count, unsigned int* framebuffers);
+using GlBindFramebuffer = void(APIENTRY*)(unsigned int target, unsigned int framebuffer);
+using GlFramebufferTexture2D = void(APIENTRY*)(unsigned int target, unsigned int attachment, unsigned int textarget, unsigned int texture, int level);
+using GlCheckFramebufferStatus = unsigned int(APIENTRY*)(unsigned int target);
+using GlDeleteFramebuffers = void(APIENTRY*)(int count, const unsigned int* framebuffers);
 
 struct ModernGl {
     GlCreateShader create_shader = nullptr;
@@ -106,6 +119,11 @@ struct ModernGl {
     GlGenVertexArrays gen_vertex_arrays = nullptr;
     GlBindVertexArray bind_vertex_array = nullptr;
     GlDeleteVertexArrays delete_vertex_arrays = nullptr;
+    GlGenFramebuffers gen_framebuffers = nullptr;
+    GlBindFramebuffer bind_framebuffer = nullptr;
+    GlFramebufferTexture2D framebuffer_texture_2d = nullptr;
+    GlCheckFramebufferStatus check_framebuffer_status = nullptr;
+    GlDeleteFramebuffers delete_framebuffers = nullptr;
 
     bool ready() const {
         return create_shader != nullptr
@@ -134,7 +152,12 @@ struct ModernGl {
             && delete_buffers != nullptr
             && enable_vertex_attrib_array != nullptr
             && disable_vertex_attrib_array != nullptr
-            && vertex_attrib_pointer != nullptr;
+            && vertex_attrib_pointer != nullptr
+            && gen_framebuffers != nullptr
+            && bind_framebuffer != nullptr
+            && framebuffer_texture_2d != nullptr
+            && check_framebuffer_status != nullptr
+            && delete_framebuffers != nullptr;
     }
 };
 
@@ -180,6 +203,11 @@ bool load_modern_gl() {
     glx.gen_vertex_arrays = load_gl_function<GlGenVertexArrays>("glGenVertexArrays");
     glx.bind_vertex_array = load_gl_function<GlBindVertexArray>("glBindVertexArray");
     glx.delete_vertex_arrays = load_gl_function<GlDeleteVertexArrays>("glDeleteVertexArrays");
+    glx.gen_framebuffers = load_gl_function<GlGenFramebuffers>("glGenFramebuffers");
+    glx.bind_framebuffer = load_gl_function<GlBindFramebuffer>("glBindFramebuffer");
+    glx.framebuffer_texture_2d = load_gl_function<GlFramebufferTexture2D>("glFramebufferTexture2D");
+    glx.check_framebuffer_status = load_gl_function<GlCheckFramebufferStatus>("glCheckFramebufferStatus");
+    glx.delete_framebuffers = load_gl_function<GlDeleteFramebuffers>("glDeleteFramebuffers");
     return glx.ready();
 }
 
@@ -381,6 +409,18 @@ void Renderer::shutdown() {
         glx.delete_program(outline_program_);
         outline_program_ = 0;
     }
+    if (depth_program_ != 0 && glx.delete_program != nullptr) {
+        glx.delete_program(depth_program_);
+        depth_program_ = 0;
+    }
+    if (shadow_framebuffer_ != 0 && glx.delete_framebuffers != nullptr) {
+        glx.delete_framebuffers(1, &shadow_framebuffer_);
+        shadow_framebuffer_ = 0;
+    }
+    if (shadow_depth_texture_ != 0) {
+        glDeleteTextures(1, &shadow_depth_texture_);
+        shadow_depth_texture_ = 0;
+    }
 }
 
 Vec2 Renderer::project(Vec3 world, const Camera& camera) const {
@@ -408,6 +448,12 @@ void Renderer::render(const Scene& scene, const Camera& camera, const Engine& en
     const Mat4 view = Mat4::look_at(camera.position(), camera.target, {0.0f, 1.0f, 0.0f});
     const Mat4 view_projection = projection * view;
     const ObjectUniforms object_uniforms = collect_object_uniforms(scene, camera, engine);
+
+    if (object_uniforms.shadows_enabled) {
+        render_shadow_map(scene, object_uniforms);
+    }
+    glViewport(0, 0, width_, height_);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     glMatrixMode(GL_PROJECTION);
     glLoadMatrixf(projection.m.data());
@@ -469,12 +515,14 @@ attribute vec3 aTangent;
 attribute float aTangentSign;
 uniform mat4 uModel;
 uniform mat4 uMvp;
+uniform mat4 uLightViewProjection;
 varying vec3 vWorldPosition;
 varying vec3 vNormal;
 varying vec3 vColor;
 varying vec2 vUv;
 varying vec3 vTangent;
 varying float vTangentSign;
+varying vec4 vShadowPosition;
 void main() {
     vec4 worldPosition = uModel * vec4(aPosition, 1.0);
     vWorldPosition = worldPosition.xyz;
@@ -483,6 +531,7 @@ void main() {
     vUv = aUv;
     vTangent = normalize(mat3(uModel) * aTangent);
     vTangentSign = aTangentSign;
+    vShadowPosition = uLightViewProjection * worldPosition;
     gl_Position = uMvp * vec4(aPosition, 1.0);
 }
 )";
@@ -508,12 +557,15 @@ uniform sampler2D uMetallicRoughnessTexture;
 uniform int uHasMetallicRoughnessTexture;
 uniform sampler2D uNormalTexture;
 uniform int uHasNormalTexture;
+uniform sampler2D uShadowMap;
+uniform int uShadowsEnabled;
 varying vec3 vWorldPosition;
 varying vec3 vNormal;
 varying vec3 vColor;
 varying vec2 vUv;
 varying vec3 vTangent;
 varying float vTangentSign;
+varying vec4 vShadowPosition;
 
 const float PI = 3.14159265359;
 
@@ -557,6 +609,29 @@ vec3 pbr_light(vec3 albedo, float metallic, float roughness, vec3 n, vec3 v, vec
     return (diffuse + specular) * radiance * ndotl;
 }
 
+float directional_shadow(vec3 n, vec3 light_dir) {
+    if (uShadowsEnabled == 0) {
+        return 1.0;
+    }
+    vec3 projected = vShadowPosition.xyz / max(vShadowPosition.w, 0.0001);
+    projected = projected * 0.5 + 0.5;
+    if (projected.x < 0.0 || projected.x > 1.0 || projected.y < 0.0 || projected.y > 1.0 || projected.z < 0.0 || projected.z > 1.0) {
+        return 1.0;
+    }
+
+    float bias = max(0.0015 * (1.0 - dot(n, light_dir)), 0.00045);
+    float shadow = 0.0;
+    float texel = 1.0 / 2048.0;
+    for (int x = -1; x <= 1; ++x) {
+        for (int y = -1; y <= 1; ++y) {
+            float closest = texture2D(uShadowMap, projected.xy + vec2(float(x), float(y)) * texel).r;
+            shadow += projected.z - bias > closest ? 0.0 : 1.0;
+        }
+    }
+    shadow /= 9.0;
+    return mix(0.38, 1.0, shadow);
+}
+
 void main() {
     vec3 n = normalize(vNormal);
     vec3 t = normalize(vTangent - n * dot(n, vTangent));
@@ -575,7 +650,9 @@ void main() {
     float metallic = clamp(uMetallic * sampledMetallicRoughness.b, 0.0, 1.0);
 
     vec3 direct = vec3(0.0);
-    direct += pbr_light(albedo, metallic, roughness, n, v, normalize(uDirectionalDirection), uDirectionalColor * uDirectionalIntensity);
+    vec3 directionalLight = normalize(uDirectionalDirection);
+    float shadow = directional_shadow(n, directionalLight);
+    direct += pbr_light(albedo, metallic, roughness, n, v, directionalLight, uDirectionalColor * uDirectionalIntensity) * shadow;
 
     vec3 pointVector = uPointPosition - vWorldPosition;
     float pointDistance = length(pointVector);
@@ -627,8 +704,44 @@ void main() {
 }
 )";
 
+    constexpr const char* depth_vertex_shader = R"(
+#version 120
+attribute vec3 aPosition;
+uniform mat4 uMvp;
+void main() {
+    gl_Position = uMvp * vec4(aPosition, 1.0);
+}
+)";
+
+    constexpr const char* depth_fragment_shader = R"(
+#version 120
+void main() {
+}
+)";
+
     object_program_ = create_program(vertex_shader, fragment_shader);
     outline_program_ = create_program(outline_vertex_shader, outline_fragment_shader);
+    depth_program_ = create_program(depth_vertex_shader, depth_fragment_shader);
+
+    glGenTextures(1, &shadow_depth_texture_);
+    glBindTexture(kTexture2D, shadow_depth_texture_);
+    glTexImage2D(kTexture2D, 0, static_cast<int>(kDepthComponent), shadow_resolution_, shadow_resolution_, 0, kDepthComponent, kFloat, nullptr);
+    glTexParameteri(kTexture2D, kTextureMinFilter, kNearest);
+    glTexParameteri(kTexture2D, kTextureMagFilter, kNearest);
+    glTexParameteri(kTexture2D, kTextureWrapS, kClampToEdge);
+    glTexParameteri(kTexture2D, kTextureWrapT, kClampToEdge);
+
+    glx.gen_framebuffers(1, &shadow_framebuffer_);
+    glx.bind_framebuffer(kFramebuffer, shadow_framebuffer_);
+    glx.framebuffer_texture_2d(kFramebuffer, kDepthAttachment, kTexture2D, shadow_depth_texture_, 0);
+    glDrawBuffer(kNone);
+    glReadBuffer(kNone);
+    if (glx.check_framebuffer_status(kFramebuffer) != kFramebufferComplete) {
+        glx.bind_framebuffer(kFramebuffer, 0);
+        throw std::runtime_error("shadow framebuffer is incomplete");
+    }
+    glx.bind_framebuffer(kFramebuffer, 0);
+
     const unsigned char white_pixel[] = {255, 255, 255, 255};
     glGenTextures(1, &white_texture_);
     glBindTexture(kTexture2D, white_texture_);
@@ -688,6 +801,7 @@ GpuMesh Renderer::create_gpu_mesh(const std::vector<RenderVertex>& vertices, con
 ObjectUniforms Renderer::collect_object_uniforms(const Scene& scene, const Camera& camera, const Engine& engine) const {
     ObjectUniforms uniforms;
     uniforms.camera_position = camera.position();
+    uniforms.shadows_enabled = engine.render_settings().shadows_enabled;
 
     switch (engine.debug_view()) {
     case DebugView::Final:
@@ -741,6 +855,13 @@ ObjectUniforms Renderer::collect_object_uniforms(const Scene& scene, const Camer
     if (!found_directional) {
         uniforms.directional_intensity = 0.0f;
     }
+    const Vec3 light_direction = length(uniforms.directional_direction) > 0.0001f ? normalize(uniforms.directional_direction) : Vec3{0.35f, 0.9f, 0.28f};
+    const Vec3 light_target = camera.target;
+    const Vec3 light_position = light_target + light_direction * 18.0f;
+    const Mat4 light_view = Mat4::look_at(light_position, light_target, {0.0f, 1.0f, 0.0f});
+    const Mat4 light_projection = Mat4::orthographic(-12.0f, 12.0f, -12.0f, 12.0f, 0.1f, 45.0f);
+    uniforms.light_view_projection = light_projection * light_view;
+    uniforms.shadows_enabled = uniforms.shadows_enabled && found_directional && shadow_framebuffer_ != 0 && shadow_depth_texture_ != 0 && depth_program_ != 0;
     return uniforms;
 }
 
@@ -889,6 +1010,7 @@ void Renderer::draw_gpu_mesh(const GpuMesh& mesh, const Material& material, cons
     glx.use_program(object_program_);
     glx.uniform_matrix_4fv(glx.get_uniform_location(object_program_, "uModel"), 1, kFalse, model.m.data());
     glx.uniform_matrix_4fv(glx.get_uniform_location(object_program_, "uMvp"), 1, kFalse, mvp.m.data());
+    glx.uniform_matrix_4fv(glx.get_uniform_location(object_program_, "uLightViewProjection"), 1, kFalse, uniforms.light_view_projection.m.data());
     glx.uniform_3f(glx.get_uniform_location(object_program_, "uBaseColor"), material.base_color.x, material.base_color.y, material.base_color.z);
     glx.uniform_1f(glx.get_uniform_location(object_program_, "uRoughness"), material.roughness);
     glx.uniform_1f(glx.get_uniform_location(object_program_, "uMetallic"), material.metallic);
@@ -908,12 +1030,16 @@ void Renderer::draw_gpu_mesh(const GpuMesh& mesh, const Material& material, cons
     glx.uniform_1i(glx.get_uniform_location(object_program_, "uHasMetallicRoughnessTexture"), material.metallic_roughness_texture_path.empty() ? 0 : 1);
     glx.uniform_1i(glx.get_uniform_location(object_program_, "uNormalTexture"), 2);
     glx.uniform_1i(glx.get_uniform_location(object_program_, "uHasNormalTexture"), material.normal_texture_path.empty() ? 0 : 1);
+    glx.uniform_1i(glx.get_uniform_location(object_program_, "uShadowMap"), 3);
+    glx.uniform_1i(glx.get_uniform_location(object_program_, "uShadowsEnabled"), uniforms.shadows_enabled ? 1 : 0);
     glx.active_texture(kTexture0);
     glBindTexture(kTexture2D, resolve_base_color_texture(material));
     glx.active_texture(kTexture1);
     glBindTexture(kTexture2D, resolve_metallic_roughness_texture(material));
     glx.active_texture(kTexture2);
     glBindTexture(kTexture2D, resolve_normal_texture(material));
+    glx.active_texture(kTexture3);
+    glBindTexture(kTexture2D, shadow_depth_texture_);
     glx.active_texture(kTexture0);
 
     if (mesh.vertex_array != 0 && glx.bind_vertex_array != nullptr) {
@@ -948,12 +1074,96 @@ void Renderer::draw_gpu_mesh(const GpuMesh& mesh, const Material& material, cons
     }
     glx.bind_buffer(kArrayBuffer, 0);
     glx.bind_buffer(kElementArrayBuffer, 0);
+    glx.active_texture(kTexture3);
+    glBindTexture(kTexture2D, 0);
     glx.active_texture(kTexture2);
     glBindTexture(kTexture2D, 0);
     glx.active_texture(kTexture1);
     glBindTexture(kTexture2D, 0);
     glx.active_texture(kTexture0);
     glBindTexture(kTexture2D, 0);
+    glx.use_program(0);
+}
+
+void Renderer::render_shadow_map(const Scene& scene, const ObjectUniforms& uniforms) {
+    if (!uniforms.shadows_enabled) {
+        return;
+    }
+
+    glx.bind_framebuffer(kFramebuffer, shadow_framebuffer_);
+    glViewport(0, 0, shadow_resolution_, shadow_resolution_);
+    glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+    glClear(GL_DEPTH_BUFFER_BIT);
+    glCullFace(GL_FRONT);
+
+    for (const auto& actor : scene.actors()) {
+        draw_depth_actor(*actor, uniforms.light_view_projection);
+    }
+
+    glCullFace(GL_BACK);
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    glx.bind_framebuffer(kFramebuffer, 0);
+}
+
+void Renderer::draw_depth_actor(const Actor& actor, const Mat4& light_view_projection) {
+    const auto* mesh = actor.find_component<StaticMeshComponent>();
+    if (mesh == nullptr || !mesh->visible) {
+        return;
+    }
+
+    for (const auto& part : mesh->parts) {
+        draw_depth_mesh_part(part, actor.root().local_transform, light_view_projection);
+    }
+}
+
+void Renderer::draw_depth_mesh_part(const MeshPart& part, const Transform& transform, const Mat4& light_view_projection) {
+    switch (part.primitive) {
+    case MeshPrimitive::Cube:
+        draw_depth_gpu_mesh(cube_mesh_, transform, light_view_projection);
+        break;
+    case MeshPrimitive::Plane:
+        draw_depth_gpu_mesh(plane_mesh_, transform, light_view_projection);
+        break;
+    case MeshPrimitive::Sphere:
+        draw_depth_gpu_mesh(sphere_mesh_, transform, light_view_projection);
+        break;
+    case MeshPrimitive::Custom: {
+        auto it = custom_mesh_cache_.find(&part);
+        if (it == custom_mesh_cache_.end()) {
+            it = custom_mesh_cache_.emplace(&part, create_custom_mesh(part)).first;
+        }
+        draw_depth_gpu_mesh(it->second, transform, light_view_projection);
+        break;
+    }
+    }
+}
+
+void Renderer::draw_depth_gpu_mesh(const GpuMesh& mesh, const Transform& transform, const Mat4& light_view_projection) const {
+    if (depth_program_ == 0 || mesh.vertex_buffer == 0 || mesh.index_buffer == 0 || mesh.index_count <= 0) {
+        return;
+    }
+
+    const Mat4 mvp = light_view_projection * transform.matrix();
+    glx.use_program(depth_program_);
+    glx.uniform_matrix_4fv(glx.get_uniform_location(depth_program_, "uMvp"), 1, kFalse, mvp.m.data());
+
+    if (mesh.vertex_array != 0 && glx.bind_vertex_array != nullptr) {
+        glx.bind_vertex_array(mesh.vertex_array);
+    } else {
+        glx.bind_buffer(kArrayBuffer, mesh.vertex_buffer);
+        glx.enable_vertex_attrib_array(0);
+        glx.vertex_attrib_pointer(0, 3, kFloat, kFalse, sizeof(RenderVertex), reinterpret_cast<const void*>(offsetof(RenderVertex, position)));
+    }
+    glx.bind_buffer(kElementArrayBuffer, mesh.index_buffer);
+    glDrawElements(kTriangles, mesh.index_count, kUnsignedInt, nullptr);
+
+    if (mesh.vertex_array != 0 && glx.bind_vertex_array != nullptr) {
+        glx.bind_vertex_array(0);
+    } else {
+        glx.disable_vertex_attrib_array(0);
+    }
+    glx.bind_buffer(kArrayBuffer, 0);
+    glx.bind_buffer(kElementArrayBuffer, 0);
     glx.use_program(0);
 }
 

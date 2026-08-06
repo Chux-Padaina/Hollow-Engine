@@ -59,6 +59,8 @@ struct ObjectUniforms {
     Vec3 point_color{0.35f, 0.75f, 1.0f};
     float point_intensity = 0.0f;
     float point_range = 8.0f;
+    Mat4 light_view_projection = Mat4::identity();
+    bool shadows_enabled = false;
     int debug_view = 0;
 };
 
@@ -75,6 +77,10 @@ private:
     int height_ = 720;
     unsigned int object_program_ = 0;
     unsigned int outline_program_ = 0;
+    unsigned int depth_program_ = 0;
+    unsigned int shadow_framebuffer_ = 0;
+    unsigned int shadow_depth_texture_ = 0;
+    int shadow_resolution_ = 2048;
     GpuMesh cube_mesh_;
     GpuMesh plane_mesh_;
     GpuMesh sphere_mesh_;
@@ -94,6 +100,10 @@ private:
     unsigned int resolve_normal_texture(const Material& material) const;
     void destroy_texture(GpuTexture& texture) const;
     void draw_gpu_mesh(const GpuMesh& mesh, const Material& material, const Transform& transform, const Mat4& view_projection, const ObjectUniforms& uniforms);
+    void render_shadow_map(const Scene& scene, const ObjectUniforms& uniforms);
+    void draw_depth_actor(const Actor& actor, const Mat4& light_view_projection);
+    void draw_depth_mesh_part(const MeshPart& part, const Transform& transform, const Mat4& light_view_projection);
+    void draw_depth_gpu_mesh(const GpuMesh& mesh, const Transform& transform, const Mat4& light_view_projection) const;
     GpuMesh create_cube_mesh() const;
     GpuMesh create_plane_mesh() const;
     GpuMesh create_sphere_mesh() const;

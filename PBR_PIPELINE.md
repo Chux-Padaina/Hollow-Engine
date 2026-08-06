@@ -43,11 +43,12 @@ Recently added in the new C++ implementation:
 - Base-color and combined metallic/roughness texture sampling in the C++ PBR shader.
 - Static `.gltf`/`.glb` mesh and material import in C++.
 - Tangent generation and tangent-space normal map sampling in the C++ PBR shader.
+- First directional-light shadow map pass in C++.
 
 Not yet implemented in either path:
 
 - Occlusion and emissive texture import.
-- Real shadow maps.
+- Cascaded or production-quality shadow maps.
 - Image-based lighting/reflection probes.
 - HDR framebuffer/post-processing.
 
@@ -87,7 +88,7 @@ Implementation notes:
 - Meshes now carry `MaterialProperties` with `metallic` and `roughness`.
 - glTF `metallicFactor` and `roughnessFactor`, OBJ material factors, and editor factor controls are active.
 - The default test scene uses a rough non-metal cube, a smoother metal cube, and a rough non-metal floor.
-- This is not full engine PBR yet because it does not include real shadow maps, image-based lighting, HDR, or post-processing.
+- This is not full engine PBR yet because it does not include image-based lighting, HDR, or post-processing.
 
 ### 2. Material Properties And Inspector Controls
 
@@ -237,7 +238,17 @@ Why this matters:
 
 Real shadows prove that objects can cast onto other objects, not just the floor. This is the first real engine-style shadow system.
 
-Status: pending.
+Status: implemented as a first directional-light shadow map.
+
+Implementation notes:
+
+- The renderer creates a 2048x2048 depth texture and framebuffer for the first enabled directional light.
+- Before the main viewport pass, the scene renders through a depth-only shader from the light's orthographic camera.
+- The PBR shader samples the shadow map and attenuates direct directional light.
+- Shadows can be toggled from the editor toolbar.
+- The current light-space volume is centered around the editor camera target. This is good for a prototype/editor test scene, but not final game camera coverage.
+- Filtering is a simple 3x3 PCF kernel. Bias and softness will need visual tuning.
+- Not implemented yet: cascaded shadow maps, per-light shadow settings, point/spot light shadows, contact shadows, or transparent-shadow handling.
 
 ### 9. HDR Framebuffer And Tonemapping
 

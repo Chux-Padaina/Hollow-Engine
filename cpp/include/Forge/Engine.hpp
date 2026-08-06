@@ -41,7 +41,7 @@ struct RenderPipelineSettings {
     bool draw_world_grid = true;
     bool draw_actor_outlines = true;
     bool draw_editor_gizmos = true;
-    bool shadows_enabled = false;
+    bool shadows_enabled = true;
     bool pbr_enabled = false;
 };
 
