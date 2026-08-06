@@ -123,6 +123,8 @@ cargo run -- "C:\path\to\model.glb"
 For the basic PBR renderer checklist and learning notes, see [PBR_PIPELINE.md](PBR_PIPELINE.md).
 For the long-term engine/editor architecture notes, see [ENGINE_ARCHITECTURE.md](ENGINE_ARCHITECTURE.md).
 For the Rust-to-C++ feature parity ledger, see [RUST_PARITY_AUDIT.md](RUST_PARITY_AUDIT.md).
+For a compact current-state summary, see [ENGINE_STATUS_SHORT.md](ENGINE_STATUS_SHORT.md).
+For a fresh-thread handoff, see [HANDOVER.md](HANDOVER.md) and [CONTINUE_PROMPT.md](CONTINUE_PROMPT.md).
 
 1. Import model data from `.glb/.gltf/.obj`.
 2. Normalize scale and origin so arbitrary Sketchfab assets enter the scene at a predictable size.

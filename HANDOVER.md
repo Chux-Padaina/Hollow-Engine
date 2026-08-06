@@ -1,124 +1,290 @@
-# Handover
+# Forge Engine Handover
 
-## Goal
+## Project Goal
 
-Build a portfolio-grade native OpenGL game-engine demo focused on visuals, not full gameplay tooling. The target is a stylized anime/urban rendering pipeline that gets close to the broad visual ingredients of Zenless Zone Zero: punchy toon lighting, bold silhouettes, colored urban light, crisp imported props/vehicles/characters, emissive accents, and a polished editor-style viewport.
+Build a portfolio-grade native C++/OpenGL engine-editor prototype focused on production-quality rendering foundations and, later, a stylized anime/urban look inspired by the broad visual ingredients of Zenless Zone Zero.
 
-Do not copy proprietary ZZZ models, environments, UI, logos, or exact assets. The engine should import user-provided Sketchfab-style assets and convert their available data into this stylized rendering direction.
+Important boundary: do not copy proprietary ZZZ models, environments, UI, logos, or exact assets. The point is to build an engine pipeline that can import user-provided Sketchfab-style assets and render them with a similar class of high-contrast stylized graphics: crisp silhouettes, strong material response, bold light direction, colored urban lighting, emissive accents, post-processing, and eventually toon/stylized controls layered over a trustworthy PBR base.
 
-## Current State
+## Current Implementation
 
-- Active migration from Rust/OpenGL to C++/OpenGL.
-- New C++ app builds successfully with Visual Studio build tools through `build_cpp.bat`.
-- C++ source tree lives under `cpp/`.
-- Current C++ app has a native Win32 OpenGL window, a component-driven scene skeleton, two cube actors, one directional light actor, one point light actor, camera-following world-grid rendering, light icons, a Rust-inspired editor overlay, local/world-aware gizmos, mouse camera controls, actor selection, primitive/light add controls including spot lights, deletion, Home reset, mouse-driven move/rotate/scale, and OBJ import by command-line argument or drag/drop.
-- Rust/OpenGL desktop app remains in the repo as the feature-rich reference while the C++ version catches up.
-- Git repo initialized with incremental commits.
-- `PBR_PIPELINE.md` tracks the render-pipeline learning checklist and implementation plan.
-- `ENGINE_ARCHITECTURE.md` tracks the long-term editor/engine skeleton.
-- `RUST_PARITY_AUDIT.md` tracks what has and has not been ported from the Rust prototype.
-- `src/engine.rs` owns placeholder engine subsystem slots.
-- `src/shaders.rs` owns GLSL shader source strings.
-- Drag/drop import for `.glb`, `.gltf`, and `.obj`.
-- glTF node transforms are applied so multi-part models stay assembled.
-- glTF base color factors, vertex colors, UVs, and base color textures are preserved.
-- Scene data uses one actor list, similar to the Unreal editor mental model: every outliner item is an `Actor`; actors own root scene components and component lists, and current active components cover static meshes and lights.
-- Imported glTF/OBJ assets become one mesh actor with multiple mesh parts, so dragging moves the whole imported asset.
-- Default editor test scene with two cube actors, a non-scene editor/world grid overlay, one directional light actor, and one point light actor.
-- The old baked-in floor object has been removed. A floor/plane can now be added as a normal scene object from the outliner.
-- Explicit render passes:
-  1. Editor/world grid guide
-  2. Opaque mesh actors
-  3. Object outlines
-  4. Gizmos/debug overlays
-- Generic lighting foundation:
-  - scene-owned directional lights with color/intensity
-  - scene-owned point lights with position, color, range, intensity
-  - spot light data/cone support retained for later, but the default scene currently uses one directional and one point light
-- Direct-light PBR object shader:
-  - Cook-Torrance/GGX specular BRDF
+The active engine is now the C++ implementation under `cpp/`.
+
+The original Rust prototype still exists under `src/` as reference code, but current development should happen in C++ unless explicitly asked otherwise.
+
+Current C++ features:
+
+- Native Win32 OpenGL window.
+- CMake build through Visual Studio C++ build tools.
+- Dear ImGui editor UI vendored in `cpp/vendor/imgui`.
+- Actor/component scene model:
+  - every placeable item is an `Actor`
+  - actors own a root scene transform
+  - active components include static meshes and lights
+  - placeholder component/system slots exist for later scripts, cameras, input, animation, audio, UI, post-process volumes, etc.
+- Default scene:
+  - two cube actors
+  - one directional light actor
+  - one point light actor
+  - no permanent floor object
+  - grid is editor-only visual guidance
+- Editor tools:
+  - outliner actor selection
+  - add cube/plane/sphere
+  - add directional/point/spot lights
+  - delete selected actor
+  - details panel for transform, light, mesh, and material controls
+  - select/move/rotate/scale tools
+  - local/world transform-space toggle
+  - grid snap toggle for movement
+  - Unreal-like camera controls: RMB orbit, MMB pan, wheel zoom
+  - click selection for actors/lights
+  - clickable gizmos for movement/rotation/scale
+- Import:
+  - `.obj`, `.gltf`, and `.glb`
+  - command-line argument or drag/drop
+  - glTF node transforms preserved
+  - static triangle meshes
+  - normals, UVs, vertex colors
+  - base color factors
+  - metallic/roughness factors
+  - normal strength
+  - external buffers
+  - embedded GLB buffers
+  - external image references
+  - data URI images
+  - embedded GLB image buffer views
+
+## Current Rendering Pipeline
+
+The C++ renderer currently has:
+
+- Modern OpenGL shader/VBO path for scene meshes.
+- GPU cache for imported/custom mesh parts.
+- Material texture slots for:
+  - base color
+  - metallic/roughness
+  - normal
+  - emissive storage, not fully shaded yet
+- Windows WIC texture loading.
+- OBJ `.mtl` texture path import.
+- Base-color texture sampling.
+- Combined glTF metallic/roughness texture sampling:
+  - green = roughness
+  - blue = metallic
+- Tangent generation for OBJ/glTF/custom meshes.
+- Tangent-space normal map sampling.
+- Direct-light metallic/roughness PBR shader:
+  - Cook-Torrance/GGX distribution
   - Smith-Schlick visibility
   - Schlick Fresnel
-  - Lambert diffuse energy split for non-metals
-  - per-mesh metallic and roughness factors
-  - details-panel sliders for selected mesh actor metallic and roughness
-  - simple fog and tonemapping
-  - inverted-hull outline
-- Debug object views:
-  - `F1`: final
-  - `F2`: albedo
-  - `F3`: normals
-  - `F4`: lighting only
-  - `F5`: roughness
-  - `F6`: metallic
-- Editor UI:
-  - `src/editor.rs` owns the toolbar, outliner, details panel, and small egui widgets
-  - outliner with one actor list
-  - add/delete controls for cube, plane, sphere, directional light, point light, and spot light
-  - distinct viewport icons for directional, point, and spot lights
-  - viewport and outliner light selection
-  - transform gizmos for selected lights; movement changes position and rotation changes direction
-  - toolbar snap toggle for X/Z grid-snapped movement
-  - details panel for object transforms and light properties
-  - toolbar for select/move/rotate/scale tools
-  - orbit/pan/zoom editor camera controls
-  - simple tool-specific 3D gizmo visuals for select/move/rotate/scale
-  - object click-selection in the viewport
-  - clickable transform gizmo handles for center, axis, plane, and ring manipulation
-  - Global/Local transform-space toggle for gizmo orientation and constrained handles
-  - hover/active highlighting on targeted gizmo handles
-  - smooth torus rotation rings with cursor-angle-based drag accumulation
+  - Lambert diffuse for non-metals
+  - directional and point light contribution
+- Shadow maps:
+  - first enabled directional light casts shadows
+  - first enabled point light casts shadows through six depth maps
+  - toolbar Shadows toggle
+- HDR:
+  - RGBA16F scene-color framebuffer
+  - ACES-style tonemapping
+  - exposure slider
+  - debug views bypass artistic tonemap
+- Debug views:
+  - final
+  - albedo
+  - normals
+  - lighting-only
+  - roughness
+  - metallic
+- Mesh actor outline pass:
+  - expanded-backface shader outline
+  - still object-space, not screen-pixel-stable yet
+- Explicit renderer pass order:
+  - shadow maps
+  - scene color target setup
+  - editor grid
+  - actor outlines
+  - opaque geometry and light icons
+  - tonemap
+  - editor overlay/gizmos
 
-## Recent Fixes
+The renderer was recently refactored so `Renderer::render` creates a `RenderFrameContext` and dispatches named `RenderPassKind` passes. This is the first architectural step toward a real render graph.
 
-- Fixed import explosion by preserving glTF hierarchy transforms.
-- Fixed texture/color preservation for glTF base colors.
-- Fixed oversized outlines by switching outline expansion to a pixel-based clip-space offset.
-- Fixed abrupt ramp changes by replacing hard `step()` bands with smooth stylized bands.
-- Fixed render ordering and hidden OpenGL state dependencies after pass refactor.
-- Replaced showroom with a simpler grid-based default scene so editor work and scene-building tests are easier to read.
-- Added Unreal-like transform affordances: move arrows, rotate rings, scale endpoint boxes, two-axis plane handles, and visible hover/active feedback.
-- Replaced pixelated box-built rotation rings with a generated torus mesh and fixed rotation drags so rings can rotate through larger angles intuitively.
-- Temporarily reset object lighting to a generic diffuse/specular shader, added warm/cool test cubes and a darker flattened gray cube floor, simplified the default scene to one directional and one point light, made shadow decals project from the directional light, and moved the grid into a non-scene world overlay.
-- Added a Global/Local transform-space toggle; constrained gizmo handles now draw, pick, and move in the selected space, while clicking the selected object body uses the active tool's free transform behavior.
-- Fixed constrained rotation by applying quaternion deltas around the displayed gizmo axis instead of directly editing Euler components; move gizmos now use cone arrowheads.
-- Implemented the first PBR milestone: direct-light Cook-Torrance/GGX shading with per-mesh metallic/roughness factors and glTF metallic/roughness factor import.
-- Added selected mesh actor material sliders for metallic/roughness and debug views for roughness/metallic masks.
-- Split editor UI code into `src/editor.rs`, removed the default floor, and added outliner creation/deletion for primitives and lights.
-- Added light actor icons, light selection/gizmo transforms, grid snap toggle, larger camera-following editor grid, corrected generated sphere triangle winding, and moved outlines after opaque rendering so depth clipping is more reliable.
-- Reworked scene ownership so meshes and lights are both component-driven actors in one outliner list, removed the fake contact-shadow pass from the grid, and removed all Y=0 movement locking.
-- Added root scene components, component lists, static mesh components, light components, and placeholder component types for scripts, audio, animation, input, camera, collision, physics, skeletal meshes, UI, particles, nav/AI, post-process volumes, and network replication.
+## Current Limitations
 
-## Known Limitations
+Rendering:
 
-- C++ implementation is not yet feature-equivalent with the Rust prototype.
-- C++ rendering currently uses dependency-light immediate-mode OpenGL as a bootstrap layer. It should move to shader/VBO-based modern OpenGL before the PBR pipeline is ported.
-- C++ editor panels are currently a lightweight OpenGL overlay, not egui/ImGui. They visually restore the editor shell but do not yet support editable numeric fields/sliders.
-- C++ glTF/GLB import, texture preservation, material inspector sliders, style/debug rendering, and full Unreal-quality gizmo hit testing are pending.
-- C++ has a camera-following visual grid now, but it is still immediate-mode line rendering rather than the Rust shader grid with subtle animated/stylized treatment.
-- No shadow maps yet; the previous fake planar/contact shadow pass is currently disabled/removed so the editor grid stays purely visual.
-- No HDR framebuffer or real post-processing yet.
-- No bloom despite emissive-looking showroom panels.
-- No area lights.
-- No reflection probes.
-- No normal/emissive/roughness/metallic texture support yet.
-- Editor panels and clickable transform gizmos exist. Gizmo behavior covers the core Unreal-style center/axis/plane/ring workflow, but scale visuals still use cube/bar primitives rather than proper polished handle meshes.
-- Inverted-hull outlines can still be imperfect on thin/open geometry; screen-space outlines should come later.
-- Scene save/load is not implemented yet, so editor changes are session-only.
-- Grid snapping currently affects X/Z movement only. It does not snap rotation or scale yet, and it does not prevent actors from moving below the grid.
-- Light scale gizmo changes local light range; directional light scale is intentionally ignored.
-- Code is only partially split so far. Editor UI is separated; renderer, import, scene, mesh, and shader code still need their own modules.
+- Multi-light shader path is not implemented yet; it still uses the first directional and first point light for real shading/shadows.
+- Spot light data exists in the editor/scene model, but spot lighting is not shaded yet.
+- Shadows are first-pass only:
+  - no cascaded shadow maps
+  - no shadow atlas
+  - no per-light quality settings
+  - no production-grade bias controls
+  - point shadows may need seam/bias polish
+- No environment lighting / IBL yet.
+- No skybox yet.
+- No emissive shading or bloom yet.
+- No ambient occlusion texture support yet.
+- No SSAO/GTAO yet.
+- No reflection probes, planar reflections, or SSR yet.
+- No color grading/LUT stack yet.
+- No volumetric fog yet.
+- No real render graph/resource lifetime system yet.
 
-## Next Step
+Import/materials:
 
-Finish the C++ migration foundation, then move back into the basic PBR pipeline described in `PBR_PIPELINE.md`:
+- glTF skins, skeletal animation, morph targets, cameras, and light extensions are not implemented.
+- Authored glTF tangents are not preserved yet; tangents are generated.
+- Emissive and occlusion texture import/storage need to be finished in shading.
+- Alpha modes and transparent rendering are not yet handled.
+- Texture color-space handling needs to become explicit: sRGB for albedo/emissive, linear for normal/roughness/metallic/AO.
 
-1. Replace the lightweight C++ overlay with Dear ImGui or another robust editor UI layer.
-2. Replace bootstrap immediate-mode rendering with modern OpenGL buffers and shaders.
-3. Port/import glTF mesh/material loading.
-4. Rebuild direct-light Cook-Torrance/GGX PBR.
-5. Continue metallic-roughness textures, normal maps, shadow maps, HDR, and environment lighting.
+Editor/engine:
 
-## Project Taste Direction
+- Scene save/load is not implemented.
+- Asset drawer/asset registry is not implemented.
+- Gizmos work but still need production polish and more precise picking.
+- Renderer is still mostly contained in `Renderer.cpp`; the recent pass split is only the first structural step.
+- Editor grid/gizmos/light icons still use immediate-mode bootstrap drawing.
 
-Favor a crisp, confident, stylized viewport over physically perfect realism. The current shader is intentionally generic so lighting and shadows can be validated clearly before reintroducing ZZZ-adjacent toon bands, colored shadows, graphic rim light, and post-processing.
+## Folder Contents
+
+Top-level files:
+
+- `README.md`: main project overview, build/run instructions, current milestone.
+- `HANDOVER.md`: this handover document.
+- `CONTINUE_PROMPT.md`: prompt to paste into a fresh Codex thread.
+- `ENGINE_STATUS_SHORT.md`: short goal/progress README.
+- `PBR_PIPELINE.md`: PBR pipeline roadmap and learning notes.
+- `ENGINE_ARCHITECTURE.md`: engine/editor architecture notes.
+- `RUST_PARITY_AUDIT.md`: Rust-to-C++ feature parity checklist.
+- `VISUAL_ROADMAP.md`: visual direction roadmap.
+- `build_cpp.bat`: configures/builds the C++ app.
+- `Cargo.toml`, `Cargo.lock`: legacy Rust prototype project files.
+
+Active C++ tree:
+
+- `cpp/CMakeLists.txt`: C++ build configuration.
+- `cpp/include/Forge/App.hpp`: app/frame-loop public interface.
+- `cpp/include/Forge/EditorUi.hpp`: Dear ImGui editor UI interface.
+- `cpp/include/Forge/Engine.hpp`: editor/render settings and system registry.
+- `cpp/include/Forge/Importer.hpp`: OBJ/glTF import interface.
+- `cpp/include/Forge/Json.hpp`: lightweight JSON parser.
+- `cpp/include/Forge/Math.hpp`: vectors, matrices, transforms.
+- `cpp/include/Forge/Renderer.hpp`: renderer types, resources, frame context, pass declarations.
+- `cpp/include/Forge/Scene.hpp`: actors/components/materials/scene model.
+- `cpp/include/Forge/TextureLoader.hpp`: texture loading interface.
+- `cpp/include/Forge/Win32Window.hpp`: native window wrapper.
+- `cpp/src/App.cpp`: main application loop, input, drag/drop, editor integration.
+- `cpp/src/EditorUi.cpp`: toolbar, outliner, details panel.
+- `cpp/src/Engine.cpp`: settings/system names.
+- `cpp/src/Importer.cpp`: OBJ/glTF/GLB import.
+- `cpp/src/Json.cpp`: JSON parser implementation.
+- `cpp/src/Main.cpp`: C++ entry point.
+- `cpp/src/Math.cpp`: math implementation.
+- `cpp/src/Renderer.cpp`: OpenGL renderer, shaders, render passes.
+- `cpp/src/Scene.cpp`: actor/component scene implementation.
+- `cpp/src/TextureLoader.cpp`: WIC texture loading.
+- `cpp/src/Win32Window.cpp`: Win32 window/input/drop handling.
+- `cpp/vendor/imgui`: vendored Dear ImGui.
+
+Legacy Rust reference:
+
+- `src/main.rs`: Rust app prototype.
+- `src/editor.rs`: Rust editor UI reference.
+- `src/engine.rs`: Rust engine/system skeleton reference.
+- `src/shaders.rs`: Rust shader-source reference.
+
+## Build And Run
+
+From PowerShell in the project folder:
+
+```powershell
+.\build_cpp.bat
+```
+
+Then run:
+
+```powershell
+.\cpp\build-msvc\ForgeEngine.exe
+```
+
+Optional model path:
+
+```powershell
+.\cpp\build-msvc\ForgeEngine.exe "C:\path\to\model.glb"
+```
+
+You can also drag/drop `.obj`, `.gltf`, or `.glb` into the running window.
+
+## Recent Commit Trail
+
+- `731ac7a` Refactor renderer into explicit passes
+- `a171256` Add HDR tonemapping pass
+- `0539fd0` Add first point light shadow maps
+- `6466765` Add directional shadow map pass
+- `4542f19` Add tangent-space normal mapping
+- `43e070d` Add static glTF import path
+- `65186b7` Add PBR texture material sampling
+- `eefa4cb` Add light viewport and shader outlines
+
+## Recommended Next Steps
+
+The user wants production-grade graphics capability over time. The next steps should build the base PBR pipeline in a way that can grow toward AAA-quality rendering.
+
+Recommended order:
+
+1. Multi-light data path.
+   - Replace first-light-only uniforms with a small fixed-size GPU light list.
+   - Support multiple directional, point, and spot lights.
+   - Add spot light shading.
+   - Keep this simple first, then later move to clustered/forward-plus.
+2. Render target/pass infrastructure round two.
+   - Turn named pass methods into pass descriptors with inputs/outputs.
+   - Add named render targets: scene color, scene depth, shadow maps, post-process targets.
+   - This prepares bloom, SSAO, IBL, deferred buffers, and shadow atlases.
+3. Finish glTF material basics.
+   - Emissive factor/texture.
+   - Occlusion texture.
+   - Alpha mode basics.
+   - Explicit sRGB/linear texture handling.
+4. IBL/environment lighting.
+   - Skybox/environment cubemap.
+   - Diffuse irradiance.
+   - Prefiltered specular approximation.
+   - BRDF LUT later.
+5. Shadow system upgrade.
+   - Per-light shadow settings.
+   - Spot light shadow maps.
+   - Better bias/normal-bias controls.
+   - Directional cascades later.
+   - Shadow atlas later.
+6. Bloom and post-processing.
+   - HDR threshold/extract pass.
+   - Downsample/blur/composite chain.
+   - Exposure/post settings.
+   - Later color grading/LUT, vignette, SSAO/GTAO.
+7. Stylized ZZZ-adjacent layer.
+   - Toon ramps over PBR values.
+   - Colored shadows.
+   - Stylized specular/rim lighting.
+   - Screen-space outlines.
+   - Bloom/emissive accents.
+   - Color grading presets.
+
+## Suggested Immediate Next Task
+
+Implement the multi-light data path.
+
+Practical scope:
+
+- Add a `GpuLight` or `ShaderLight` struct.
+- Collect up to a small fixed maximum, such as 8 or 16 lights.
+- Upload uniform arrays for kind, position, direction, color, intensity, range, spot angle.
+- Update the PBR shader to loop over active lights.
+- Preserve the existing first directional and first point shadow maps as the only shadowed lights for now.
+- Add spot light contribution, even if spot shadows come later.
+- Update docs and build.
+
+This makes the renderer behave more like an actual engine while staying small enough to debug.
