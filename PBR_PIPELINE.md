@@ -44,11 +44,13 @@ Recently added in the new C++ implementation:
 - Static `.gltf`/`.glb` mesh and material import in C++.
 - Tangent generation and tangent-space normal map sampling in the C++ PBR shader.
 - First directional-light shadow map pass in C++.
+- First point-light shadow map pass in C++ for the first enabled point light.
 
 Not yet implemented in either path:
 
 - Occlusion and emissive texture import.
 - Cascaded or production-quality shadow maps.
+- Multi-point/spot light shadow maps and shadow atlasing.
 - Image-based lighting/reflection probes.
 - HDR framebuffer/post-processing.
 
@@ -248,9 +250,26 @@ Implementation notes:
 - Shadows can be toggled from the editor toolbar.
 - The current light-space volume is centered around the editor camera target. This is good for a prototype/editor test scene, but not final game camera coverage.
 - Filtering is a simple 3x3 PCF kernel. Bias and softness will need visual tuning.
-- Not implemented yet: cascaded shadow maps, per-light shadow settings, point/spot light shadows, contact shadows, or transparent-shadow handling.
+- Not implemented yet: cascaded shadow maps, per-light shadow settings, production point/spot light shadows, contact shadows, or transparent-shadow handling.
 
-### 9. HDR Framebuffer And Tonemapping
+### 9. Point-Light Shadowing
+
+Add omnidirectional point-light shadowing so local lights are blocked by nearby geometry.
+
+Why this matters:
+
+Point lights are common in game scenes: bulbs, signs, lamps, vehicle lights, muzzle flashes, and glowing props. If they do not cast shadows, they brighten objects through walls or through other meshes, which makes the lighting feel fake even before stylization.
+
+Status: first-pass implemented for the first enabled point light in the active C++ renderer.
+
+Implementation notes:
+
+- The renderer allocates six depth textures for the first enabled point light, one for each major direction around the light.
+- Each frame, the scene is rendered into those six depth maps from the point light position with 90-degree perspective views.
+- The PBR shader picks the correct face from the fragment's direction away from the point light, samples that depth map, and attenuates only the point-light contribution when blocked.
+- This is intentionally not the final production system yet. Later work should add smoother cross-face filtering, better bias controls, multiple shadowed point lights, spot light shadows, shadow atlases, and eventually clustered/forward-plus light selection.
+
+### 10. HDR Framebuffer And Tonemapping
 
 Render the scene into an HDR color buffer instead of directly to the window.
 
@@ -267,7 +286,7 @@ PBR lighting often exceeds `0..1`. HDR lets bright lights, emissive materials, a
 
 Status: pending.
 
-### 10. Basic Environment Lighting
+### 11. Basic Environment Lighting
 
 Start simple, then improve.
 
@@ -289,7 +308,7 @@ Metals and glossy surfaces look wrong without environment reflections. Direct li
 
 Status: pending.
 
-### 11. Full PBR Debug Views
+### 12. Full PBR Debug Views
 
 Add debug views for:
 
@@ -314,7 +333,7 @@ Implementation notes:
 - Base color, normals, lighting-only, roughness, metallic, and final shaded views are implemented.
 - Occlusion, emissive, shadow, and texture-specific debug views are still pending.
 
-### 12. Stylized PBR Pass
+### 13. Stylized PBR Pass
 
 After the basic PBR renderer is stable, add stylization.
 

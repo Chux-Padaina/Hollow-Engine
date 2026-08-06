@@ -44,6 +44,12 @@ constexpr unsigned int kTexture0 = 0x84C0;
 constexpr unsigned int kTexture1 = 0x84C1;
 constexpr unsigned int kTexture2 = 0x84C2;
 constexpr unsigned int kTexture3 = 0x84C3;
+constexpr unsigned int kTexture4 = 0x84C4;
+constexpr unsigned int kTexture5 = 0x84C5;
+constexpr unsigned int kTexture6 = 0x84C6;
+constexpr unsigned int kTexture7 = 0x84C7;
+constexpr unsigned int kTexture8 = 0x84C8;
+constexpr unsigned int kTexture9 = 0x84C9;
 constexpr unsigned int kDepthComponent = 0x1902;
 constexpr unsigned int kNearest = 0x2600;
 constexpr unsigned int kClampToEdge = 0x812F;
@@ -421,6 +427,16 @@ void Renderer::shutdown() {
         glDeleteTextures(1, &shadow_depth_texture_);
         shadow_depth_texture_ = 0;
     }
+    if (point_shadow_framebuffer_ != 0 && glx.delete_framebuffers != nullptr) {
+        glx.delete_framebuffers(1, &point_shadow_framebuffer_);
+        point_shadow_framebuffer_ = 0;
+    }
+    for (unsigned int& texture : point_shadow_depth_textures_) {
+        if (texture != 0) {
+            glDeleteTextures(1, &texture);
+            texture = 0;
+        }
+    }
 }
 
 Vec2 Renderer::project(Vec3 world, const Camera& camera) const {
@@ -451,6 +467,9 @@ void Renderer::render(const Scene& scene, const Camera& camera, const Engine& en
 
     if (object_uniforms.shadows_enabled) {
         render_shadow_map(scene, object_uniforms);
+    }
+    if (object_uniforms.point_shadows_enabled) {
+        render_point_shadow_maps(scene, object_uniforms);
     }
     glViewport(0, 0, width_, height_);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -559,6 +578,19 @@ uniform sampler2D uNormalTexture;
 uniform int uHasNormalTexture;
 uniform sampler2D uShadowMap;
 uniform int uShadowsEnabled;
+uniform sampler2D uPointShadowMap0;
+uniform sampler2D uPointShadowMap1;
+uniform sampler2D uPointShadowMap2;
+uniform sampler2D uPointShadowMap3;
+uniform sampler2D uPointShadowMap4;
+uniform sampler2D uPointShadowMap5;
+uniform mat4 uPointLightViewProjection0;
+uniform mat4 uPointLightViewProjection1;
+uniform mat4 uPointLightViewProjection2;
+uniform mat4 uPointLightViewProjection3;
+uniform mat4 uPointLightViewProjection4;
+uniform mat4 uPointLightViewProjection5;
+uniform int uPointShadowsEnabled;
 varying vec3 vWorldPosition;
 varying vec3 vNormal;
 varying vec3 vColor;
@@ -632,6 +664,72 @@ float directional_shadow(vec3 n, vec3 light_dir) {
     return mix(0.38, 1.0, shadow);
 }
 
+float sample_point_shadow_map(int face, vec2 uv) {
+    if (face == 0) {
+        return texture2D(uPointShadowMap0, uv).r;
+    } else if (face == 1) {
+        return texture2D(uPointShadowMap1, uv).r;
+    } else if (face == 2) {
+        return texture2D(uPointShadowMap2, uv).r;
+    } else if (face == 3) {
+        return texture2D(uPointShadowMap3, uv).r;
+    } else if (face == 4) {
+        return texture2D(uPointShadowMap4, uv).r;
+    }
+    return texture2D(uPointShadowMap5, uv).r;
+}
+
+vec4 point_shadow_position(int face, vec3 world_position) {
+    if (face == 0) {
+        return uPointLightViewProjection0 * vec4(world_position, 1.0);
+    } else if (face == 1) {
+        return uPointLightViewProjection1 * vec4(world_position, 1.0);
+    } else if (face == 2) {
+        return uPointLightViewProjection2 * vec4(world_position, 1.0);
+    } else if (face == 3) {
+        return uPointLightViewProjection3 * vec4(world_position, 1.0);
+    } else if (face == 4) {
+        return uPointLightViewProjection4 * vec4(world_position, 1.0);
+    }
+    return uPointLightViewProjection5 * vec4(world_position, 1.0);
+}
+
+float point_shadow(vec3 n, vec3 light_dir) {
+    if (uPointShadowsEnabled == 0) {
+        return 1.0;
+    }
+
+    vec3 fromLight = vWorldPosition - uPointPosition;
+    vec3 absFromLight = abs(fromLight);
+    int face = 0;
+    if (absFromLight.x >= absFromLight.y && absFromLight.x >= absFromLight.z) {
+        face = fromLight.x >= 0.0 ? 0 : 1;
+    } else if (absFromLight.y >= absFromLight.x && absFromLight.y >= absFromLight.z) {
+        face = fromLight.y >= 0.0 ? 2 : 3;
+    } else {
+        face = fromLight.z >= 0.0 ? 4 : 5;
+    }
+
+    vec4 shadowPosition = point_shadow_position(face, vWorldPosition);
+    vec3 projected = shadowPosition.xyz / max(shadowPosition.w, 0.0001);
+    projected = projected * 0.5 + 0.5;
+    if (projected.x < 0.0 || projected.x > 1.0 || projected.y < 0.0 || projected.y > 1.0 || projected.z < 0.0 || projected.z > 1.0) {
+        return 1.0;
+    }
+
+    float bias = max(0.0035 * (1.0 - dot(n, light_dir)), 0.0012);
+    float shadow = 0.0;
+    float texel = 1.0 / 1024.0;
+    for (int x = -1; x <= 1; ++x) {
+        for (int y = -1; y <= 1; ++y) {
+            float closest = sample_point_shadow_map(face, projected.xy + vec2(float(x), float(y)) * texel);
+            shadow += projected.z - bias > closest ? 0.0 : 1.0;
+        }
+    }
+    shadow /= 9.0;
+    return mix(0.30, 1.0, shadow);
+}
+
 void main() {
     vec3 n = normalize(vNormal);
     vec3 t = normalize(vTangent - n * dot(n, vTangent));
@@ -659,7 +757,8 @@ void main() {
     if (uPointIntensity > 0.0 && pointDistance < uPointRange) {
         vec3 pointL = pointVector / max(pointDistance, 0.0001);
         float attenuation = pow(clamp(1.0 - pointDistance / max(uPointRange, 0.0001), 0.0, 1.0), 2.0);
-        direct += pbr_light(albedo, metallic, roughness, n, v, pointL, uPointColor * uPointIntensity * attenuation);
+        float pointShadow = point_shadow(n, pointL);
+        direct += pbr_light(albedo, metallic, roughness, n, v, pointL, uPointColor * uPointIntensity * attenuation) * pointShadow;
     }
 
     vec3 ambient = albedo * mix(0.035, 0.075, 1.0 - roughness);
@@ -739,6 +838,28 @@ void main() {
     if (glx.check_framebuffer_status(kFramebuffer) != kFramebufferComplete) {
         glx.bind_framebuffer(kFramebuffer, 0);
         throw std::runtime_error("shadow framebuffer is incomplete");
+    }
+    glx.bind_framebuffer(kFramebuffer, 0);
+
+    glx.gen_framebuffers(1, &point_shadow_framebuffer_);
+    for (unsigned int& texture : point_shadow_depth_textures_) {
+        glGenTextures(1, &texture);
+        glBindTexture(kTexture2D, texture);
+        glTexImage2D(kTexture2D, 0, static_cast<int>(kDepthComponent), point_shadow_resolution_, point_shadow_resolution_, 0, kDepthComponent, kFloat, nullptr);
+        glTexParameteri(kTexture2D, kTextureMinFilter, kNearest);
+        glTexParameteri(kTexture2D, kTextureMagFilter, kNearest);
+        glTexParameteri(kTexture2D, kTextureWrapS, kClampToEdge);
+        glTexParameteri(kTexture2D, kTextureWrapT, kClampToEdge);
+    }
+    glx.bind_framebuffer(kFramebuffer, point_shadow_framebuffer_);
+    glDrawBuffer(kNone);
+    glReadBuffer(kNone);
+    for (unsigned int texture : point_shadow_depth_textures_) {
+        glx.framebuffer_texture_2d(kFramebuffer, kDepthAttachment, kTexture2D, texture, 0);
+        if (glx.check_framebuffer_status(kFramebuffer) != kFramebufferComplete) {
+            glx.bind_framebuffer(kFramebuffer, 0);
+            throw std::runtime_error("point shadow framebuffer is incomplete");
+        }
     }
     glx.bind_framebuffer(kFramebuffer, 0);
 
@@ -862,6 +983,35 @@ ObjectUniforms Renderer::collect_object_uniforms(const Scene& scene, const Camer
     const Mat4 light_projection = Mat4::orthographic(-12.0f, 12.0f, -12.0f, 12.0f, 0.1f, 45.0f);
     uniforms.light_view_projection = light_projection * light_view;
     uniforms.shadows_enabled = uniforms.shadows_enabled && found_directional && shadow_framebuffer_ != 0 && shadow_depth_texture_ != 0 && depth_program_ != 0;
+    if (found_point) {
+        const float far_plane = std::max(1.0f, uniforms.point_range);
+        const Mat4 point_projection = Mat4::perspective(1.57079632679f, 1.0f, 0.05f, far_plane);
+        const std::array<Vec3, 6> directions{
+            Vec3{1.0f, 0.0f, 0.0f},
+            Vec3{-1.0f, 0.0f, 0.0f},
+            Vec3{0.0f, 1.0f, 0.0f},
+            Vec3{0.0f, -1.0f, 0.0f},
+            Vec3{0.0f, 0.0f, 1.0f},
+            Vec3{0.0f, 0.0f, -1.0f},
+        };
+        const std::array<Vec3, 6> up_vectors{
+            Vec3{0.0f, -1.0f, 0.0f},
+            Vec3{0.0f, -1.0f, 0.0f},
+            Vec3{0.0f, 0.0f, 1.0f},
+            Vec3{0.0f, 0.0f, -1.0f},
+            Vec3{0.0f, -1.0f, 0.0f},
+            Vec3{0.0f, -1.0f, 0.0f},
+        };
+        for (std::size_t index = 0; index < uniforms.point_light_view_projections.size(); ++index) {
+            const Mat4 point_view = Mat4::look_at(uniforms.point_position, uniforms.point_position + directions[index], up_vectors[index]);
+            uniforms.point_light_view_projections[index] = point_projection * point_view;
+        }
+    }
+    uniforms.point_shadows_enabled = engine.render_settings().shadows_enabled
+        && found_point
+        && point_shadow_framebuffer_ != 0
+        && point_shadow_depth_textures_[0] != 0
+        && depth_program_ != 0;
     return uniforms;
 }
 
@@ -1032,6 +1182,19 @@ void Renderer::draw_gpu_mesh(const GpuMesh& mesh, const Material& material, cons
     glx.uniform_1i(glx.get_uniform_location(object_program_, "uHasNormalTexture"), material.normal_texture_path.empty() ? 0 : 1);
     glx.uniform_1i(glx.get_uniform_location(object_program_, "uShadowMap"), 3);
     glx.uniform_1i(glx.get_uniform_location(object_program_, "uShadowsEnabled"), uniforms.shadows_enabled ? 1 : 0);
+    glx.uniform_1i(glx.get_uniform_location(object_program_, "uPointShadowMap0"), 4);
+    glx.uniform_1i(glx.get_uniform_location(object_program_, "uPointShadowMap1"), 5);
+    glx.uniform_1i(glx.get_uniform_location(object_program_, "uPointShadowMap2"), 6);
+    glx.uniform_1i(glx.get_uniform_location(object_program_, "uPointShadowMap3"), 7);
+    glx.uniform_1i(glx.get_uniform_location(object_program_, "uPointShadowMap4"), 8);
+    glx.uniform_1i(glx.get_uniform_location(object_program_, "uPointShadowMap5"), 9);
+    glx.uniform_matrix_4fv(glx.get_uniform_location(object_program_, "uPointLightViewProjection0"), 1, kFalse, uniforms.point_light_view_projections[0].m.data());
+    glx.uniform_matrix_4fv(glx.get_uniform_location(object_program_, "uPointLightViewProjection1"), 1, kFalse, uniforms.point_light_view_projections[1].m.data());
+    glx.uniform_matrix_4fv(glx.get_uniform_location(object_program_, "uPointLightViewProjection2"), 1, kFalse, uniforms.point_light_view_projections[2].m.data());
+    glx.uniform_matrix_4fv(glx.get_uniform_location(object_program_, "uPointLightViewProjection3"), 1, kFalse, uniforms.point_light_view_projections[3].m.data());
+    glx.uniform_matrix_4fv(glx.get_uniform_location(object_program_, "uPointLightViewProjection4"), 1, kFalse, uniforms.point_light_view_projections[4].m.data());
+    glx.uniform_matrix_4fv(glx.get_uniform_location(object_program_, "uPointLightViewProjection5"), 1, kFalse, uniforms.point_light_view_projections[5].m.data());
+    glx.uniform_1i(glx.get_uniform_location(object_program_, "uPointShadowsEnabled"), uniforms.point_shadows_enabled ? 1 : 0);
     glx.active_texture(kTexture0);
     glBindTexture(kTexture2D, resolve_base_color_texture(material));
     glx.active_texture(kTexture1);
@@ -1040,6 +1203,11 @@ void Renderer::draw_gpu_mesh(const GpuMesh& mesh, const Material& material, cons
     glBindTexture(kTexture2D, resolve_normal_texture(material));
     glx.active_texture(kTexture3);
     glBindTexture(kTexture2D, shadow_depth_texture_);
+    const std::array<unsigned int, 6> point_texture_units{kTexture4, kTexture5, kTexture6, kTexture7, kTexture8, kTexture9};
+    for (std::size_t index = 0; index < point_shadow_depth_textures_.size(); ++index) {
+        glx.active_texture(point_texture_units[index]);
+        glBindTexture(kTexture2D, point_shadow_depth_textures_[index]);
+    }
     glx.active_texture(kTexture0);
 
     if (mesh.vertex_array != 0 && glx.bind_vertex_array != nullptr) {
@@ -1074,6 +1242,10 @@ void Renderer::draw_gpu_mesh(const GpuMesh& mesh, const Material& material, cons
     }
     glx.bind_buffer(kArrayBuffer, 0);
     glx.bind_buffer(kElementArrayBuffer, 0);
+    for (std::size_t index = 0; index < point_texture_units.size(); ++index) {
+        glx.active_texture(point_texture_units[index]);
+        glBindTexture(kTexture2D, 0);
+    }
     glx.active_texture(kTexture3);
     glBindTexture(kTexture2D, 0);
     glx.active_texture(kTexture2);
@@ -1098,6 +1270,29 @@ void Renderer::render_shadow_map(const Scene& scene, const ObjectUniforms& unifo
 
     for (const auto& actor : scene.actors()) {
         draw_depth_actor(*actor, uniforms.light_view_projection);
+    }
+
+    glCullFace(GL_BACK);
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    glx.bind_framebuffer(kFramebuffer, 0);
+}
+
+void Renderer::render_point_shadow_maps(const Scene& scene, const ObjectUniforms& uniforms) {
+    if (!uniforms.point_shadows_enabled) {
+        return;
+    }
+
+    glx.bind_framebuffer(kFramebuffer, point_shadow_framebuffer_);
+    glViewport(0, 0, point_shadow_resolution_, point_shadow_resolution_);
+    glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+    glCullFace(GL_FRONT);
+
+    for (std::size_t face = 0; face < point_shadow_depth_textures_.size(); ++face) {
+        glx.framebuffer_texture_2d(kFramebuffer, kDepthAttachment, kTexture2D, point_shadow_depth_textures_[face], 0);
+        glClear(GL_DEPTH_BUFFER_BIT);
+        for (const auto& actor : scene.actors()) {
+            draw_depth_actor(*actor, uniforms.point_light_view_projections[face]);
+        }
     }
 
     glCullFace(GL_BACK);

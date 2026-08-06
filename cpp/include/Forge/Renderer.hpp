@@ -6,6 +6,7 @@
 
 #include <Windows.h>
 
+#include <array>
 #include <cstdint>
 #include <string>
 #include <unordered_map>
@@ -60,7 +61,16 @@ struct ObjectUniforms {
     float point_intensity = 0.0f;
     float point_range = 8.0f;
     Mat4 light_view_projection = Mat4::identity();
+    std::array<Mat4, 6> point_light_view_projections{
+        Mat4::identity(),
+        Mat4::identity(),
+        Mat4::identity(),
+        Mat4::identity(),
+        Mat4::identity(),
+        Mat4::identity(),
+    };
     bool shadows_enabled = false;
+    bool point_shadows_enabled = false;
     int debug_view = 0;
 };
 
@@ -81,6 +91,9 @@ private:
     unsigned int shadow_framebuffer_ = 0;
     unsigned int shadow_depth_texture_ = 0;
     int shadow_resolution_ = 2048;
+    unsigned int point_shadow_framebuffer_ = 0;
+    std::array<unsigned int, 6> point_shadow_depth_textures_{};
+    int point_shadow_resolution_ = 1024;
     GpuMesh cube_mesh_;
     GpuMesh plane_mesh_;
     GpuMesh sphere_mesh_;
@@ -101,6 +114,7 @@ private:
     void destroy_texture(GpuTexture& texture) const;
     void draw_gpu_mesh(const GpuMesh& mesh, const Material& material, const Transform& transform, const Mat4& view_projection, const ObjectUniforms& uniforms);
     void render_shadow_map(const Scene& scene, const ObjectUniforms& uniforms);
+    void render_point_shadow_maps(const Scene& scene, const ObjectUniforms& uniforms);
     void draw_depth_actor(const Actor& actor, const Mat4& light_view_projection);
     void draw_depth_mesh_part(const MeshPart& part, const Transform& transform, const Mat4& light_view_projection);
     void draw_depth_gpu_mesh(const GpuMesh& mesh, const Transform& transform, const Mat4& light_view_projection) const;

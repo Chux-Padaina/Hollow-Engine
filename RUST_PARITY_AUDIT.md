@@ -55,6 +55,7 @@ This file tracks what exists in the Rust prototype and whether it has been porte
 - Tangent-space normal map sampling in the C++ object shader.
 - Material normal-strength editing in the details panel.
 - First directional-light shadow map pass.
+- First point-light shadow map pass for the first enabled point light.
 - Toolbar toggle for real shadow-map sampling.
 
 ## Partially Ported
@@ -86,7 +87,7 @@ This file tracks what exists in the Rust prototype and whether it has been porte
 - glTF light extension import.
 - Spot lighting in shader.
 - Cascaded or production-quality shadow maps.
-- Point and spot light shadow maps.
+- Production multi-point and spot light shadow maps.
 - Screen-pixel-stable outline widths.
 - Smooth stylized lighting bands.
 - Fog and tonemapping.
