@@ -25,14 +25,16 @@ Pending in the new C++ implementation:
 
 - Complete modern OpenGL renderer for all scene/editor passes.
 - glTF import.
-- Direct-light Cook-Torrance/GGX PBR shader.
-- Shader-connected material inspector and debug views.
+- Texture-backed material inspector and debug views.
 
 Recently added in the new C++ implementation:
 
 - Dear ImGui editor UI for actor transforms, light controls, and basic material factors.
 - OBJ import with material diffuse color preservation.
 - First shader/VBO scene mesh path, with immediate-mode fallback if required GL entry points are unavailable.
+- Persistent GPU cache for imported/custom mesh parts.
+- First C++ Cook-Torrance/GGX object shader with directional and point light contribution.
+- C++ albedo, normal, lighting-only, roughness, and metallic debug views for scene meshes.
 
 Not yet implemented in either path:
 
@@ -70,14 +72,14 @@ Why this matters:
 
 This is the core material model used by modern real-time renderers. It lets roughness and metallic values mean something predictable under lights.
 
-Status: implemented in the Rust reference; pending in the active C++ renderer.
+Status: implemented for direct directional and point lighting in the active C++ renderer.
 
 Implementation notes:
 
-- The shader uses metallic-roughness Cook-Torrance lighting for directional and local lights.
+- The shader uses metallic-roughness Cook-Torrance lighting for directional and point lights.
 - The BRDF uses GGX distribution, Smith-Schlick visibility, and Schlick Fresnel.
 - Meshes now carry `MaterialProperties` with `metallic` and `roughness`.
-- glTF `metallicFactor` and `roughnessFactor` are imported.
+- glTF `metallicFactor` and `roughnessFactor` are still pending in C++; OBJ material factors and editor factor controls are active.
 - The default test scene uses a rough non-metal cube, a smoother metal cube, and a rough non-metal floor.
 - This is not full engine PBR yet because it does not include normal maps, metallic-roughness textures, real shadow maps, or image-based lighting.
 
@@ -95,7 +97,7 @@ Why this matters:
 
 Before importing all texture maps, sliders let us validate the math with simple cubes and known values.
 
-Status: partially implemented in C++; shader connection is pending.
+Status: partially implemented and shader-connected for scalar/factor controls.
 
 Implementation notes:
 
@@ -114,7 +116,7 @@ Why this matters:
 
 When a model looks wrong, these views answer a basic question quickly: did the material values make it into the shader, or is the lighting model the problem?
 
-Status: implemented in the Rust reference; pending in the active C++ renderer.
+Status: implemented for active C++ scene meshes using scalar/factor material values.
 
 Implementation notes:
 
@@ -278,14 +280,14 @@ Status: pending.
 
 ## Recommended Immediate Next Steps
 
-1. Cache imported C++ meshes on the GPU instead of uploading custom OBJ parts at draw time.
-2. Rebuild direct-light Cook-Torrance/GGX in C++.
-3. Add glTF import with metallic/roughness factors and textures.
-4. Add tangent support and normal maps.
-5. Replace planar shadows with a directional shadow map.
-6. Add basic environment lighting so metals have something to reflect.
+1. Visual QA the C++ PBR shader and debug views in the app.
+2. Add glTF import with metallic/roughness factors and textures.
+3. Add tangent support and normal maps.
+4. Replace planar shadows with a directional shadow map.
+5. Add basic environment lighting so metals have something to reflect.
+6. Move grid, gizmos, and light icons out of immediate mode.
 
-Once direct-light PBR is rebuilt in C++, the material-control milestone should make it easy to demonstrate:
+The current C++ material-control milestone should make it easy to demonstrate:
 
 - plastic: metallic `0`, roughness medium/high
 - shiny plastic: metallic `0`, roughness low

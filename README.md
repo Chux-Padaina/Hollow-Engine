@@ -17,6 +17,8 @@ The project originally started as a Rust prototype. The active implementation is
 - Default C++ scene with two cube actors, one directional light actor, and one point light actor.
 - C++ renderer draws the world grid, actors, light icons, and local/world-aware gizmos.
 - Scene mesh drawing now has a first modern OpenGL path using shader programs and GPU vertex/index buffers.
+- Imported/custom mesh parts are cached on the GPU after first use instead of re-uploading every frame.
+- The object shader now has a first direct-light metallic/roughness PBR pass with directional and point light contribution plus debug views.
 - Dear ImGui is vendored under `cpp/vendor/imgui` and now drives the C++ editor UI.
 - C++ editor controls now include:
   - top toolbar for select/move/rotate/scale, local/world, and snap
@@ -142,8 +144,8 @@ For the Rust-to-C++ feature parity ledger, see [RUST_PARITY_AUDIT.md](RUST_PARIT
 
 ## Next Engineering Steps
 
-1. Move remaining editor-only rendering helpers, especially gizmos and grid, away from immediate mode.
-2. Cache imported custom meshes on the GPU instead of uploading them each draw.
+1. Visual QA the new C++ PBR shader and debug views in the app.
+2. Move remaining editor-only rendering helpers, especially gizmos and grid, away from immediate mode.
 3. Add glTF/GLB drag-drop import in C++.
-4. Rebuild the direct-light PBR shader in C++.
-5. Continue the PBR pipeline: metallic-roughness textures, tangent-space normal maps, shadow maps, HDR, and environment lighting.
+4. Add texture sampling and glTF metallic-roughness textures.
+5. Continue the PBR pipeline: tangent-space normal maps, shadow maps, HDR, and environment lighting.

@@ -47,6 +47,7 @@ using GlGetUniformLocation = int(APIENTRY*)(unsigned int program, const char* na
 using GlUniformMatrix4fv = void(APIENTRY*)(int location, int count, unsigned char transpose, const float* value);
 using GlUniform3f = void(APIENTRY*)(int location, float v0, float v1, float v2);
 using GlUniform1f = void(APIENTRY*)(int location, float v0);
+using GlUniform1i = void(APIENTRY*)(int location, int v0);
 using GlGenBuffers = void(APIENTRY*)(int count, unsigned int* buffers);
 using GlBindBuffer = void(APIENTRY*)(unsigned int target, unsigned int buffer);
 using GlBufferData = void(APIENTRY*)(unsigned int target, std::ptrdiff_t size, const void* data, unsigned int usage);
@@ -77,6 +78,7 @@ struct ModernGl {
     GlUniformMatrix4fv uniform_matrix_4fv = nullptr;
     GlUniform3f uniform_3f = nullptr;
     GlUniform1f uniform_1f = nullptr;
+    GlUniform1i uniform_1i = nullptr;
     GlGenBuffers gen_buffers = nullptr;
     GlBindBuffer bind_buffer = nullptr;
     GlBufferData buffer_data = nullptr;
@@ -107,6 +109,7 @@ struct ModernGl {
             && uniform_matrix_4fv != nullptr
             && uniform_3f != nullptr
             && uniform_1f != nullptr
+            && uniform_1i != nullptr
             && gen_buffers != nullptr
             && bind_buffer != nullptr
             && buffer_data != nullptr
@@ -147,6 +150,7 @@ bool load_modern_gl() {
     glx.uniform_matrix_4fv = load_gl_function<GlUniformMatrix4fv>("glUniformMatrix4fv");
     glx.uniform_3f = load_gl_function<GlUniform3f>("glUniform3f");
     glx.uniform_1f = load_gl_function<GlUniform1f>("glUniform1f");
+    glx.uniform_1i = load_gl_function<GlUniform1i>("glUniform1i");
     glx.gen_buffers = load_gl_function<GlGenBuffers>("glGenBuffers");
     glx.bind_buffer = load_gl_function<GlBindBuffer>("glBindBuffer");
     glx.buffer_data = load_gl_function<GlBufferData>("glBufferData");
@@ -322,6 +326,21 @@ void Renderer::resize(int width, int height) {
     height_ = std::max(1, height);
 }
 
+void Renderer::shutdown() {
+    for (auto& [part, mesh] : custom_mesh_cache_) {
+        (void)part;
+        destroy_gpu_mesh(mesh);
+    }
+    custom_mesh_cache_.clear();
+    destroy_gpu_mesh(cube_mesh_);
+    destroy_gpu_mesh(plane_mesh_);
+    destroy_gpu_mesh(sphere_mesh_);
+    if (object_program_ != 0 && glx.delete_program != nullptr) {
+        glx.delete_program(object_program_);
+        object_program_ = 0;
+    }
+}
+
 Vec2 Renderer::project(Vec3 world, const Camera& camera) const {
     const float aspect = static_cast<float>(width_) / static_cast<float>(std::max(1, height_));
     const Mat4 vp = Mat4::perspective(camera.fov_y_radians, aspect, 0.05f, 500.0f) * Mat4::look_at(camera.position(), camera.target, {0.0f, 1.0f, 0.0f});
@@ -337,6 +356,7 @@ Vec2 Renderer::project(Vec3 world, const Camera& camera) const {
 }
 
 void Renderer::render(const Scene& scene, const Camera& camera, const Engine& engine) {
+    sync_custom_mesh_cache(scene);
     resize(width_, height_);
     glViewport(0, 0, width_, height_);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -345,6 +365,7 @@ void Renderer::render(const Scene& scene, const Camera& camera, const Engine& en
     const Mat4 projection = Mat4::perspective(camera.fov_y_radians, aspect, 0.05f, 500.0f);
     const Mat4 view = Mat4::look_at(camera.position(), camera.target, {0.0f, 1.0f, 0.0f});
     const Mat4 view_projection = projection * view;
+    const ObjectUniforms object_uniforms = collect_object_uniforms(scene, camera, engine);
 
     glMatrixMode(GL_PROJECTION);
     glLoadMatrixf(projection.m.data());
@@ -356,7 +377,7 @@ void Renderer::render(const Scene& scene, const Camera& camera, const Engine& en
     }
 
     for (const auto& actor : scene.actors()) {
-        draw_actor(*actor, actor->id() == scene.selected_actor_id(), view_projection);
+        draw_actor(*actor, actor->id() == scene.selected_actor_id(), view_projection, object_uniforms);
     }
 
     if (const Actor* selected = scene.selected_actor()) {
@@ -397,9 +418,12 @@ attribute vec3 aNormal;
 attribute vec3 aColor;
 uniform mat4 uModel;
 uniform mat4 uMvp;
+varying vec3 vWorldPosition;
 varying vec3 vNormal;
 varying vec3 vColor;
 void main() {
+    vec4 worldPosition = uModel * vec4(aPosition, 1.0);
+    vWorldPosition = worldPosition.xyz;
     vNormal = normalize(mat3(uModel) * aNormal);
     vColor = aColor;
     gl_Position = uMvp * vec4(aPosition, 1.0);
@@ -411,17 +435,98 @@ void main() {
 uniform vec3 uBaseColor;
 uniform float uRoughness;
 uniform float uMetallic;
+uniform vec3 uCameraPosition;
+uniform vec3 uDirectionalDirection;
+uniform vec3 uDirectionalColor;
+uniform float uDirectionalIntensity;
+uniform vec3 uPointPosition;
+uniform vec3 uPointColor;
+uniform float uPointIntensity;
+uniform float uPointRange;
+uniform int uDebugView;
+varying vec3 vWorldPosition;
 varying vec3 vNormal;
 varying vec3 vColor;
+
+const float PI = 3.14159265359;
+
+float distribution_ggx(vec3 n, vec3 h, float roughness) {
+    float a = roughness * roughness;
+    float a2 = a * a;
+    float ndoth = max(dot(n, h), 0.0);
+    float ndoth2 = ndoth * ndoth;
+    float denom = (ndoth2 * (a2 - 1.0) + 1.0);
+    return a2 / max(PI * denom * denom, 0.0001);
+}
+
+float geometry_schlick_ggx(float ndotv, float roughness) {
+    float r = roughness + 1.0;
+    float k = (r * r) / 8.0;
+    return ndotv / max(ndotv * (1.0 - k) + k, 0.0001);
+}
+
+float geometry_smith(vec3 n, vec3 v, vec3 l, float roughness) {
+    return geometry_schlick_ggx(max(dot(n, v), 0.0), roughness)
+        * geometry_schlick_ggx(max(dot(n, l), 0.0), roughness);
+}
+
+vec3 fresnel_schlick(float cosTheta, vec3 f0) {
+    return f0 + (1.0 - f0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
+}
+
+vec3 pbr_light(vec3 albedo, float metallic, float roughness, vec3 n, vec3 v, vec3 l, vec3 radiance) {
+    vec3 h = normalize(v + l);
+    float ndotl = max(dot(n, l), 0.0);
+    float ndotv = max(dot(n, v), 0.0);
+    vec3 f0 = mix(vec3(0.04), albedo, metallic);
+
+    float d = distribution_ggx(n, h, roughness);
+    float g = geometry_smith(n, v, l, roughness);
+    vec3 f = fresnel_schlick(max(dot(h, v), 0.0), f0);
+
+    vec3 specular = (d * g * f) / max(4.0 * ndotv * ndotl, 0.0001);
+    vec3 kd = (vec3(1.0) - f) * (1.0 - metallic);
+    vec3 diffuse = kd * albedo / PI;
+    return (diffuse + specular) * radiance * ndotl;
+}
+
 void main() {
     vec3 n = normalize(vNormal);
-    vec3 lightDir = normalize(vec3(0.35, 0.9, 0.28));
-    float ndotl = max(dot(n, lightDir), 0.0);
-    float wrapped = 0.32 + ndotl * 0.68;
-    vec3 color = uBaseColor * vColor * wrapped;
-    color += uBaseColor * (1.0 - uRoughness) * 0.08;
-    color = mix(color, color * vec3(0.9, 0.92, 0.95) + vec3(0.04), clamp(uMetallic, 0.0, 1.0) * 0.35);
-    gl_FragColor = vec4(color, 1.0);
+    vec3 v = normalize(uCameraPosition - vWorldPosition);
+    vec3 albedo = clamp(uBaseColor * vColor, 0.0, 1.0);
+    float roughness = clamp(uRoughness, 0.04, 1.0);
+    float metallic = clamp(uMetallic, 0.0, 1.0);
+
+    vec3 direct = vec3(0.0);
+    direct += pbr_light(albedo, metallic, roughness, n, v, normalize(uDirectionalDirection), uDirectionalColor * uDirectionalIntensity);
+
+    vec3 pointVector = uPointPosition - vWorldPosition;
+    float pointDistance = length(pointVector);
+    if (uPointIntensity > 0.0 && pointDistance < uPointRange) {
+        vec3 pointL = pointVector / max(pointDistance, 0.0001);
+        float attenuation = pow(clamp(1.0 - pointDistance / max(uPointRange, 0.0001), 0.0, 1.0), 2.0);
+        direct += pbr_light(albedo, metallic, roughness, n, v, pointL, uPointColor * uPointIntensity * attenuation);
+    }
+
+    vec3 ambient = albedo * mix(0.035, 0.075, 1.0 - roughness);
+    vec3 finalColor = ambient + direct;
+    finalColor = finalColor / (finalColor + vec3(1.0));
+    finalColor = pow(finalColor, vec3(1.0 / 2.2));
+
+    if (uDebugView == 1) {
+        gl_FragColor = vec4(albedo, 1.0);
+    } else if (uDebugView == 2) {
+        gl_FragColor = vec4(n * 0.5 + 0.5, 1.0);
+    } else if (uDebugView == 3) {
+        vec3 lightingOnly = direct / max(albedo, vec3(0.04));
+        gl_FragColor = vec4(lightingOnly / (lightingOnly + vec3(1.0)), 1.0);
+    } else if (uDebugView == 4) {
+        gl_FragColor = vec4(vec3(roughness), 1.0);
+    } else if (uDebugView == 5) {
+        gl_FragColor = vec4(vec3(metallic), 1.0);
+    } else {
+        gl_FragColor = vec4(finalColor, 1.0);
+    }
 }
 )";
 
@@ -467,6 +572,105 @@ GpuMesh Renderer::create_gpu_mesh(const std::vector<RenderVertex>& vertices, con
     return mesh;
 }
 
+ObjectUniforms Renderer::collect_object_uniforms(const Scene& scene, const Camera& camera, const Engine& engine) const {
+    ObjectUniforms uniforms;
+    uniforms.camera_position = camera.position();
+
+    switch (engine.debug_view()) {
+    case DebugView::Final:
+        uniforms.debug_view = 0;
+        break;
+    case DebugView::Albedo:
+        uniforms.debug_view = 1;
+        break;
+    case DebugView::Normals:
+        uniforms.debug_view = 2;
+        break;
+    case DebugView::LightingOnly:
+        uniforms.debug_view = 3;
+        break;
+    case DebugView::Roughness:
+        uniforms.debug_view = 4;
+        break;
+    case DebugView::Metallic:
+        uniforms.debug_view = 5;
+        break;
+    }
+
+    bool found_directional = false;
+    bool found_point = false;
+    for (const auto& actor : scene.actors()) {
+        const auto* light = actor->find_component<LightComponent>();
+        if (light == nullptr || !light->enabled) {
+            continue;
+        }
+
+        const Transform& transform = actor->root().local_transform;
+        if (light->light_kind == LightKind::Directional && !found_directional) {
+            const Mat4 rotation = Mat4::rotation_xyz(transform.rotation);
+            uniforms.directional_direction = normalize({
+                0.0f * rotation.m[0] + -1.0f * rotation.m[4] + 0.0f * rotation.m[8],
+                0.0f * rotation.m[1] + -1.0f * rotation.m[5] + 0.0f * rotation.m[9],
+                0.0f * rotation.m[2] + -1.0f * rotation.m[6] + 0.0f * rotation.m[10],
+            }) * -1.0f;
+            uniforms.directional_color = light->color;
+            uniforms.directional_intensity = light->intensity;
+            found_directional = true;
+        } else if (light->light_kind == LightKind::Point && !found_point) {
+            uniforms.point_position = transform.translation;
+            uniforms.point_color = light->color;
+            uniforms.point_intensity = light->intensity;
+            uniforms.point_range = light->range;
+            found_point = true;
+        }
+    }
+
+    if (!found_directional) {
+        uniforms.directional_intensity = 0.0f;
+    }
+    return uniforms;
+}
+
+void Renderer::sync_custom_mesh_cache(const Scene& scene) {
+    if (object_program_ == 0) {
+        return;
+    }
+
+    std::unordered_set<const MeshPart*> active_parts;
+    for (const auto& actor : scene.actors()) {
+        const auto* mesh = actor->find_component<StaticMeshComponent>();
+        if (mesh == nullptr || !mesh->visible) {
+            continue;
+        }
+        for (const MeshPart& part : mesh->parts) {
+            if (part.primitive == MeshPrimitive::Custom) {
+                active_parts.insert(&part);
+                if (!custom_mesh_cache_.contains(&part)) {
+                    custom_mesh_cache_.emplace(&part, create_custom_mesh(part));
+                }
+            }
+        }
+    }
+
+    for (auto it = custom_mesh_cache_.begin(); it != custom_mesh_cache_.end();) {
+        if (active_parts.contains(it->first)) {
+            ++it;
+        } else {
+            destroy_gpu_mesh(it->second);
+            it = custom_mesh_cache_.erase(it);
+        }
+    }
+}
+
+GpuMesh Renderer::create_custom_mesh(const MeshPart& part) const {
+    std::vector<RenderVertex> vertices;
+    vertices.reserve(part.vertices.size());
+    for (const Vertex& vertex : part.vertices) {
+        vertices.push_back({vertex.position, vertex.normal, vertex.color});
+    }
+    return create_gpu_mesh(vertices, part.indices);
+}
+
 void Renderer::destroy_gpu_mesh(GpuMesh& mesh) const {
     if (!glx.ready()) {
         mesh = {};
@@ -484,7 +688,7 @@ void Renderer::destroy_gpu_mesh(GpuMesh& mesh) const {
     mesh = {};
 }
 
-void Renderer::draw_gpu_mesh(const GpuMesh& mesh, const Material& material, const Transform& transform, const Mat4& view_projection) const {
+void Renderer::draw_gpu_mesh(const GpuMesh& mesh, const Material& material, const Transform& transform, const Mat4& view_projection, const ObjectUniforms& uniforms) const {
     if (object_program_ == 0 || mesh.vertex_buffer == 0 || mesh.index_buffer == 0 || mesh.index_count <= 0) {
         return;
     }
@@ -497,6 +701,15 @@ void Renderer::draw_gpu_mesh(const GpuMesh& mesh, const Material& material, cons
     glx.uniform_3f(glx.get_uniform_location(object_program_, "uBaseColor"), material.base_color.x, material.base_color.y, material.base_color.z);
     glx.uniform_1f(glx.get_uniform_location(object_program_, "uRoughness"), material.roughness);
     glx.uniform_1f(glx.get_uniform_location(object_program_, "uMetallic"), material.metallic);
+    glx.uniform_3f(glx.get_uniform_location(object_program_, "uCameraPosition"), uniforms.camera_position.x, uniforms.camera_position.y, uniforms.camera_position.z);
+    glx.uniform_3f(glx.get_uniform_location(object_program_, "uDirectionalDirection"), uniforms.directional_direction.x, uniforms.directional_direction.y, uniforms.directional_direction.z);
+    glx.uniform_3f(glx.get_uniform_location(object_program_, "uDirectionalColor"), uniforms.directional_color.x, uniforms.directional_color.y, uniforms.directional_color.z);
+    glx.uniform_1f(glx.get_uniform_location(object_program_, "uDirectionalIntensity"), uniforms.directional_intensity);
+    glx.uniform_3f(glx.get_uniform_location(object_program_, "uPointPosition"), uniforms.point_position.x, uniforms.point_position.y, uniforms.point_position.z);
+    glx.uniform_3f(glx.get_uniform_location(object_program_, "uPointColor"), uniforms.point_color.x, uniforms.point_color.y, uniforms.point_color.z);
+    glx.uniform_1f(glx.get_uniform_location(object_program_, "uPointIntensity"), uniforms.point_intensity);
+    glx.uniform_1f(glx.get_uniform_location(object_program_, "uPointRange"), uniforms.point_range);
+    glx.uniform_1i(glx.get_uniform_location(object_program_, "uDebugView"), uniforms.debug_view);
 
     if (mesh.vertex_array != 0 && glx.bind_vertex_array != nullptr) {
         glx.bind_vertex_array(mesh.vertex_array);
@@ -566,22 +779,19 @@ GpuMesh Renderer::create_sphere_mesh() const {
     return create_gpu_mesh(vertices, indices);
 }
 
-void Renderer::draw_custom_mesh_part(const MeshPart& part, const Transform& transform, const Mat4& view_projection) const {
-    std::vector<RenderVertex> vertices;
-    vertices.reserve(part.vertices.size());
-    for (const Vertex& vertex : part.vertices) {
-        vertices.push_back({vertex.position, vertex.normal, vertex.color});
+void Renderer::draw_custom_mesh_part(const MeshPart& part, const Transform& transform, const Mat4& view_projection, const ObjectUniforms& uniforms) {
+    auto it = custom_mesh_cache_.find(&part);
+    if (it == custom_mesh_cache_.end()) {
+        it = custom_mesh_cache_.emplace(&part, create_custom_mesh(part)).first;
     }
-    GpuMesh mesh = create_gpu_mesh(vertices, part.indices);
-    draw_gpu_mesh(mesh, part.material, transform, view_projection);
-    destroy_gpu_mesh(mesh);
+    draw_gpu_mesh(it->second, part.material, transform, view_projection, uniforms);
 }
 
-void Renderer::draw_actor(const Actor& actor, bool selected, const Mat4& view_projection) const {
+void Renderer::draw_actor(const Actor& actor, bool selected, const Mat4& view_projection, const ObjectUniforms& uniforms) {
     if (const auto* mesh = actor.find_component<StaticMeshComponent>()) {
         if (mesh->visible) {
             for (const auto& part : mesh->parts) {
-                draw_mesh_part(part, actor.root().local_transform, view_projection);
+                draw_mesh_part(part, actor.root().local_transform, view_projection, uniforms);
             }
         }
     }
@@ -606,7 +816,7 @@ void Renderer::draw_actor(const Actor& actor, bool selected, const Mat4& view_pr
     }
 }
 
-void Renderer::draw_mesh_part(const MeshPart& part, const Transform& transform, const Mat4& view_projection) const {
+void Renderer::draw_mesh_part(const MeshPart& part, const Transform& transform, const Mat4& view_projection, const ObjectUniforms& uniforms) {
     if (object_program_ == 0) {
         glPushMatrix();
         const Mat4 model = transform.matrix();
@@ -640,16 +850,16 @@ void Renderer::draw_mesh_part(const MeshPart& part, const Transform& transform, 
 
     switch (part.primitive) {
     case MeshPrimitive::Cube:
-        draw_gpu_mesh(cube_mesh_, part.material, transform, view_projection);
+        draw_gpu_mesh(cube_mesh_, part.material, transform, view_projection, uniforms);
         break;
     case MeshPrimitive::Plane:
-        draw_gpu_mesh(plane_mesh_, part.material, transform, view_projection);
+        draw_gpu_mesh(plane_mesh_, part.material, transform, view_projection, uniforms);
         break;
     case MeshPrimitive::Sphere:
-        draw_gpu_mesh(sphere_mesh_, part.material, transform, view_projection);
+        draw_gpu_mesh(sphere_mesh_, part.material, transform, view_projection, uniforms);
         break;
     case MeshPrimitive::Custom:
-        draw_custom_mesh_part(part, transform, view_projection);
+        draw_custom_mesh_part(part, transform, view_projection, uniforms);
         break;
     }
 }

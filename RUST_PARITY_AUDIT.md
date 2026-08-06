@@ -36,6 +36,10 @@ This file tracks what exists in the Rust prototype and whether it has been porte
 - Mesh normalization after import.
 - Custom imported mesh part rendering.
 - First C++ shader/VBO path for scene meshes.
+- Persistent GPU cache for imported/custom mesh parts.
+- Cook-Torrance/GGX direct-light PBR shader for C++ scene meshes.
+- Directional and point light contribution in the C++ object shader.
+- Albedo/normal/lighting/roughness/metallic debug rendering for C++ scene meshes.
 
 ## Partially Ported
 
@@ -53,7 +57,7 @@ This file tracks what exists in the Rust prototype and whether it has been porte
   - C++ now follows the camera but is still line-rendered.
 - Material/display state:
   - Rust has metallic/roughness sliders and debug views connected to shader uniforms.
-  - C++ stores material fields and debug-view state, but does not yet render those debug views.
+  - C++ now renders material factors and debug views in the object shader, but texture-backed material inputs are still pending.
 
 ## Not Yet Ported
 
@@ -66,11 +70,7 @@ This file tracks what exists in the Rust prototype and whether it has been porte
 - UV import.
 - Base-color texture import/upload.
 - Texture sampling.
-- Persistent GPU VBO/VAO mesh cache for arbitrary imported meshes.
-- Cook-Torrance/GGX direct-light PBR shader.
-- Directional/point/spot lighting in shader.
-- PBR metallic/roughness factors affecting rendering.
-- Albedo/normal/lighting/roughness/metallic debug rendering.
+- Spot lighting in shader.
 - Inverted-hull pixel-width outlines.
 - Smooth stylized lighting bands.
 - Fog and tonemapping.
@@ -92,9 +92,9 @@ This file tracks what exists in the Rust prototype and whether it has been porte
 ## Recommended Port Order
 
 1. Visually QA the Dear ImGui panels against the Rust egui layout and remove the unused hand-drawn overlay path.
-2. Cache imported C++ meshes on the GPU and move editor gizmos/grid to the modern path.
+2. Visual QA the C++ PBR shader and debug views, then move editor gizmos/grid to the modern path.
 3. Port glTF import and texture preservation.
-4. Port Rust render passes and shader uniforms.
-5. Port direct-light PBR and debug views.
+4. Port Rust render passes and remaining shader uniforms.
+5. Port spot lighting and outline shader parity.
 6. Port outline pass and polished gizmo meshes.
 7. Continue the planned full PBR pipeline: metallic-roughness textures, normal maps, shadow maps, HDR, and environment lighting.

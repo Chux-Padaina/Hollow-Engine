@@ -79,6 +79,7 @@ int App::run(const std::vector<std::filesystem::path>& startup_imports) {
     }
 
     editor_ui_.shutdown();
+    renderer_.shutdown();
     return 0;
 }
 

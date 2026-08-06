@@ -7,6 +7,8 @@
 #include <Windows.h>
 
 #include <cstdint>
+#include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace Forge {
@@ -37,9 +39,22 @@ struct GpuMesh {
     int index_count = 0;
 };
 
+struct ObjectUniforms {
+    Vec3 camera_position{};
+    Vec3 directional_direction{0.35f, 0.9f, 0.28f};
+    Vec3 directional_color{1.0f, 0.98f, 0.90f};
+    float directional_intensity = 1.0f;
+    Vec3 point_position{0.0f, 2.4f, 2.2f};
+    Vec3 point_color{0.35f, 0.75f, 1.0f};
+    float point_intensity = 0.0f;
+    float point_range = 8.0f;
+    int debug_view = 0;
+};
+
 class Renderer {
 public:
     void initialize(HDC device_context);
+    void shutdown();
     void resize(int width, int height);
     void render(const Scene& scene, const Camera& camera, const Engine& engine);
     Vec2 project(Vec3 world, const Camera& camera) const;
@@ -51,18 +66,22 @@ private:
     GpuMesh cube_mesh_;
     GpuMesh plane_mesh_;
     GpuMesh sphere_mesh_;
+    std::unordered_map<const MeshPart*, GpuMesh> custom_mesh_cache_;
 
     bool initialize_modern_pipeline();
+    ObjectUniforms collect_object_uniforms(const Scene& scene, const Camera& camera, const Engine& engine) const;
+    void sync_custom_mesh_cache(const Scene& scene);
     GpuMesh create_gpu_mesh(const std::vector<RenderVertex>& vertices, const std::vector<std::uint32_t>& indices) const;
+    GpuMesh create_custom_mesh(const MeshPart& part) const;
     void destroy_gpu_mesh(GpuMesh& mesh) const;
-    void draw_gpu_mesh(const GpuMesh& mesh, const Material& material, const Transform& transform, const Mat4& view_projection) const;
+    void draw_gpu_mesh(const GpuMesh& mesh, const Material& material, const Transform& transform, const Mat4& view_projection, const ObjectUniforms& uniforms) const;
     GpuMesh create_cube_mesh() const;
     GpuMesh create_plane_mesh() const;
     GpuMesh create_sphere_mesh() const;
-    void draw_custom_mesh_part(const MeshPart& part, const Transform& transform, const Mat4& view_projection) const;
+    void draw_custom_mesh_part(const MeshPart& part, const Transform& transform, const Mat4& view_projection, const ObjectUniforms& uniforms);
     void draw_grid(const Camera& camera) const;
-    void draw_actor(const Actor& actor, bool selected, const Mat4& view_projection) const;
-    void draw_mesh_part(const MeshPart& part, const Transform& transform, const Mat4& view_projection) const;
+    void draw_actor(const Actor& actor, bool selected, const Mat4& view_projection, const ObjectUniforms& uniforms);
+    void draw_mesh_part(const MeshPart& part, const Transform& transform, const Mat4& view_projection, const ObjectUniforms& uniforms);
     void draw_cube(const Material& material) const;
     void draw_plane() const;
     void draw_sphere() const;
