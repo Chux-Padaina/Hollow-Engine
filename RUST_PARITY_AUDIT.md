@@ -57,6 +57,7 @@ This file tracks what exists in the Rust prototype and whether it has been porte
 - First directional-light shadow map pass.
 - First point-light shadow map pass for the first enabled point light.
 - Toolbar toggle for real shadow-map sampling.
+- First HDR framebuffer and ACES-style tonemapping pass with exposure control.
 
 ## Partially Ported
 
@@ -90,7 +91,7 @@ This file tracks what exists in the Rust prototype and whether it has been porte
 - Production multi-point and spot light shadow maps.
 - Screen-pixel-stable outline widths.
 - Smooth stylized lighting bands.
-- Fog and tonemapping.
+- Fog, bloom, and broader post-processing.
 - Rust shader source split/parity in C++.
 - Ray-based mesh picking using bounds radius.
 - Ray-based light picking.

@@ -160,6 +160,11 @@ EditorCommand EditorUi::draw(Scene& scene, Engine& engine, Camera& camera, bool&
     ImGui::SameLine();
     ImGui::Checkbox("Shadows", &engine.render_settings().shadows_enabled);
     ImGui::SameLine();
+    ImGui::Checkbox("HDR", &engine.render_settings().hdr_enabled);
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(90.0f);
+    ImGui::SliderFloat("Exposure", &engine.render_settings().exposure, 0.1f, 4.0f, "%.2f");
+    ImGui::SameLine();
     ImGui::TextDisabled("View: %s", name_of(engine.debug_view()));
     ImGui::SameLine();
     ImGui::TextDisabled("Style: %s", name_of(engine.style()));

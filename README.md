@@ -23,6 +23,7 @@ The project originally started as a Rust prototype. The active implementation is
 - OBJ `.mtl` import now records common texture map paths, and the C++ shader samples base-color plus combined metallic/roughness textures when present.
 - Mesh vertices now carry tangent basis data, imported/custom meshes generate tangents from UVs, and the C++ PBR shader samples tangent-space normal maps with an editable normal-strength control.
 - The renderer now has first real directional and point-light shadow map passes with depth framebuffers, shadow texture sampling in the PBR shader, and a toolbar Shadows toggle.
+- The viewport scene now renders through a first HDR framebuffer and ACES-style tonemapping pass with an exposure control.
 - The viewport work area now uses a light gray editor background as a temporary stand-in until a skybox/environment pass exists.
 - Mesh actors now use a first shader-based expanded-backface outline pass instead of the older selected wireframe shortcut.
 - Dear ImGui is vendored under `cpp/vendor/imgui` and now drives the C++ editor UI.
@@ -156,4 +157,4 @@ For the Rust-to-C++ feature parity ledger, see [RUST_PARITY_AUDIT.md](RUST_PARIT
 2. Add glTF/GLB drag-drop import in C++.
 3. Visual QA `.glb/.gltf` imports from Sketchfab-style assets, especially multi-material textured models.
 4. Visual QA directional and first point-light shadow map coverage, bias, and softness on imported GLB assets.
-5. Continue the PBR pipeline: HDR, tonemapping, image-based/environment lighting, and post-processing.
+5. Continue the PBR pipeline: image-based/environment lighting, emissive/bloom, and broader post-processing.

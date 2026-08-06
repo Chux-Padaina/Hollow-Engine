@@ -71,6 +71,7 @@ struct ObjectUniforms {
     };
     bool shadows_enabled = false;
     bool point_shadows_enabled = false;
+    bool hdr_output_enabled = false;
     int debug_view = 0;
 };
 
@@ -88,12 +89,18 @@ private:
     unsigned int object_program_ = 0;
     unsigned int outline_program_ = 0;
     unsigned int depth_program_ = 0;
+    unsigned int tonemap_program_ = 0;
     unsigned int shadow_framebuffer_ = 0;
     unsigned int shadow_depth_texture_ = 0;
     int shadow_resolution_ = 2048;
     unsigned int point_shadow_framebuffer_ = 0;
     std::array<unsigned int, 6> point_shadow_depth_textures_{};
     int point_shadow_resolution_ = 1024;
+    unsigned int hdr_framebuffer_ = 0;
+    unsigned int hdr_color_texture_ = 0;
+    unsigned int hdr_depth_texture_ = 0;
+    int hdr_width_ = 0;
+    int hdr_height_ = 0;
     GpuMesh cube_mesh_;
     GpuMesh plane_mesh_;
     GpuMesh sphere_mesh_;
@@ -112,6 +119,9 @@ private:
     unsigned int resolve_metallic_roughness_texture(const Material& material) const;
     unsigned int resolve_normal_texture(const Material& material) const;
     void destroy_texture(GpuTexture& texture) const;
+    void ensure_hdr_framebuffer();
+    void destroy_hdr_framebuffer();
+    void render_tonemapped_frame(float exposure, int debug_view) const;
     void draw_gpu_mesh(const GpuMesh& mesh, const Material& material, const Transform& transform, const Mat4& view_projection, const ObjectUniforms& uniforms);
     void render_shadow_map(const Scene& scene, const ObjectUniforms& uniforms);
     void render_point_shadow_maps(const Scene& scene, const ObjectUniforms& uniforms);

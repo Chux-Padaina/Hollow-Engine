@@ -42,6 +42,8 @@ struct RenderPipelineSettings {
     bool draw_actor_outlines = true;
     bool draw_editor_gizmos = true;
     bool shadows_enabled = true;
+    bool hdr_enabled = true;
+    float exposure = 1.0f;
     bool pbr_enabled = false;
 };
 

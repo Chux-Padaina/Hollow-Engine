@@ -45,6 +45,7 @@ Recently added in the new C++ implementation:
 - Tangent generation and tangent-space normal map sampling in the C++ PBR shader.
 - First directional-light shadow map pass in C++.
 - First point-light shadow map pass in C++ for the first enabled point light.
+- First HDR scene-color framebuffer and ACES-style tonemapping pass in C++.
 
 Not yet implemented in either path:
 
@@ -52,7 +53,7 @@ Not yet implemented in either path:
 - Cascaded or production-quality shadow maps.
 - Multi-point/spot light shadow maps and shadow atlasing.
 - Image-based lighting/reflection probes.
-- HDR framebuffer/post-processing.
+- Bloom and broader post-processing.
 
 ## Proposed Pipeline Steps
 
@@ -90,7 +91,7 @@ Implementation notes:
 - Meshes now carry `MaterialProperties` with `metallic` and `roughness`.
 - glTF `metallicFactor` and `roughnessFactor`, OBJ material factors, and editor factor controls are active.
 - The default test scene uses a rough non-metal cube, a smoother metal cube, and a rough non-metal floor.
-- This is not full engine PBR yet because it does not include image-based lighting, HDR, or post-processing.
+- This is not full engine PBR yet because it does not include image-based lighting, emissive/bloom, or a broader post-processing stack.
 
 ### 2. Material Properties And Inspector Controls
 
@@ -284,7 +285,16 @@ Why this matters:
 
 PBR lighting often exceeds `0..1`. HDR lets bright lights, emissive materials, and future bloom behave correctly.
 
-Status: pending.
+Status: first-pass implemented in the active C++ renderer.
+
+Implementation notes:
+
+- The viewport scene renders into a floating-point RGBA16F color texture with a depth attachment.
+- Scene shaders output linear HDR color when the HDR path is enabled instead of doing their own display mapping.
+- A fullscreen tonemap shader maps the HDR scene color back to the window using an ACES-style curve and gamma conversion.
+- The editor toolbar exposes an HDR toggle and exposure slider.
+- Debug views bypass the artistic tonemap so albedo, normals, roughness, metallic, and lighting-only views stay diagnostic.
+- This is the post-process foundation, not the finished post stack. Later work should add bloom, color grading/LUTs, temporal exposure, render-target lifetime management, and a real render-graph style pass scheduler.
 
 ### 11. Basic Environment Lighting
 

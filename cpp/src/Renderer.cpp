@@ -51,12 +51,15 @@ constexpr unsigned int kTexture7 = 0x84C7;
 constexpr unsigned int kTexture8 = 0x84C8;
 constexpr unsigned int kTexture9 = 0x84C9;
 constexpr unsigned int kDepthComponent = 0x1902;
+constexpr unsigned int kRgba16f = 0x881A;
 constexpr unsigned int kNearest = 0x2600;
 constexpr unsigned int kClampToEdge = 0x812F;
 constexpr unsigned int kFramebuffer = 0x8D40;
+constexpr unsigned int kColorAttachment0 = 0x8CE0;
 constexpr unsigned int kDepthAttachment = 0x8D00;
 constexpr unsigned int kFramebufferComplete = 0x8CD5;
 constexpr unsigned int kNone = 0;
+constexpr unsigned int kBack = 0x0405;
 
 using GlCreateShader = unsigned int(APIENTRY*)(unsigned int shader_type);
 using GlShaderSource = void(APIENTRY*)(unsigned int shader, int count, const char* const* string, const int* length);
@@ -419,6 +422,11 @@ void Renderer::shutdown() {
         glx.delete_program(depth_program_);
         depth_program_ = 0;
     }
+    if (tonemap_program_ != 0 && glx.delete_program != nullptr) {
+        glx.delete_program(tonemap_program_);
+        tonemap_program_ = 0;
+    }
+    destroy_hdr_framebuffer();
     if (shadow_framebuffer_ != 0 && glx.delete_framebuffers != nullptr) {
         glx.delete_framebuffers(1, &shadow_framebuffer_);
         shadow_framebuffer_ = 0;
@@ -456,14 +464,13 @@ Vec2 Renderer::project(Vec3 world, const Camera& camera) const {
 void Renderer::render(const Scene& scene, const Camera& camera, const Engine& engine) {
     sync_custom_mesh_cache(scene);
     resize(width_, height_);
-    glViewport(0, 0, width_, height_);
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     const float aspect = static_cast<float>(width_) / static_cast<float>(height_);
     const Mat4 projection = Mat4::perspective(camera.fov_y_radians, aspect, 0.05f, 500.0f);
     const Mat4 view = Mat4::look_at(camera.position(), camera.target, {0.0f, 1.0f, 0.0f});
     const Mat4 view_projection = projection * view;
-    const ObjectUniforms object_uniforms = collect_object_uniforms(scene, camera, engine);
+    ObjectUniforms object_uniforms = collect_object_uniforms(scene, camera, engine);
+    object_uniforms.hdr_output_enabled = engine.render_settings().hdr_enabled && tonemap_program_ != 0;
 
     if (object_uniforms.shadows_enabled) {
         render_shadow_map(scene, object_uniforms);
@@ -471,6 +478,17 @@ void Renderer::render(const Scene& scene, const Camera& camera, const Engine& en
     if (object_uniforms.point_shadows_enabled) {
         render_point_shadow_maps(scene, object_uniforms);
     }
+
+    const bool use_hdr = object_uniforms.hdr_output_enabled;
+    if (use_hdr) {
+        ensure_hdr_framebuffer();
+        glx.bind_framebuffer(kFramebuffer, hdr_framebuffer_);
+    } else if (glx.ready()) {
+        glx.bind_framebuffer(kFramebuffer, 0);
+        glDrawBuffer(kBack);
+        glReadBuffer(kBack);
+    }
+
     glViewport(0, 0, width_, height_);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
@@ -491,6 +509,22 @@ void Renderer::render(const Scene& scene, const Camera& camera, const Engine& en
 
     for (const auto& actor : scene.actors()) {
         draw_actor(*actor, actor->id() == scene.selected_actor_id(), view_projection, object_uniforms);
+    }
+
+    if (use_hdr) {
+        glx.bind_framebuffer(kFramebuffer, 0);
+        glDrawBuffer(kBack);
+        glReadBuffer(kBack);
+        glViewport(0, 0, width_, height_);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        render_tonemapped_frame(engine.render_settings().exposure, object_uniforms.debug_view);
+        glDrawBuffer(kBack);
+        glReadBuffer(kBack);
+        glClear(GL_DEPTH_BUFFER_BIT);
+        glMatrixMode(GL_PROJECTION);
+        glLoadMatrixf(projection.m.data());
+        glMatrixMode(GL_MODELVIEW);
+        glLoadMatrixf(view.m.data());
     }
 
     if (const Actor* selected = scene.selected_actor()) {
@@ -578,6 +612,7 @@ uniform sampler2D uNormalTexture;
 uniform int uHasNormalTexture;
 uniform sampler2D uShadowMap;
 uniform int uShadowsEnabled;
+uniform int uHdrOutputEnabled;
 uniform sampler2D uPointShadowMap0;
 uniform sampler2D uPointShadowMap1;
 uniform sampler2D uPointShadowMap2;
@@ -762,9 +797,9 @@ void main() {
     }
 
     vec3 ambient = albedo * mix(0.035, 0.075, 1.0 - roughness);
-    vec3 finalColor = ambient + direct;
-    finalColor = finalColor / (finalColor + vec3(1.0));
-    finalColor = pow(finalColor, vec3(1.0 / 2.2));
+    vec3 hdrColor = ambient + direct;
+    vec3 ldrColor = hdrColor / (hdrColor + vec3(1.0));
+    ldrColor = pow(ldrColor, vec3(1.0 / 2.2));
 
     if (uDebugView == 1) {
         gl_FragColor = vec4(albedo, 1.0);
@@ -778,7 +813,7 @@ void main() {
     } else if (uDebugView == 5) {
         gl_FragColor = vec4(vec3(metallic), 1.0);
     } else {
-        gl_FragColor = vec4(finalColor, 1.0);
+        gl_FragColor = vec4(uHdrOutputEnabled == 1 ? hdrColor : ldrColor, 1.0);
     }
 }
 )";
@@ -818,9 +853,44 @@ void main() {
 }
 )";
 
+    constexpr const char* tonemap_vertex_shader = R"(
+#version 120
+varying vec2 vUv;
+void main() {
+    vUv = gl_MultiTexCoord0.xy;
+    gl_Position = gl_Vertex;
+}
+)";
+
+    constexpr const char* tonemap_fragment_shader = R"(
+#version 120
+uniform sampler2D uSceneColor;
+uniform float uExposure;
+uniform int uDebugView;
+varying vec2 vUv;
+
+vec3 aces_fitted(vec3 color) {
+    const float a = 2.51;
+    const float b = 0.03;
+    const float c = 2.43;
+    const float d = 0.59;
+    const float e = 0.14;
+    return clamp((color * (a * color + b)) / (color * (c * color + d) + e), 0.0, 1.0);
+}
+
+void main() {
+    vec3 hdrColor = texture2D(uSceneColor, vUv).rgb;
+    vec3 exposed = hdrColor * max(uExposure, 0.0);
+    vec3 mapped = uDebugView == 0 ? aces_fitted(exposed) : clamp(hdrColor, 0.0, 1.0);
+    vec3 outputColor = uDebugView == 0 ? pow(mapped, vec3(1.0 / 2.2)) : mapped;
+    gl_FragColor = vec4(outputColor, 1.0);
+}
+)";
+
     object_program_ = create_program(vertex_shader, fragment_shader);
     outline_program_ = create_program(outline_vertex_shader, outline_fragment_shader);
     depth_program_ = create_program(depth_vertex_shader, depth_fragment_shader);
+    tonemap_program_ = create_program(tonemap_vertex_shader, tonemap_fragment_shader);
 
     glGenTextures(1, &shadow_depth_texture_);
     glBindTexture(kTexture2D, shadow_depth_texture_);
@@ -1150,6 +1220,92 @@ void Renderer::destroy_texture(GpuTexture& texture) const {
     texture = {};
 }
 
+void Renderer::ensure_hdr_framebuffer() {
+    if (hdr_framebuffer_ != 0 && hdr_width_ == width_ && hdr_height_ == height_) {
+        return;
+    }
+
+    destroy_hdr_framebuffer();
+    hdr_width_ = width_;
+    hdr_height_ = height_;
+
+    glGenTextures(1, &hdr_color_texture_);
+    glBindTexture(kTexture2D, hdr_color_texture_);
+    glTexParameteri(kTexture2D, kTextureMinFilter, kLinear);
+    glTexParameteri(kTexture2D, kTextureMagFilter, kLinear);
+    glTexParameteri(kTexture2D, kTextureWrapS, kClampToEdge);
+    glTexParameteri(kTexture2D, kTextureWrapT, kClampToEdge);
+    glTexImage2D(kTexture2D, 0, static_cast<int>(kRgba16f), hdr_width_, hdr_height_, 0, kRgba, kFloat, nullptr);
+
+    glGenTextures(1, &hdr_depth_texture_);
+    glBindTexture(kTexture2D, hdr_depth_texture_);
+    glTexParameteri(kTexture2D, kTextureMinFilter, kNearest);
+    glTexParameteri(kTexture2D, kTextureMagFilter, kNearest);
+    glTexParameteri(kTexture2D, kTextureWrapS, kClampToEdge);
+    glTexParameteri(kTexture2D, kTextureWrapT, kClampToEdge);
+    glTexImage2D(kTexture2D, 0, static_cast<int>(kDepthComponent), hdr_width_, hdr_height_, 0, kDepthComponent, kFloat, nullptr);
+
+    glx.gen_framebuffers(1, &hdr_framebuffer_);
+    glx.bind_framebuffer(kFramebuffer, hdr_framebuffer_);
+    glx.framebuffer_texture_2d(kFramebuffer, kColorAttachment0, kTexture2D, hdr_color_texture_, 0);
+    glx.framebuffer_texture_2d(kFramebuffer, kDepthAttachment, kTexture2D, hdr_depth_texture_, 0);
+    glDrawBuffer(kColorAttachment0);
+    glReadBuffer(kColorAttachment0);
+    if (glx.check_framebuffer_status(kFramebuffer) != kFramebufferComplete) {
+        glx.bind_framebuffer(kFramebuffer, 0);
+        throw std::runtime_error("HDR framebuffer is incomplete");
+    }
+    glx.bind_framebuffer(kFramebuffer, 0);
+}
+
+void Renderer::destroy_hdr_framebuffer() {
+    if (hdr_framebuffer_ != 0 && glx.delete_framebuffers != nullptr) {
+        glx.delete_framebuffers(1, &hdr_framebuffer_);
+        hdr_framebuffer_ = 0;
+    }
+    if (hdr_color_texture_ != 0) {
+        glDeleteTextures(1, &hdr_color_texture_);
+        hdr_color_texture_ = 0;
+    }
+    if (hdr_depth_texture_ != 0) {
+        glDeleteTextures(1, &hdr_depth_texture_);
+        hdr_depth_texture_ = 0;
+    }
+    hdr_width_ = 0;
+    hdr_height_ = 0;
+}
+
+void Renderer::render_tonemapped_frame(float exposure, int debug_view) const {
+    if (tonemap_program_ == 0 || hdr_color_texture_ == 0) {
+        return;
+    }
+
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_CULL_FACE);
+    glx.use_program(tonemap_program_);
+    glx.uniform_1i(glx.get_uniform_location(tonemap_program_, "uSceneColor"), 0);
+    glx.uniform_1f(glx.get_uniform_location(tonemap_program_, "uExposure"), exposure);
+    glx.uniform_1i(glx.get_uniform_location(tonemap_program_, "uDebugView"), debug_view);
+    glx.active_texture(kTexture0);
+    glBindTexture(kTexture2D, hdr_color_texture_);
+
+    glBegin(GL_TRIANGLE_STRIP);
+    glTexCoord2f(0.0f, 0.0f);
+    glVertex2f(-1.0f, -1.0f);
+    glTexCoord2f(1.0f, 0.0f);
+    glVertex2f(1.0f, -1.0f);
+    glTexCoord2f(0.0f, 1.0f);
+    glVertex2f(-1.0f, 1.0f);
+    glTexCoord2f(1.0f, 1.0f);
+    glVertex2f(1.0f, 1.0f);
+    glEnd();
+
+    glBindTexture(kTexture2D, 0);
+    glx.use_program(0);
+    glEnable(GL_CULL_FACE);
+    glEnable(GL_DEPTH_TEST);
+}
+
 void Renderer::draw_gpu_mesh(const GpuMesh& mesh, const Material& material, const Transform& transform, const Mat4& view_projection, const ObjectUniforms& uniforms) {
     if (object_program_ == 0 || mesh.vertex_buffer == 0 || mesh.index_buffer == 0 || mesh.index_count <= 0) {
         return;
@@ -1182,6 +1338,7 @@ void Renderer::draw_gpu_mesh(const GpuMesh& mesh, const Material& material, cons
     glx.uniform_1i(glx.get_uniform_location(object_program_, "uHasNormalTexture"), material.normal_texture_path.empty() ? 0 : 1);
     glx.uniform_1i(glx.get_uniform_location(object_program_, "uShadowMap"), 3);
     glx.uniform_1i(glx.get_uniform_location(object_program_, "uShadowsEnabled"), uniforms.shadows_enabled ? 1 : 0);
+    glx.uniform_1i(glx.get_uniform_location(object_program_, "uHdrOutputEnabled"), uniforms.hdr_output_enabled ? 1 : 0);
     glx.uniform_1i(glx.get_uniform_location(object_program_, "uPointShadowMap0"), 4);
     glx.uniform_1i(glx.get_uniform_location(object_program_, "uPointShadowMap1"), 5);
     glx.uniform_1i(glx.get_uniform_location(object_program_, "uPointShadowMap2"), 6);
@@ -1275,6 +1432,8 @@ void Renderer::render_shadow_map(const Scene& scene, const ObjectUniforms& unifo
     glCullFace(GL_BACK);
     glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
     glx.bind_framebuffer(kFramebuffer, 0);
+    glDrawBuffer(kBack);
+    glReadBuffer(kBack);
 }
 
 void Renderer::render_point_shadow_maps(const Scene& scene, const ObjectUniforms& uniforms) {
@@ -1298,6 +1457,8 @@ void Renderer::render_point_shadow_maps(const Scene& scene, const ObjectUniforms
     glCullFace(GL_BACK);
     glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
     glx.bind_framebuffer(kFramebuffer, 0);
+    glDrawBuffer(kBack);
+    glReadBuffer(kBack);
 }
 
 void Renderer::draw_depth_actor(const Actor& actor, const Mat4& light_view_projection) {
