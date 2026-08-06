@@ -24,9 +24,14 @@ Implemented in the Rust reference:
 Pending in the new C++ implementation:
 
 - Modern OpenGL shader/VBO renderer.
-- glTF/OBJ import.
+- glTF import.
 - Direct-light Cook-Torrance/GGX PBR shader.
-- Material inspector and debug views.
+- Shader-connected material inspector and debug views.
+
+Recently added in the new C++ implementation:
+
+- Dear ImGui editor UI for actor transforms, light controls, and basic material factors.
+- OBJ import with material diffuse color preservation.
 
 Not yet implemented in either path:
 
@@ -64,7 +69,7 @@ Why this matters:
 
 This is the core material model used by modern real-time renderers. It lets roughness and metallic values mean something predictable under lights.
 
-Status: implemented for direct lighting using uniform/factor material values.
+Status: implemented in the Rust reference; pending in the active C++ renderer.
 
 Implementation notes:
 
@@ -89,11 +94,11 @@ Why this matters:
 
 Before importing all texture maps, sliders let us validate the math with simple cubes and known values.
 
-Status: partially implemented.
+Status: partially implemented in C++; shader connection is pending.
 
 Implementation notes:
 
-- The details panel exposes metallic and roughness sliders for the selected object group.
+- The C++ Dear ImGui details panel exposes base color, metallic, and roughness controls for selected mesh actors.
 - The current control applies the same factor values to every mesh in the selected group. That keeps testing simple, but later we should expose per-material slots so imported multi-material assets can preserve different settings per part.
 - Base color, emissive, and normal strength controls are still pending.
 
@@ -108,7 +113,7 @@ Why this matters:
 
 When a model looks wrong, these views answer a basic question quickly: did the material values make it into the shader, or is the lighting model the problem?
 
-Status: implemented for factor/uniform values.
+Status: implemented in the Rust reference; pending in the active C++ renderer.
 
 Implementation notes:
 
@@ -272,10 +277,12 @@ Status: pending.
 
 ## Recommended Immediate Next Steps
 
-1. Import glTF metallic-roughness texture.
-2. Add tangent support and normal maps.
-3. Replace planar shadows with a directional shadow map.
-4. Add basic environment lighting so metals have something to reflect.
+1. Move the C++ renderer to shader/VBO/VAO drawing.
+2. Rebuild direct-light Cook-Torrance/GGX in C++.
+3. Add glTF import with metallic/roughness factors and textures.
+4. Add tangent support and normal maps.
+5. Replace planar shadows with a directional shadow map.
+6. Add basic environment lighting so metals have something to reflect.
 
 Direct-light PBR is now implemented. The next material-control milestone should make it easy to demonstrate:
 

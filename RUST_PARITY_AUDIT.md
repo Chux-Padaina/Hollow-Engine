@@ -22,10 +22,11 @@ This file tracks what exists in the Rust prototype and whether it has been porte
 - Right-mouse camera orbit, middle-mouse pan, mouse-wheel zoom.
 - Camera-following visual editor grid.
 - Selected actor details panel layout.
+- ImGui-backed editable transform, light, and material controls.
 - Rust-style toolbar labels for tool, view, and style.
 - Style preset state: Character, Street, Combat.
 - Debug view state: Final, Albedo, Normals, Lighting, Roughness, Metallic.
-- Status/footer text.
+- Status text.
 - Basic light icons and transform gizmo rendering.
 - Basic click selection for actors and lights.
 - Basic mouse-driven transform gizmo interaction.
@@ -37,9 +38,9 @@ This file tracks what exists in the Rust prototype and whether it has been porte
 
 ## Partially Ported
 
-- Editor UI:
-  - Rust uses egui panels with interactive sliders, color pickers, menus, and editable numeric values.
-  - C++ currently uses a custom OpenGL overlay that visually matches the layout, but most detail fields are display-only.
+- Editor UI polish:
+  - Rust uses egui panels with a slightly more mature retained layout.
+  - C++ now uses Dear ImGui with editable controls, but the panels still need visual QA and finer layout tuning.
 - Transform gizmos:
   - Rust has center, axis, plane handles, smooth rings, hover/active highlighting, ray-based picking, and more careful drag math.
   - C++ has center/axis/ring interaction and improved screen-space dragging, but lacks plane handles, hover highlight, polished arrows, and ray-accurate selection.
@@ -89,7 +90,7 @@ This file tracks what exists in the Rust prototype and whether it has been porte
 
 ## Recommended Port Order
 
-1. Add Dear ImGui so the C++ editor can match the Rust egui controls and become editable.
+1. Visually QA the Dear ImGui panels against the Rust egui layout and remove the unused hand-drawn overlay path.
 2. Move C++ rendering from immediate mode to shader/VBO/VAO rendering.
 3. Port glTF import and texture preservation.
 4. Port Rust render passes and shader uniforms.

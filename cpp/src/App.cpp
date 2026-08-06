@@ -16,10 +16,6 @@ bool key_pressed(int key) {
     return (GetAsyncKeyState(key) & 0x0001) != 0;
 }
 
-bool point_in_rect(int x, int y, int rx, int ry, int rw, int rh) {
-    return x >= rx && y >= ry && x <= rx + rw && y <= ry + rh;
-}
-
 float distance_2d(Vec2 a, Vec2 b) {
     const float dx = a.x - b.x;
     const float dy = a.y - b.y;
@@ -50,6 +46,7 @@ int App::run(const std::vector<std::filesystem::path>& startup_imports) {
     }
 
     renderer_.initialize(window_.device_context());
+    editor_ui_.initialize(window_);
     for (const auto& path : startup_imports) {
         import_model(path);
     }
@@ -66,17 +63,22 @@ int App::run(const std::vector<std::filesystem::path>& startup_imports) {
         last_frame_ = now;
 
         begin_frame();
-        handle_keyboard();
+        editor_ui_.begin_frame();
+        if (!editor_ui_.wants_keyboard()) {
+            handle_keyboard();
+        }
         import_pending_drops();
         handle_mouse();
         engine_.tick(delta);
         renderer_.resize(window_.width(), window_.height());
         renderer_.render(scene_, camera_, engine_);
-        renderer_.render_editor_overlay(scene_, camera_, {engine_.active_tool(), engine_.transform_space(), engine_.style(), engine_.debug_view(), snap_to_grid_, 0, status_});
+        execute_editor_command(editor_ui_.draw(scene_, engine_, camera_, snap_to_grid_, status_));
+        editor_ui_.render();
         window_.swap_buffers();
         update_window_title();
     }
 
+    editor_ui_.shutdown();
     return 0;
 }
 
@@ -144,25 +146,24 @@ void App::handle_keyboard() {
 
 void App::handle_mouse() {
     const MouseState& mouse = window_.mouse();
+    const bool ui_wants_mouse = editor_ui_.wants_mouse();
 
-    if (mouse.wheel_delta != 0 && !is_over_editor_ui(mouse.x, mouse.y)) {
+    if (mouse.wheel_delta != 0 && !ui_wants_mouse) {
         camera_.distance *= 1.0f - static_cast<float>(mouse.wheel_delta) / 2400.0f;
     }
 
-    if (mouse.right_down && !is_over_editor_ui(mouse.x, mouse.y)) {
+    if (mouse.right_down && !ui_wants_mouse) {
         camera_.yaw -= static_cast<float>(mouse.delta_x) * 0.006f;
         camera_.pitch -= static_cast<float>(mouse.delta_y) * 0.006f;
     }
-    if (mouse.middle_down && !is_over_editor_ui(mouse.x, mouse.y)) {
+    if (mouse.middle_down && !ui_wants_mouse) {
         const float scale = camera_.distance * 0.0018f;
         camera_.target -= camera_.right() * (static_cast<float>(mouse.delta_x) * scale);
         camera_.target += camera_.up() * (static_cast<float>(mouse.delta_y) * scale);
     }
 
-    if (mouse.left_pressed) {
-        if (is_over_editor_ui(mouse.x, mouse.y)) {
-            handle_ui_click(mouse.x, mouse.y);
-        } else if (const DragMode gizmo = pick_gizmo(mouse.x, mouse.y); gizmo != DragMode::None) {
+    if (mouse.left_pressed && !ui_wants_mouse) {
+        if (const DragMode gizmo = pick_gizmo(mouse.x, mouse.y); gizmo != DragMode::None) {
             begin_drag(gizmo);
         } else if (ActorId hit = pick_actor(mouse.x, mouse.y); hit != 0) {
             scene_.select_actor(hit);
@@ -189,32 +190,35 @@ void App::handle_mouse() {
     }
 }
 
-void App::handle_ui_click(int x, int y) {
-    if (point_in_rect(x, y, 124, 9, 68, 25)) engine_.set_active_tool(EditorTool::Select);
-    if (point_in_rect(x, y, 198, 9, 60, 25)) engine_.set_active_tool(EditorTool::Move);
-    if (point_in_rect(x, y, 264, 9, 68, 25)) engine_.set_active_tool(EditorTool::Rotate);
-    if (point_in_rect(x, y, 338, 9, 64, 25)) engine_.set_active_tool(EditorTool::Scale);
-    if (point_in_rect(x, y, 414, 9, 88, 25)) engine_.toggle_transform_space();
-    if (point_in_rect(x, y, 510, 9, 92, 25)) snap_to_grid_ = !snap_to_grid_;
-
-    if (point_in_rect(x, y, 14, 130, 64, 24)) add_mesh(MeshPrimitive::Cube);
-    if (point_in_rect(x, y, 84, 130, 64, 24)) add_mesh(MeshPrimitive::Plane);
-    if (point_in_rect(x, y, 154, 130, 78, 24)) add_mesh(MeshPrimitive::Sphere);
-    if (point_in_rect(x, y, 14, 160, 104, 24)) add_light(LightKind::Directional);
-    if (point_in_rect(x, y, 124, 160, 72, 24)) add_light(LightKind::Point);
-    if (point_in_rect(x, y, 202, 160, 44, 24)) add_light(LightKind::Spot);
-    if (point_in_rect(x, y, 14, 192, 80, 24)) {
+void App::execute_editor_command(EditorCommand command) {
+    switch (command) {
+    case EditorCommand::AddCube:
+        add_mesh(MeshPrimitive::Cube);
+        break;
+    case EditorCommand::AddPlane:
+        add_mesh(MeshPrimitive::Plane);
+        break;
+    case EditorCommand::AddSphere:
+        add_mesh(MeshPrimitive::Sphere);
+        break;
+    case EditorCommand::AddDirectionalLight:
+        add_light(LightKind::Directional);
+        break;
+    case EditorCommand::AddPointLight:
+        add_light(LightKind::Point);
+        break;
+    case EditorCommand::AddSpotLight:
+        add_light(LightKind::Spot);
+        break;
+    case EditorCommand::DeleteSelection:
         scene_.destroy_selected_actor();
         status_ = "Deleted selected actor";
-    }
-
-    int row_y = 252;
-    for (const auto& actor : scene_.actors()) {
-        if (point_in_rect(x, y, 14, row_y, 232, 26)) {
-            scene_.select_actor(actor->id());
-            return;
-        }
-        row_y += 27;
+        break;
+    case EditorCommand::ResetScene:
+        reset_scene();
+        break;
+    case EditorCommand::None:
+        break;
     }
 }
 
@@ -422,10 +426,6 @@ DragMode App::pick_gizmo(int x, int y) const {
     }
     const float threshold = engine_.active_tool() == EditorTool::Rotate ? 16.0f : 22.0f;
     return best_score <= threshold ? best_mode : DragMode::None;
-}
-
-bool App::is_over_editor_ui(int x, int y) const {
-    return y < 44 || x < 260 || x > window_.width() - 322;
 }
 
 Vec3 App::gizmo_axis(DragMode mode, const Transform& transform) const {

@@ -5,6 +5,11 @@
 #include <gl/GL.h>
 #include <shellapi.h>
 
+#include <imgui.h>
+#include <imgui_impl_win32.h>
+
+extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam);
+
 namespace Forge {
 
 Win32Window::~Win32Window() {
@@ -142,6 +147,10 @@ LRESULT CALLBACK Win32Window::window_proc(HWND hwnd, UINT message, WPARAM wparam
 }
 
 LRESULT Win32Window::handle_message(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam) {
+    if (ImGui::GetCurrentContext() != nullptr) {
+        ImGui_ImplWin32_WndProcHandler(hwnd, message, wparam, lparam);
+    }
+
     switch (message) {
     case WM_MOUSEMOVE: {
         const int x = GET_X_LPARAM(lparam);

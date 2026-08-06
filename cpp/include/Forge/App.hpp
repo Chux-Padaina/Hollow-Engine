@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Forge/EditorUi.hpp"
 #include "Forge/Engine.hpp"
 #include "Forge/Renderer.hpp"
 #include "Forge/Scene.hpp"
@@ -38,7 +39,7 @@ private:
     void begin_frame();
     void handle_keyboard();
     void handle_mouse();
-    void handle_ui_click(int x, int y);
+    void execute_editor_command(EditorCommand command);
     void begin_drag(DragMode mode);
     void drag_selected_actor(float dx, float dy);
     void add_mesh(MeshPrimitive primitive);
@@ -48,7 +49,6 @@ private:
     void import_pending_drops();
     ActorId pick_actor(int x, int y) const;
     DragMode pick_gizmo(int x, int y) const;
-    bool is_over_editor_ui(int x, int y) const;
     Vec3 gizmo_axis(DragMode mode, const Transform& transform) const;
     Vec3 base_axis_for_mode(DragMode mode) const;
     DragMode axis_mode_for_tool(DragMode move_axis_mode) const;
@@ -60,6 +60,7 @@ private:
     Engine engine_;
     Scene scene_ = make_default_scene();
     Renderer renderer_;
+    EditorUi editor_ui_;
     Win32Window window_;
     Camera camera_;
     std::chrono::steady_clock::time_point last_frame_;

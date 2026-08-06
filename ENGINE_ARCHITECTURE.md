@@ -21,6 +21,7 @@ Implemented in the active C++ skeleton:
 - `App`
   - owns the native window and frame loop
   - owns `Renderer`
+  - owns `EditorUi`
   - owns `Scene`
   - owns an `Engine` subsystem container
 - `Scene`
@@ -67,7 +68,6 @@ Implemented in the active C++ skeleton:
 
 Implemented in the Rust reference but pending in C++:
 
-- egui/ImGui-style editable editor panels
 - drag/drop glTF/OBJ import
 - precise viewport picking
 - polished interactive move/rotate/scale gizmos
@@ -80,6 +80,7 @@ Implemented in the Rust reference but pending in C++:
 Implemented now:
 
 - One actor-centric outliner.
+- Dear ImGui editor shell with toolbar, outliner, and details panels.
 - Actor details panel:
   - actor transform first
   - then component-specific controls
