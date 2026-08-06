@@ -19,6 +19,8 @@ The project originally started as a Rust prototype. The active implementation is
 - Scene mesh drawing now has a first modern OpenGL path using shader programs and GPU vertex/index buffers.
 - Imported/custom mesh parts are cached on the GPU after first use instead of re-uploading every frame.
 - The object shader now has a first direct-light metallic/roughness PBR pass with directional and point light contribution plus debug views.
+- The viewport work area now uses a light gray editor background as a temporary stand-in until a skybox/environment pass exists.
+- Mesh actors now use a first shader-based expanded-backface outline pass instead of the older selected wireframe shortcut.
 - Dear ImGui is vendored under `cpp/vendor/imgui` and now drives the C++ editor UI.
 - C++ editor controls now include:
   - top toolbar for select/move/rotate/scale, local/world, and snap
@@ -144,7 +146,7 @@ For the Rust-to-C++ feature parity ledger, see [RUST_PARITY_AUDIT.md](RUST_PARIT
 
 ## Next Engineering Steps
 
-1. Visual QA the new C++ PBR shader and debug views in the app.
+1. Visual QA the light workspace background, mesh outline pass, C++ PBR shader, and debug views in the app.
 2. Move remaining editor-only rendering helpers, especially gizmos and grid, away from immediate mode.
 3. Add glTF/GLB drag-drop import in C++.
 4. Add texture sampling and glTF metallic-roughness textures.

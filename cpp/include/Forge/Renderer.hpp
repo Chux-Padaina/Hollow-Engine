@@ -63,6 +63,7 @@ private:
     int width_ = 1280;
     int height_ = 720;
     unsigned int object_program_ = 0;
+    unsigned int outline_program_ = 0;
     GpuMesh cube_mesh_;
     GpuMesh plane_mesh_;
     GpuMesh sphere_mesh_;
@@ -79,6 +80,9 @@ private:
     GpuMesh create_plane_mesh() const;
     GpuMesh create_sphere_mesh() const;
     void draw_custom_mesh_part(const MeshPart& part, const Transform& transform, const Mat4& view_projection, const ObjectUniforms& uniforms);
+    void draw_actor_outline(const Actor& actor, const Mat4& view_projection);
+    void draw_mesh_part_outline(const MeshPart& part, const Transform& transform, const Mat4& view_projection);
+    void draw_gpu_mesh_outline(const GpuMesh& mesh, const Transform& transform, const Mat4& view_projection, float outline_width) const;
     void draw_grid(const Camera& camera) const;
     void draw_actor(const Actor& actor, bool selected, const Mat4& view_projection, const ObjectUniforms& uniforms);
     void draw_mesh_part(const MeshPart& part, const Transform& transform, const Mat4& view_projection, const ObjectUniforms& uniforms);

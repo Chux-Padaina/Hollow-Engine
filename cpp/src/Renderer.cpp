@@ -310,11 +310,12 @@ void Renderer::initialize(HDC device_context) {
     glCullFace(GL_BACK);
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-    glClearColor(0.08f, 0.10f, 0.09f, 1.0f);
+    glClearColor(0.72f, 0.74f, 0.73f, 1.0f);
     try {
         initialize_modern_pipeline();
     } catch (const std::exception&) {
         object_program_ = 0;
+        outline_program_ = 0;
         cube_mesh_ = {};
         plane_mesh_ = {};
         sphere_mesh_ = {};
@@ -338,6 +339,10 @@ void Renderer::shutdown() {
     if (object_program_ != 0 && glx.delete_program != nullptr) {
         glx.delete_program(object_program_);
         object_program_ = 0;
+    }
+    if (outline_program_ != 0 && glx.delete_program != nullptr) {
+        glx.delete_program(outline_program_);
+        outline_program_ = 0;
     }
 }
 
@@ -376,6 +381,12 @@ void Renderer::render(const Scene& scene, const Camera& camera, const Engine& en
         draw_grid(camera);
     }
 
+    if (engine.render_settings().draw_actor_outlines && outline_program_ != 0) {
+        for (const auto& actor : scene.actors()) {
+            draw_actor_outline(*actor, view_projection);
+        }
+    }
+
     for (const auto& actor : scene.actors()) {
         draw_actor(*actor, actor->id() == scene.selected_actor_id(), view_projection, object_uniforms);
     }
@@ -390,8 +401,8 @@ void Renderer::render(const Scene& scene, const Camera& camera, const Engine& en
 
 void Renderer::draw_grid(const Camera& camera) const {
     glDisable(GL_CULL_FACE);
-    const Vec3 minor{0.13f, 0.29f, 0.27f};
-    const Vec3 major{0.9f, 0.85f, 0.1f};
+    const Vec3 minor{0.30f, 0.45f, 0.43f};
+    const Vec3 major{0.88f, 0.80f, 0.10f};
     constexpr int half = 80;
     const Vec3 camera_position = camera.position();
     const float origin_x = std::round(camera_position.x / 10.0f) * 10.0f;
@@ -530,7 +541,28 @@ void main() {
 }
 )";
 
+    constexpr const char* outline_vertex_shader = R"(
+#version 120
+attribute vec3 aPosition;
+attribute vec3 aNormal;
+uniform mat4 uMvp;
+uniform float uOutlineWidth;
+void main() {
+    vec3 normal = normalize(aNormal);
+    gl_Position = uMvp * vec4(aPosition + normal * uOutlineWidth, 1.0);
+}
+)";
+
+    constexpr const char* outline_fragment_shader = R"(
+#version 120
+uniform vec3 uOutlineColor;
+void main() {
+    gl_FragColor = vec4(uOutlineColor, 1.0);
+}
+)";
+
     object_program_ = create_program(vertex_shader, fragment_shader);
+    outline_program_ = create_program(outline_vertex_shader, outline_fragment_shader);
     cube_mesh_ = create_cube_mesh();
     plane_mesh_ = create_plane_mesh();
     sphere_mesh_ = create_sphere_mesh();
@@ -737,6 +769,44 @@ void Renderer::draw_gpu_mesh(const GpuMesh& mesh, const Material& material, cons
     glx.use_program(0);
 }
 
+void Renderer::draw_gpu_mesh_outline(const GpuMesh& mesh, const Transform& transform, const Mat4& view_projection, float outline_width) const {
+    if (outline_program_ == 0 || mesh.vertex_buffer == 0 || mesh.index_buffer == 0 || mesh.index_count <= 0) {
+        return;
+    }
+
+    const Mat4 model = transform.matrix();
+    const Mat4 mvp = view_projection * model;
+
+    glx.use_program(outline_program_);
+    glx.uniform_matrix_4fv(glx.get_uniform_location(outline_program_, "uMvp"), 1, kFalse, mvp.m.data());
+    glx.uniform_1f(glx.get_uniform_location(outline_program_, "uOutlineWidth"), outline_width);
+    glx.uniform_3f(glx.get_uniform_location(outline_program_, "uOutlineColor"), 0.015f, 0.018f, 0.016f);
+
+    glCullFace(GL_FRONT);
+    if (mesh.vertex_array != 0 && glx.bind_vertex_array != nullptr) {
+        glx.bind_vertex_array(mesh.vertex_array);
+    } else {
+        glx.bind_buffer(kArrayBuffer, mesh.vertex_buffer);
+        glx.enable_vertex_attrib_array(0);
+        glx.vertex_attrib_pointer(0, 3, kFloat, kFalse, sizeof(RenderVertex), reinterpret_cast<const void*>(offsetof(RenderVertex, position)));
+        glx.enable_vertex_attrib_array(1);
+        glx.vertex_attrib_pointer(1, 3, kFloat, kFalse, sizeof(RenderVertex), reinterpret_cast<const void*>(offsetof(RenderVertex, normal)));
+    }
+    glx.bind_buffer(kElementArrayBuffer, mesh.index_buffer);
+    glDrawElements(kTriangles, mesh.index_count, kUnsignedInt, nullptr);
+
+    if (mesh.vertex_array != 0 && glx.bind_vertex_array != nullptr) {
+        glx.bind_vertex_array(0);
+    } else {
+        glx.disable_vertex_attrib_array(0);
+        glx.disable_vertex_attrib_array(1);
+    }
+    glx.bind_buffer(kArrayBuffer, 0);
+    glx.bind_buffer(kElementArrayBuffer, 0);
+    glCullFace(GL_BACK);
+    glx.use_program(0);
+}
+
 GpuMesh Renderer::create_cube_mesh() const {
     return create_gpu_mesh(cube_vertices(), quad_face_indices());
 }
@@ -787,6 +857,46 @@ void Renderer::draw_custom_mesh_part(const MeshPart& part, const Transform& tran
     draw_gpu_mesh(it->second, part.material, transform, view_projection, uniforms);
 }
 
+void Renderer::draw_actor_outline(const Actor& actor, const Mat4& view_projection) {
+    const auto* mesh = actor.find_component<StaticMeshComponent>();
+    if (mesh == nullptr || !mesh->visible) {
+        return;
+    }
+
+    for (const auto& part : mesh->parts) {
+        draw_mesh_part_outline(part, actor.root().local_transform, view_projection);
+    }
+}
+
+void Renderer::draw_mesh_part_outline(const MeshPart& part, const Transform& transform, const Mat4& view_projection) {
+    if (outline_program_ == 0 || part.primitive == MeshPrimitive::Plane) {
+        return;
+    }
+
+    const Vec3 scale = transform.scale;
+    const float largest_axis = std::max({std::abs(scale.x), std::abs(scale.y), std::abs(scale.z), 0.001f});
+    const float outline_width = 0.025f / largest_axis;
+
+    switch (part.primitive) {
+    case MeshPrimitive::Cube:
+        draw_gpu_mesh_outline(cube_mesh_, transform, view_projection, outline_width);
+        break;
+    case MeshPrimitive::Sphere:
+        draw_gpu_mesh_outline(sphere_mesh_, transform, view_projection, outline_width);
+        break;
+    case MeshPrimitive::Custom: {
+        auto it = custom_mesh_cache_.find(&part);
+        if (it == custom_mesh_cache_.end()) {
+            it = custom_mesh_cache_.emplace(&part, create_custom_mesh(part)).first;
+        }
+        draw_gpu_mesh_outline(it->second, transform, view_projection, outline_width);
+        break;
+    }
+    case MeshPrimitive::Plane:
+        break;
+    }
+}
+
 void Renderer::draw_actor(const Actor& actor, bool selected, const Mat4& view_projection, const ObjectUniforms& uniforms) {
     if (const auto* mesh = actor.find_component<StaticMeshComponent>()) {
         if (mesh->visible) {
@@ -797,22 +907,6 @@ void Renderer::draw_actor(const Actor& actor, bool selected, const Mat4& view_pr
     }
     if (const auto* light = actor.find_component<LightComponent>()) {
         draw_light_icon(actor, *light, selected);
-    }
-    if (selected && actor.find_component<StaticMeshComponent>()) {
-        glDisable(GL_CULL_FACE);
-        glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-        glLineWidth(2.0f);
-        set_color({0.02f, 0.02f, 0.02f});
-        glPushMatrix();
-        const Mat4 model = actor.root().local_transform.matrix();
-        glMultMatrixf(model.m.data());
-        Material outline;
-        outline.base_color = {0.02f, 0.02f, 0.02f};
-        draw_cube(outline);
-        glPopMatrix();
-        glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
-        glLineWidth(1.0f);
-        glEnable(GL_CULL_FACE);
     }
 }
 

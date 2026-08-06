@@ -40,6 +40,7 @@ This file tracks what exists in the Rust prototype and whether it has been porte
 - Cook-Torrance/GGX direct-light PBR shader for C++ scene meshes.
 - Directional and point light contribution in the C++ object shader.
 - Albedo/normal/lighting/roughness/metallic debug rendering for C++ scene meshes.
+- Light gray editor workarea background.
 
 ## Partially Ported
 
@@ -51,7 +52,10 @@ This file tracks what exists in the Rust prototype and whether it has been porte
   - C++ has center/axis/ring interaction and improved screen-space dragging, but lacks plane handles, hover highlight, polished arrows, and ray-accurate selection.
 - Renderer pass structure:
   - Rust has explicit environment, opaque, outlines, and gizmo passes with shader state.
-  - C++ has the same conceptual order and now draws scene meshes through shaders/VBOs, but editor grid/gizmos/light icons still use immediate-mode bootstrap rendering.
+  - C++ has the same conceptual order and now draws scene meshes and actor outlines through shaders/VBOs, but editor grid/gizmos/light icons still use immediate-mode bootstrap rendering.
+- Outlines:
+  - Rust has a more mature expanded-backface outline pass.
+  - C++ now has the same first-pass outline technique for mesh actors, but it still uses object-space expansion rather than a final screen-pixel-stable outline.
 - Grid:
   - Rust uses a shader-driven grid mesh with camera-following origin.
   - C++ now follows the camera but is still line-rendered.
@@ -71,7 +75,7 @@ This file tracks what exists in the Rust prototype and whether it has been porte
 - Base-color texture import/upload.
 - Texture sampling.
 - Spot lighting in shader.
-- Inverted-hull pixel-width outlines.
+- Screen-pixel-stable outline widths.
 - Smooth stylized lighting bands.
 - Fog and tonemapping.
 - Rust shader source split/parity in C++.
@@ -84,7 +88,7 @@ This file tracks what exists in the Rust prototype and whether it has been porte
 - Torus rotation gizmo mesh.
 - Per-light animated/pulsing intensity helpers.
 - Light packets/count helpers for shader upload.
-- Selected object outline pass matching Rust.
+- Selected-object-specific outline/highlight treatment matching Rust.
 - Texture/material inspector editing.
 - Camera details editing.
 - Scene status messages for import errors.

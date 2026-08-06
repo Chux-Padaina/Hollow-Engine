@@ -35,6 +35,8 @@ Recently added in the new C++ implementation:
 - Persistent GPU cache for imported/custom mesh parts.
 - First C++ Cook-Torrance/GGX object shader with directional and point light contribution.
 - C++ albedo, normal, lighting-only, roughness, and metallic debug views for scene meshes.
+- Temporary light gray editor background before the future skybox/environment lighting pass.
+- First C++ shader-based mesh actor outline pass.
 
 Not yet implemented in either path:
 
@@ -124,7 +126,29 @@ Implementation notes:
 - `F6` displays metallic as grayscale.
 - These views currently show the scalar material factors. Once metallic-roughness textures are imported, they should show the final combined factor multiplied by the texture channel.
 
-### 4. glTF Metallic-Roughness Texture Import
+### 4. Render Pass Hygiene And Stylized Outlines
+
+Move the renderer closer to the final pass structure:
+
+- editor/world background
+- non-scene editor grid
+- actor outline pass
+- opaque PBR actor pass
+- editor icons and gizmos
+
+Why this matters:
+
+The final ZZZ-adjacent style depends on layered rendering. Clean pass order prevents the grid, icons, outlines, and lit geometry from fighting each other.
+
+Status: partially implemented.
+
+Implementation notes:
+
+- The active C++ renderer now has a shader-based expanded-backface outline pass for mesh actors.
+- Planes are skipped by the outline pass so floor/editor planes do not get thick border halos.
+- The current outline width is object-space adjusted by object scale. A later pass should make it screen-pixel-stable, so tiny and huge imported models feel consistent.
+
+### 5. glTF Metallic-Roughness Texture Import
 
 Read glTF material properties:
 
@@ -145,7 +169,7 @@ This is the standard Sketchfab/glTF workflow. Without it, imported assets cannot
 
 Status: pending.
 
-### 5. Normal Mapping And Tangents
+### 6. Normal Mapping And Tangents
 
 Add tangent-space normal mapping.
 
@@ -162,7 +186,7 @@ Normal maps carry most of the small surface detail in modern assets: tire tread,
 
 Status: pending.
 
-### 6. Emissive And Ambient Occlusion
+### 7. Emissive And Ambient Occlusion
 
 Read and use:
 
@@ -176,7 +200,7 @@ Emissive surfaces will be important for signs, screens, decals, and ZZZ-style ac
 
 Status: pending.
 
-### 7. Real Directional Shadow Map
+### 8. Real Directional Shadow Map
 
 Replace planar blob shadows with a basic shadow map.
 
@@ -193,7 +217,7 @@ Real shadows prove that objects can cast onto other objects, not just the floor.
 
 Status: pending.
 
-### 8. HDR Framebuffer And Tonemapping
+### 9. HDR Framebuffer And Tonemapping
 
 Render the scene into an HDR color buffer instead of directly to the window.
 
@@ -210,7 +234,7 @@ PBR lighting often exceeds `0..1`. HDR lets bright lights, emissive materials, a
 
 Status: pending.
 
-### 9. Basic Environment Lighting
+### 10. Basic Environment Lighting
 
 Start simple, then improve.
 
@@ -232,7 +256,7 @@ Metals and glossy surfaces look wrong without environment reflections. Direct li
 
 Status: pending.
 
-### 10. Full PBR Debug Views
+### 11. Full PBR Debug Views
 
 Add debug views for:
 
@@ -257,7 +281,7 @@ Implementation notes:
 - Base color, normals, lighting-only, roughness, metallic, and final shaded views are implemented.
 - Occlusion, emissive, shadow, and texture-specific debug views are still pending.
 
-### 11. Stylized PBR Pass
+### 12. Stylized PBR Pass
 
 After the basic PBR renderer is stable, add stylization.
 
