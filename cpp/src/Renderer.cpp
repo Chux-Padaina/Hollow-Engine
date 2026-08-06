@@ -462,25 +462,77 @@ Vec2 Renderer::project(Vec3 world, const Camera& camera) const {
 }
 
 void Renderer::render(const Scene& scene, const Camera& camera, const Engine& engine) {
+    RenderFrameContext frame = begin_frame(scene, camera, engine);
+    constexpr std::array<RenderPassKind, 7> pass_order{
+        RenderPassKind::ShadowMaps,
+        RenderPassKind::SceneColor,
+        RenderPassKind::EditorGrid,
+        RenderPassKind::ActorOutlines,
+        RenderPassKind::OpaqueGeometry,
+        RenderPassKind::Tonemap,
+        RenderPassKind::EditorOverlay,
+    };
+
+    for (const RenderPassKind pass : pass_order) {
+        switch (pass) {
+        case RenderPassKind::ShadowMaps:
+            execute_shadow_passes(frame);
+            break;
+        case RenderPassKind::SceneColor:
+            begin_scene_color_pass(frame);
+            break;
+        case RenderPassKind::EditorGrid:
+            execute_editor_grid_pass(frame);
+            break;
+        case RenderPassKind::ActorOutlines:
+            execute_outline_pass(frame);
+            break;
+        case RenderPassKind::OpaqueGeometry:
+            execute_opaque_geometry_pass(frame);
+            break;
+        case RenderPassKind::Tonemap:
+            end_scene_color_pass(frame);
+            break;
+        case RenderPassKind::EditorOverlay:
+            execute_editor_overlay_pass(frame);
+            break;
+        }
+    }
+}
+
+RenderFrameContext Renderer::begin_frame(const Scene& scene, const Camera& camera, const Engine& engine) {
     sync_custom_mesh_cache(scene);
     resize(width_, height_);
 
     const float aspect = static_cast<float>(width_) / static_cast<float>(height_);
     const Mat4 projection = Mat4::perspective(camera.fov_y_radians, aspect, 0.05f, 500.0f);
     const Mat4 view = Mat4::look_at(camera.position(), camera.target, {0.0f, 1.0f, 0.0f});
-    const Mat4 view_projection = projection * view;
-    ObjectUniforms object_uniforms = collect_object_uniforms(scene, camera, engine);
-    object_uniforms.hdr_output_enabled = engine.render_settings().hdr_enabled && tonemap_program_ != 0;
+    ObjectUniforms uniforms = collect_object_uniforms(scene, camera, engine);
+    uniforms.hdr_output_enabled = engine.render_settings().hdr_enabled && tonemap_program_ != 0;
 
-    if (object_uniforms.shadows_enabled) {
-        render_shadow_map(scene, object_uniforms);
-    }
-    if (object_uniforms.point_shadows_enabled) {
-        render_point_shadow_maps(scene, object_uniforms);
-    }
+    return {
+        scene,
+        camera,
+        engine,
+        projection,
+        view,
+        projection * view,
+        uniforms,
+        uniforms.hdr_output_enabled,
+    };
+}
 
-    const bool use_hdr = object_uniforms.hdr_output_enabled;
-    if (use_hdr) {
+void Renderer::execute_shadow_passes(const RenderFrameContext& frame) {
+    if (frame.object_uniforms.shadows_enabled) {
+        render_shadow_map(frame.scene, frame.object_uniforms);
+    }
+    if (frame.object_uniforms.point_shadows_enabled) {
+        render_point_shadow_maps(frame.scene, frame.object_uniforms);
+    }
+}
+
+void Renderer::begin_scene_color_pass(const RenderFrameContext& frame) {
+    if (frame.use_hdr) {
         ensure_hdr_framebuffer();
         glx.bind_framebuffer(kFramebuffer, hdr_framebuffer_);
     } else if (glx.ready()) {
@@ -491,48 +543,63 @@ void Renderer::render(const Scene& scene, const Camera& camera, const Engine& en
 
     glViewport(0, 0, width_, height_);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    restore_camera_matrices(frame);
+}
 
+void Renderer::execute_editor_grid_pass(const RenderFrameContext& frame) const {
+    if (frame.engine.render_settings().draw_world_grid) {
+        draw_grid(frame.camera);
+    }
+}
+
+void Renderer::execute_outline_pass(const RenderFrameContext& frame) {
+    if (!frame.engine.render_settings().draw_actor_outlines || outline_program_ == 0) {
+        return;
+    }
+
+    for (const auto& actor : frame.scene.actors()) {
+        draw_actor_outline(*actor, frame.view_projection);
+    }
+}
+
+void Renderer::execute_opaque_geometry_pass(const RenderFrameContext& frame) {
+    for (const auto& actor : frame.scene.actors()) {
+        draw_actor(*actor, actor->id() == frame.scene.selected_actor_id(), frame.view_projection, frame.object_uniforms);
+    }
+}
+
+void Renderer::end_scene_color_pass(const RenderFrameContext& frame) {
+    if (!frame.use_hdr) {
+        return;
+    }
+
+    glx.bind_framebuffer(kFramebuffer, 0);
+    glDrawBuffer(kBack);
+    glReadBuffer(kBack);
+    glViewport(0, 0, width_, height_);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    render_tonemapped_frame(frame.engine.render_settings().exposure, frame.object_uniforms.debug_view);
+    glDrawBuffer(kBack);
+    glReadBuffer(kBack);
+    glClear(GL_DEPTH_BUFFER_BIT);
+    restore_camera_matrices(frame);
+}
+
+void Renderer::execute_editor_overlay_pass(const RenderFrameContext& frame) {
+    const Actor* selected = frame.scene.selected_actor();
+    if (selected == nullptr || !frame.engine.render_settings().draw_editor_gizmos) {
+        return;
+    }
+
+    glClear(GL_DEPTH_BUFFER_BIT);
+    draw_gizmo(*selected, frame.engine.active_tool(), frame.engine.transform_space());
+}
+
+void Renderer::restore_camera_matrices(const RenderFrameContext& frame) const {
     glMatrixMode(GL_PROJECTION);
-    glLoadMatrixf(projection.m.data());
+    glLoadMatrixf(frame.projection.m.data());
     glMatrixMode(GL_MODELVIEW);
-    glLoadMatrixf(view.m.data());
-
-    if (engine.render_settings().draw_world_grid) {
-        draw_grid(camera);
-    }
-
-    if (engine.render_settings().draw_actor_outlines && outline_program_ != 0) {
-        for (const auto& actor : scene.actors()) {
-            draw_actor_outline(*actor, view_projection);
-        }
-    }
-
-    for (const auto& actor : scene.actors()) {
-        draw_actor(*actor, actor->id() == scene.selected_actor_id(), view_projection, object_uniforms);
-    }
-
-    if (use_hdr) {
-        glx.bind_framebuffer(kFramebuffer, 0);
-        glDrawBuffer(kBack);
-        glReadBuffer(kBack);
-        glViewport(0, 0, width_, height_);
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-        render_tonemapped_frame(engine.render_settings().exposure, object_uniforms.debug_view);
-        glDrawBuffer(kBack);
-        glReadBuffer(kBack);
-        glClear(GL_DEPTH_BUFFER_BIT);
-        glMatrixMode(GL_PROJECTION);
-        glLoadMatrixf(projection.m.data());
-        glMatrixMode(GL_MODELVIEW);
-        glLoadMatrixf(view.m.data());
-    }
-
-    if (const Actor* selected = scene.selected_actor()) {
-        if (engine.render_settings().draw_editor_gizmos) {
-            glClear(GL_DEPTH_BUFFER_BIT);
-            draw_gizmo(*selected, engine.active_tool(), engine.transform_space());
-        }
-    }
+    glLoadMatrixf(frame.view.m.data());
 }
 
 void Renderer::draw_grid(const Camera& camera) const {

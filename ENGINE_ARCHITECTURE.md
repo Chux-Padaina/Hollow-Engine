@@ -66,14 +66,29 @@ Implemented in the active C++ skeleton:
   - Post Processing
   - Save/Load
 
-Implemented in the Rust reference but pending in C++:
+Implemented in the Rust reference but still incomplete in C++:
 
-- drag/drop glTF/OBJ import
 - precise viewport picking
 - polished interactive move/rotate/scale gizmos
-- shader-based PBR rendering
-- material debug views
-- drag/drop file import and asset material preservation
+- full scene save/load
+- skeletal animation and morph target import
+- production post-processing and environment lighting
+
+## Current Renderer Shape
+
+The renderer now uses an explicit frame context and named pass methods instead of one monolithic frame body.
+
+Current pass order:
+
+- shadow maps
+- scene color target setup
+- editor grid
+- actor outlines
+- opaque geometry and light icons
+- HDR tonemap back to the window
+- editor overlay/gizmos
+
+This is not a full render graph yet. The next architecture step is to turn these pass methods into data-driven pass descriptors with declared inputs, outputs, viewport state, and dependencies. That is the foundation needed for IBL, bloom, SSAO, shadow atlases, deferred buffers, and post-process volumes.
 
 ## Current Editor Shape
 

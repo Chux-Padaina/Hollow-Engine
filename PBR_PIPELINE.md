@@ -150,13 +150,15 @@ Why this matters:
 
 The final ZZZ-adjacent style depends on layered rendering. Clean pass order prevents the grid, icons, outlines, and lit geometry from fighting each other.
 
-Status: partially implemented.
+Status: implemented as an explicit first-pass frame pipeline.
 
 Implementation notes:
 
+- `Renderer::render` now builds a frame context and runs named passes for shadow maps, scene color setup, editor grid, actor outlines, opaque geometry, tonemapping, and editor overlays.
 - The active C++ renderer now has a shader-based expanded-backface outline pass for mesh actors.
 - Planes are skipped by the outline pass so floor/editor planes do not get thick border halos.
 - The current outline width is object-space adjusted by object scale. A later pass should make it screen-pixel-stable, so tiny and huge imported models feel consistent.
+- The next production step is to turn the named pass methods into data-driven pass descriptors with explicit render-target inputs/outputs and dependency ordering.
 
 ### 5. glTF Metallic-Roughness Texture Import
 

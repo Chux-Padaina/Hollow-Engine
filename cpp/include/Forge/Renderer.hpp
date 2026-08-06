@@ -75,6 +75,27 @@ struct ObjectUniforms {
     int debug_view = 0;
 };
 
+enum class RenderPassKind {
+    ShadowMaps,
+    SceneColor,
+    EditorGrid,
+    ActorOutlines,
+    OpaqueGeometry,
+    Tonemap,
+    EditorOverlay,
+};
+
+struct RenderFrameContext {
+    const Scene& scene;
+    const Camera& camera;
+    const Engine& engine;
+    Mat4 projection;
+    Mat4 view;
+    Mat4 view_projection;
+    ObjectUniforms object_uniforms;
+    bool use_hdr = false;
+};
+
 class Renderer {
 public:
     void initialize(HDC device_context);
@@ -109,6 +130,15 @@ private:
     unsigned int white_texture_ = 0;
 
     bool initialize_modern_pipeline();
+    RenderFrameContext begin_frame(const Scene& scene, const Camera& camera, const Engine& engine);
+    void execute_shadow_passes(const RenderFrameContext& frame);
+    void begin_scene_color_pass(const RenderFrameContext& frame);
+    void execute_editor_grid_pass(const RenderFrameContext& frame) const;
+    void execute_outline_pass(const RenderFrameContext& frame);
+    void execute_opaque_geometry_pass(const RenderFrameContext& frame);
+    void end_scene_color_pass(const RenderFrameContext& frame);
+    void execute_editor_overlay_pass(const RenderFrameContext& frame);
+    void restore_camera_matrices(const RenderFrameContext& frame) const;
     ObjectUniforms collect_object_uniforms(const Scene& scene, const Camera& camera, const Engine& engine) const;
     void sync_custom_mesh_cache(const Scene& scene);
     GpuMesh create_gpu_mesh(const std::vector<RenderVertex>& vertices, const std::vector<std::uint32_t>& indices) const;

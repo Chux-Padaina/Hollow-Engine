@@ -16,6 +16,7 @@ The project originally started as a Rust prototype. The active implementation is
   - placeholders exist for future engine/game systems
 - Default C++ scene with two cube actors, one directional light actor, and one point light actor.
 - C++ renderer draws the world grid, actors, light icons, and local/world-aware gizmos.
+- `Renderer::render` now uses an explicit frame context and named passes for shadows, scene color, editor grid, outlines, opaque geometry, tonemapping, and overlays.
 - Scene mesh drawing now has a first modern OpenGL path using shader programs and GPU vertex/index buffers.
 - Imported/custom mesh parts are cached on the GPU after first use instead of re-uploading every frame.
 - The object shader now has a first direct-light metallic/roughness PBR pass with directional and point light contribution plus debug views.
