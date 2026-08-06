@@ -83,6 +83,60 @@ Vec3 transform_vector(const Mat4& matrix, Vec3 v) {
     });
 }
 
+Vec3 safe_tangent_for_normal(Vec3 normal) {
+    const Vec3 up = std::abs(normal.y) < 0.95f ? Vec3{0.0f, 1.0f, 0.0f} : Vec3{1.0f, 0.0f, 0.0f};
+    return normalize(cross(up, normal));
+}
+
+void generate_tangents(MeshPart& part) {
+    std::vector<Vec3> tangents(part.vertices.size(), {});
+    std::vector<Vec3> bitangents(part.vertices.size(), {});
+
+    for (std::size_t i = 0; i + 2 < part.indices.size(); i += 3) {
+        const std::uint32_t i0 = part.indices[i];
+        const std::uint32_t i1 = part.indices[i + 1];
+        const std::uint32_t i2 = part.indices[i + 2];
+        if (i0 >= part.vertices.size() || i1 >= part.vertices.size() || i2 >= part.vertices.size()) {
+            continue;
+        }
+
+        const Vertex& v0 = part.vertices[i0];
+        const Vertex& v1 = part.vertices[i1];
+        const Vertex& v2 = part.vertices[i2];
+        const Vec3 edge1 = v1.position - v0.position;
+        const Vec3 edge2 = v2.position - v0.position;
+        const Vec2 duv1{v1.uv.x - v0.uv.x, v1.uv.y - v0.uv.y};
+        const Vec2 duv2{v2.uv.x - v0.uv.x, v2.uv.y - v0.uv.y};
+        const float determinant = duv1.x * duv2.y - duv2.x * duv1.y;
+        if (std::abs(determinant) <= 0.000001f) {
+            continue;
+        }
+
+        const float r = 1.0f / determinant;
+        const Vec3 tangent = (edge1 * duv2.y - edge2 * duv1.y) * r;
+        const Vec3 bitangent = (edge2 * duv1.x - edge1 * duv2.x) * r;
+        tangents[i0] += tangent;
+        tangents[i1] += tangent;
+        tangents[i2] += tangent;
+        bitangents[i0] += bitangent;
+        bitangents[i1] += bitangent;
+        bitangents[i2] += bitangent;
+    }
+
+    for (std::size_t i = 0; i < part.vertices.size(); ++i) {
+        Vertex& vertex = part.vertices[i];
+        const Vec3 normal = normalize(vertex.normal);
+        Vec3 tangent = tangents[i];
+        tangent = normalize(tangent - normal * dot(normal, tangent));
+        if (length(tangent) <= 0.0001f) {
+            tangent = safe_tangent_for_normal(normal);
+        }
+        const float sign = dot(cross(normal, tangent), bitangents[i]) < 0.0f ? -1.0f : 1.0f;
+        vertex.tangent = tangent;
+        vertex.tangent_sign = sign;
+    }
+}
+
 Mat4 gltf_node_transform(const JsonValue& node) {
     if (const JsonValue* matrix = node.find("matrix"); matrix != nullptr && matrix->is_array() && matrix->array_value.size() == 16) {
         Mat4 out;
@@ -553,7 +607,9 @@ Material read_gltf_material(const GltfDocument& document, int material_index) {
         material.base_color_texture_path = texture_image_path(document, pbr.at("baseColorTexture"));
         material.metallic_roughness_texture_path = texture_image_path(document, pbr.at("metallicRoughnessTexture"));
     }
-    material.normal_texture_path = texture_image_path(document, material_json.at("normalTexture"));
+    const JsonValue& normal_texture = material_json.at("normalTexture");
+    material.normal_texture_path = texture_image_path(document, normal_texture);
+    material.normal_strength = normal_texture.at("scale").as_float(1.0f);
     material.emissive_texture_path = texture_image_path(document, material_json.at("emissiveTexture"));
     return material;
 }
@@ -593,6 +649,7 @@ MeshPart build_gltf_primitive(const GltfDocument& document, const JsonValue& mes
     }
 
     part.indices = read_indices(document, primitive, positions.count);
+    generate_tangents(part);
     float radius = 0.001f;
     for (const Vertex& vertex : part.vertices) {
         radius = std::max(radius, length(vertex.position));
@@ -845,6 +902,7 @@ ImportedModel load_obj(const std::filesystem::path& path) {
         part.material = builder.material;
         part.vertices = std::move(builder.vertices);
         part.indices = std::move(builder.indices);
+        generate_tangents(part);
         imported.parts.push_back(std::move(part));
     }
     normalize_parts(imported.parts);

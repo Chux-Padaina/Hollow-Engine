@@ -32,6 +32,8 @@ struct RenderVertex {
     Vec3 normal;
     Vec3 color;
     Vec2 uv;
+    Vec3 tangent;
+    float tangent_sign = 1.0f;
 };
 
 struct GpuMesh {
@@ -89,6 +91,7 @@ private:
     GpuTexture create_texture_from_file(const std::string& path) const;
     unsigned int resolve_base_color_texture(const Material& material) const;
     unsigned int resolve_metallic_roughness_texture(const Material& material) const;
+    unsigned int resolve_normal_texture(const Material& material) const;
     void destroy_texture(GpuTexture& texture) const;
     void draw_gpu_mesh(const GpuMesh& mesh, const Material& material, const Transform& transform, const Mat4& view_projection, const ObjectUniforms& uniforms);
     GpuMesh create_cube_mesh() const;

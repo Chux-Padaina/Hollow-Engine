@@ -42,6 +42,7 @@ constexpr unsigned int kTextureWrapT = 0x2803;
 constexpr unsigned int kUnpackAlignment = 0x0CF5;
 constexpr unsigned int kTexture0 = 0x84C0;
 constexpr unsigned int kTexture1 = 0x84C1;
+constexpr unsigned int kTexture2 = 0x84C2;
 
 using GlCreateShader = unsigned int(APIENTRY*)(unsigned int shader_type);
 using GlShaderSource = void(APIENTRY*)(unsigned int shader, int count, const char* const* string, const int* length);
@@ -226,6 +227,8 @@ unsigned int create_program(const char* vertex_source, const char* fragment_sour
     glx.bind_attrib_location(program, 1, "aNormal");
     glx.bind_attrib_location(program, 2, "aColor");
     glx.bind_attrib_location(program, 3, "aUv");
+    glx.bind_attrib_location(program, 4, "aTangent");
+    glx.bind_attrib_location(program, 5, "aTangentSign");
     glx.link_program(program);
     glx.delete_shader(vertex);
     glx.delete_shader(fragment);
@@ -256,8 +259,14 @@ Vec3 shade(const Material& material, Vec3 normal) {
 }
 
 std::vector<RenderVertex> cube_vertices() {
-    auto v = [](Vec3 p, Vec3 n, Vec2 uv) {
-        return RenderVertex{p, n, {1.0f, 1.0f, 1.0f}, uv};
+    auto t = [](Vec3 normal) {
+        if (std::abs(normal.y) > 0.9f) {
+            return Vec3{1.0f, 0.0f, 0.0f};
+        }
+        return normalize(cross(Vec3{0.0f, 1.0f, 0.0f}, normal));
+    };
+    auto v = [&t](Vec3 p, Vec3 n, Vec2 uv) {
+        return RenderVertex{p, n, {1.0f, 1.0f, 1.0f}, uv, t(n), 1.0f};
     };
     return {
         v({-0.5f, -0.5f, 0.5f}, {0, 0, 1}, {0, 1}), v({0.5f, -0.5f, 0.5f}, {0, 0, 1}, {1, 1}), v({0.5f, 0.5f, 0.5f}, {0, 0, 1}, {1, 0}), v({-0.5f, 0.5f, 0.5f}, {0, 0, 1}, {0, 0}),
@@ -456,18 +465,24 @@ attribute vec3 aPosition;
 attribute vec3 aNormal;
 attribute vec3 aColor;
 attribute vec2 aUv;
+attribute vec3 aTangent;
+attribute float aTangentSign;
 uniform mat4 uModel;
 uniform mat4 uMvp;
 varying vec3 vWorldPosition;
 varying vec3 vNormal;
 varying vec3 vColor;
 varying vec2 vUv;
+varying vec3 vTangent;
+varying float vTangentSign;
 void main() {
     vec4 worldPosition = uModel * vec4(aPosition, 1.0);
     vWorldPosition = worldPosition.xyz;
     vNormal = normalize(mat3(uModel) * aNormal);
     vColor = aColor;
     vUv = aUv;
+    vTangent = normalize(mat3(uModel) * aTangent);
+    vTangentSign = aTangentSign;
     gl_Position = uMvp * vec4(aPosition, 1.0);
 }
 )";
@@ -477,6 +492,7 @@ void main() {
 uniform vec3 uBaseColor;
 uniform float uRoughness;
 uniform float uMetallic;
+uniform float uNormalStrength;
 uniform vec3 uCameraPosition;
 uniform vec3 uDirectionalDirection;
 uniform vec3 uDirectionalColor;
@@ -490,10 +506,14 @@ uniform sampler2D uBaseColorTexture;
 uniform int uHasBaseColorTexture;
 uniform sampler2D uMetallicRoughnessTexture;
 uniform int uHasMetallicRoughnessTexture;
+uniform sampler2D uNormalTexture;
+uniform int uHasNormalTexture;
 varying vec3 vWorldPosition;
 varying vec3 vNormal;
 varying vec3 vColor;
 varying vec2 vUv;
+varying vec3 vTangent;
+varying float vTangentSign;
 
 const float PI = 3.14159265359;
 
@@ -539,6 +559,14 @@ vec3 pbr_light(vec3 albedo, float metallic, float roughness, vec3 n, vec3 v, vec
 
 void main() {
     vec3 n = normalize(vNormal);
+    vec3 t = normalize(vTangent - n * dot(n, vTangent));
+    vec3 b = normalize(cross(n, t) * vTangentSign);
+    if (uHasNormalTexture == 1) {
+        vec3 tangentNormal = texture2D(uNormalTexture, vUv).xyz * 2.0 - 1.0;
+        tangentNormal.xy *= uNormalStrength;
+        tangentNormal = normalize(tangentNormal);
+        n = normalize(t * tangentNormal.x + b * tangentNormal.y + n * tangentNormal.z);
+    }
     vec3 v = normalize(uCameraPosition - vWorldPosition);
     vec3 sampledBaseColor = uHasBaseColorTexture == 1 ? texture2D(uBaseColorTexture, vUv).rgb : vec3(1.0);
     vec3 albedo = clamp(uBaseColor * vColor * sampledBaseColor, 0.0, 1.0);
@@ -643,6 +671,10 @@ GpuMesh Renderer::create_gpu_mesh(const std::vector<RenderVertex>& vertices, con
     glx.vertex_attrib_pointer(2, 3, kFloat, kFalse, sizeof(RenderVertex), reinterpret_cast<const void*>(offsetof(RenderVertex, color)));
     glx.enable_vertex_attrib_array(3);
     glx.vertex_attrib_pointer(3, 2, kFloat, kFalse, sizeof(RenderVertex), reinterpret_cast<const void*>(offsetof(RenderVertex, uv)));
+    glx.enable_vertex_attrib_array(4);
+    glx.vertex_attrib_pointer(4, 3, kFloat, kFalse, sizeof(RenderVertex), reinterpret_cast<const void*>(offsetof(RenderVertex, tangent)));
+    glx.enable_vertex_attrib_array(5);
+    glx.vertex_attrib_pointer(5, 1, kFloat, kFalse, sizeof(RenderVertex), reinterpret_cast<const void*>(offsetof(RenderVertex, tangent_sign)));
 
     if (glx.bind_vertex_array != nullptr) {
         glx.bind_vertex_array(0);
@@ -747,7 +779,7 @@ GpuMesh Renderer::create_custom_mesh(const MeshPart& part) const {
     std::vector<RenderVertex> vertices;
     vertices.reserve(part.vertices.size());
     for (const Vertex& vertex : part.vertices) {
-        vertices.push_back({vertex.position, vertex.normal, vertex.color, vertex.uv});
+        vertices.push_back({vertex.position, vertex.normal, vertex.color, vertex.uv, vertex.tangent, vertex.tangent_sign});
     }
     return create_gpu_mesh(vertices, part.indices);
 }
@@ -825,6 +857,21 @@ unsigned int Renderer::resolve_metallic_roughness_texture(const Material& materi
     return it->second.id;
 }
 
+unsigned int Renderer::resolve_normal_texture(const Material& material) const {
+    if (material.normal_texture_path.empty()) {
+        return white_texture_;
+    }
+
+    auto it = texture_cache_.find(material.normal_texture_path);
+    if (it == texture_cache_.end()) {
+        it = texture_cache_.emplace(material.normal_texture_path, create_texture_from_file(material.normal_texture_path)).first;
+    }
+    if (it->second.failed || it->second.id == 0) {
+        return white_texture_;
+    }
+    return it->second.id;
+}
+
 void Renderer::destroy_texture(GpuTexture& texture) const {
     if (texture.id != 0) {
         glDeleteTextures(1, &texture.id);
@@ -845,6 +892,7 @@ void Renderer::draw_gpu_mesh(const GpuMesh& mesh, const Material& material, cons
     glx.uniform_3f(glx.get_uniform_location(object_program_, "uBaseColor"), material.base_color.x, material.base_color.y, material.base_color.z);
     glx.uniform_1f(glx.get_uniform_location(object_program_, "uRoughness"), material.roughness);
     glx.uniform_1f(glx.get_uniform_location(object_program_, "uMetallic"), material.metallic);
+    glx.uniform_1f(glx.get_uniform_location(object_program_, "uNormalStrength"), material.normal_strength);
     glx.uniform_3f(glx.get_uniform_location(object_program_, "uCameraPosition"), uniforms.camera_position.x, uniforms.camera_position.y, uniforms.camera_position.z);
     glx.uniform_3f(glx.get_uniform_location(object_program_, "uDirectionalDirection"), uniforms.directional_direction.x, uniforms.directional_direction.y, uniforms.directional_direction.z);
     glx.uniform_3f(glx.get_uniform_location(object_program_, "uDirectionalColor"), uniforms.directional_color.x, uniforms.directional_color.y, uniforms.directional_color.z);
@@ -858,10 +906,14 @@ void Renderer::draw_gpu_mesh(const GpuMesh& mesh, const Material& material, cons
     glx.uniform_1i(glx.get_uniform_location(object_program_, "uHasBaseColorTexture"), material.base_color_texture_path.empty() ? 0 : 1);
     glx.uniform_1i(glx.get_uniform_location(object_program_, "uMetallicRoughnessTexture"), 1);
     glx.uniform_1i(glx.get_uniform_location(object_program_, "uHasMetallicRoughnessTexture"), material.metallic_roughness_texture_path.empty() ? 0 : 1);
+    glx.uniform_1i(glx.get_uniform_location(object_program_, "uNormalTexture"), 2);
+    glx.uniform_1i(glx.get_uniform_location(object_program_, "uHasNormalTexture"), material.normal_texture_path.empty() ? 0 : 1);
     glx.active_texture(kTexture0);
     glBindTexture(kTexture2D, resolve_base_color_texture(material));
     glx.active_texture(kTexture1);
     glBindTexture(kTexture2D, resolve_metallic_roughness_texture(material));
+    glx.active_texture(kTexture2);
+    glBindTexture(kTexture2D, resolve_normal_texture(material));
     glx.active_texture(kTexture0);
 
     if (mesh.vertex_array != 0 && glx.bind_vertex_array != nullptr) {
@@ -876,6 +928,10 @@ void Renderer::draw_gpu_mesh(const GpuMesh& mesh, const Material& material, cons
         glx.vertex_attrib_pointer(2, 3, kFloat, kFalse, sizeof(RenderVertex), reinterpret_cast<const void*>(offsetof(RenderVertex, color)));
         glx.enable_vertex_attrib_array(3);
         glx.vertex_attrib_pointer(3, 2, kFloat, kFalse, sizeof(RenderVertex), reinterpret_cast<const void*>(offsetof(RenderVertex, uv)));
+        glx.enable_vertex_attrib_array(4);
+        glx.vertex_attrib_pointer(4, 3, kFloat, kFalse, sizeof(RenderVertex), reinterpret_cast<const void*>(offsetof(RenderVertex, tangent)));
+        glx.enable_vertex_attrib_array(5);
+        glx.vertex_attrib_pointer(5, 1, kFloat, kFalse, sizeof(RenderVertex), reinterpret_cast<const void*>(offsetof(RenderVertex, tangent_sign)));
     }
     glx.bind_buffer(kElementArrayBuffer, mesh.index_buffer);
     glDrawElements(kTriangles, mesh.index_count, kUnsignedInt, nullptr);
@@ -887,9 +943,13 @@ void Renderer::draw_gpu_mesh(const GpuMesh& mesh, const Material& material, cons
         glx.disable_vertex_attrib_array(1);
         glx.disable_vertex_attrib_array(2);
         glx.disable_vertex_attrib_array(3);
+        glx.disable_vertex_attrib_array(4);
+        glx.disable_vertex_attrib_array(5);
     }
     glx.bind_buffer(kArrayBuffer, 0);
     glx.bind_buffer(kElementArrayBuffer, 0);
+    glx.active_texture(kTexture2);
+    glBindTexture(kTexture2D, 0);
     glx.active_texture(kTexture1);
     glBindTexture(kTexture2D, 0);
     glx.active_texture(kTexture0);
@@ -941,10 +1001,10 @@ GpuMesh Renderer::create_cube_mesh() const {
 
 GpuMesh Renderer::create_plane_mesh() const {
     std::vector<RenderVertex> vertices{
-        {{-0.5f, 0.0f, -0.5f}, {0, 1, 0}, {1, 1, 1}, {0, 1}},
-        {{0.5f, 0.0f, -0.5f}, {0, 1, 0}, {1, 1, 1}, {1, 1}},
-        {{0.5f, 0.0f, 0.5f}, {0, 1, 0}, {1, 1, 1}, {1, 0}},
-        {{-0.5f, 0.0f, 0.5f}, {0, 1, 0}, {1, 1, 1}, {0, 0}},
+        {{-0.5f, 0.0f, -0.5f}, {0, 1, 0}, {1, 1, 1}, {0, 1}, {1, 0, 0}, 1.0f},
+        {{0.5f, 0.0f, -0.5f}, {0, 1, 0}, {1, 1, 1}, {1, 1}, {1, 0, 0}, 1.0f},
+        {{0.5f, 0.0f, 0.5f}, {0, 1, 0}, {1, 1, 1}, {1, 0}, {1, 0, 0}, 1.0f},
+        {{-0.5f, 0.0f, 0.5f}, {0, 1, 0}, {1, 1, 1}, {0, 0}, {1, 0, 0}, 1.0f},
     };
     std::vector<std::uint32_t> indices{0, 1, 2, 0, 2, 3};
     return create_gpu_mesh(vertices, indices);
@@ -962,7 +1022,8 @@ GpuMesh Renderer::create_sphere_mesh() const {
             const float u = static_cast<float>(x) / segments;
             const float theta = u * kPi * 2.0f;
             Vec3 normal{std::cos(phi) * std::cos(theta), std::sin(phi), std::cos(phi) * std::sin(theta)};
-            vertices.push_back({normal * 0.5f, normal, {1, 1, 1}, {u, 1.0f - v}});
+            const Vec3 tangent = normalize(Vec3{-std::sin(theta), 0.0f, std::cos(theta)});
+            vertices.push_back({normal * 0.5f, normal, {1, 1, 1}, {u, 1.0f - v}, tangent, 1.0f});
         }
     }
     for (int y = 0; y < rings; ++y) {

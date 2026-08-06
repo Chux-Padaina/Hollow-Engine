@@ -235,6 +235,7 @@ EditorCommand EditorUi::draw(Scene& scene, Engine& engine, Camera& camera, bool&
                 changed |= ImGui::ColorEdit3("Base color", &material.base_color.x);
                 changed |= ImGui::SliderFloat("Metallic", &material.metallic, 0.0f, 1.0f);
                 changed |= ImGui::SliderFloat("Roughness", &material.roughness, 0.04f, 1.0f);
+                changed |= ImGui::SliderFloat("Normal strength", &material.normal_strength, 0.0f, 2.0f);
                 if (!material.base_color_texture_path.empty()) {
                     ImGui::TextWrapped("Base texture: %s", material.base_color_texture_path.c_str());
                 }

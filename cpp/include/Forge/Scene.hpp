@@ -56,6 +56,7 @@ struct Material {
     Vec3 base_color{0.75f, 0.72f, 0.62f};
     float metallic = 0.0f;
     float roughness = 0.55f;
+    float normal_strength = 1.0f;
     std::string base_color_texture_path;
     std::string metallic_roughness_texture_path;
     std::string normal_texture_path;
@@ -65,6 +66,8 @@ struct Material {
 struct Vertex {
     Vec3 position{};
     Vec3 normal{0.0f, 1.0f, 0.0f};
+    Vec3 tangent{1.0f, 0.0f, 0.0f};
+    float tangent_sign = 1.0f;
     Vec2 uv{};
     Vec3 color{1.0f, 1.0f, 1.0f};
 };

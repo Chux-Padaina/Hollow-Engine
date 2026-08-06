@@ -48,8 +48,12 @@ This file tracks what exists in the Rust prototype and whether it has been porte
 - Static `.gltf`/`.glb` import in C++ by command-line argument and drag/drop.
 - glTF node transform preservation for imported static meshes.
 - glTF base color, metallic, and roughness factor import.
+- glTF normal texture path and normal strength import.
 - glTF vertex color and UV import.
 - glTF external buffers, embedded GLB buffer chunks, external image references, data URI images, and embedded image buffer views.
+- Tangent generation for imported/custom meshes.
+- Tangent-space normal map sampling in the C++ object shader.
+- Material normal-strength editing in the details panel.
 
 ## Partially Ported
 
@@ -70,7 +74,7 @@ This file tracks what exists in the Rust prototype and whether it has been porte
   - C++ now follows the camera but is still line-rendered.
 - Material/display state:
   - Rust has metallic/roughness sliders and debug views connected to shader uniforms.
-  - C++ now renders material factors, texture-backed base color, and texture-backed combined metallic/roughness maps in the object shader, but normal-map shading is still pending.
+  - C++ now renders material factors, texture-backed base color, texture-backed combined metallic/roughness maps, and texture-backed tangent-space normal maps in the object shader.
 
 ## Not Yet Ported
 

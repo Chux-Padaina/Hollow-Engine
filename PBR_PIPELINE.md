@@ -42,10 +42,10 @@ Recently added in the new C++ implementation:
 - OBJ `.mtl` texture path import.
 - Base-color and combined metallic/roughness texture sampling in the C++ PBR shader.
 - Static `.gltf`/`.glb` mesh and material import in C++.
+- Tangent generation and tangent-space normal map sampling in the C++ PBR shader.
 
 Not yet implemented in either path:
 
-- Normal maps and tangent-space shading.
 - Occlusion and emissive texture import.
 - Real shadow maps.
 - Image-based lighting/reflection probes.
@@ -87,7 +87,7 @@ Implementation notes:
 - Meshes now carry `MaterialProperties` with `metallic` and `roughness`.
 - glTF `metallicFactor` and `roughnessFactor`, OBJ material factors, and editor factor controls are active.
 - The default test scene uses a rough non-metal cube, a smoother metal cube, and a rough non-metal floor.
-- This is not full engine PBR yet because it does not include normal maps, metallic-roughness textures, real shadow maps, or image-based lighting.
+- This is not full engine PBR yet because it does not include real shadow maps, image-based lighting, HDR, or post-processing.
 
 ### 2. Material Properties And Inspector Controls
 
@@ -97,7 +97,7 @@ Add per-material or per-object controls for:
 - metallic factor
 - roughness factor
 - emissive factor
-- normal strength later
+- normal strength
 
 Why this matters:
 
@@ -108,9 +108,10 @@ Status: partially implemented and shader-connected for scalar/factor controls pl
 Implementation notes:
 
 - The C++ Dear ImGui details panel exposes base color, metallic, and roughness controls for selected mesh actors.
+- Normal strength is exposed for selected mesh actors and is connected to tangent-space normal map sampling.
 - The details panel also shows imported texture slot paths for base color, metallic/roughness, normal, and emissive maps when present.
 - The current control applies the same factor values to every mesh in the selected group. That keeps testing simple, but later we should expose per-material slots so imported multi-material assets can preserve different settings per part.
-- Emissive factor and normal strength controls are still pending.
+- Emissive factor controls are still pending.
 
 ### 3. PBR Debug Views
 
@@ -181,7 +182,7 @@ Implementation notes:
 - The object shader samples base-color textures and combined metallic/roughness textures.
 - OBJ `.mtl` import records common texture map references.
 - glTF/GLB import now reads static triangle meshes, node transforms, UVs, vertex colors, base color factors, metallic/roughness factors, and texture references.
-- This is still not a complete glTF renderer path because skins, animation, morph targets, tangent-space normal maps, camera import, and light extensions are pending.
+- This is still not a complete glTF renderer path because skins, animation, morph targets, camera import, and light extensions are pending.
 
 ### 6. Normal Mapping And Tangents
 
@@ -189,8 +190,7 @@ Add tangent-space normal mapping.
 
 Needed data:
 
-- vertex tangents from glTF when present
-- generated tangents when missing
+- generated tangents from positions and UVs
 - normal map texture
 - tangent-bitangent-normal matrix in shader
 
@@ -198,7 +198,15 @@ Why this matters:
 
 Normal maps carry most of the small surface detail in modern assets: tire tread, fabric weave, panel grooves, screws, vents, bevels, and scratches.
 
-Status: pending.
+Status: implemented for the current static mesh renderer/import path.
+
+Implementation notes:
+
+- Imported OBJ and glTF mesh parts generate tangents from triangle positions and UVs.
+- Built-in cube, plane, and sphere meshes carry tangent data.
+- The C++ shader samples normal maps, reconstructs the world-space shading normal through TBN, and uses that normal for PBR lighting and the normal debug view.
+- glTF `normalTexture.scale` is imported as material normal strength.
+- Authored glTF tangent attributes are not preserved yet; generation is good enough for most static test assets, but authored tangents may be useful later for perfect parity with DCC exports.
 
 ### 7. Emissive And Ambient Occlusion
 

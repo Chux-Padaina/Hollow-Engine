@@ -21,6 +21,7 @@ The project originally started as a Rust prototype. The active implementation is
 - The object shader now has a first direct-light metallic/roughness PBR pass with directional and point light contribution plus debug views.
 - Materials now carry texture slots for base color, metallic/roughness, normal, and emissive maps.
 - OBJ `.mtl` import now records common texture map paths, and the C++ shader samples base-color plus combined metallic/roughness textures when present.
+- Mesh vertices now carry tangent basis data, imported/custom meshes generate tangents from UVs, and the C++ PBR shader samples tangent-space normal maps with an editable normal-strength control.
 - The viewport work area now uses a light gray editor background as a temporary stand-in until a skybox/environment pass exists.
 - Mesh actors now use a first shader-based expanded-backface outline pass instead of the older selected wireframe shortcut.
 - Dear ImGui is vendored under `cpp/vendor/imgui` and now drives the C++ editor UI.
@@ -34,7 +35,7 @@ The project originally started as a Rust prototype. The active implementation is
   - mouse-drag move, rotate, and scale handles
   - Home reset
 - C++ import currently supports `.obj`, `.gltf`, and `.glb` by command-line argument or drag/drop.
-- C++ glTF/GLB import currently covers static triangle meshes, node transforms, vertex normals, UVs, vertex colors, base material factors, external buffers, embedded GLB buffers, external image references, data URI images, and embedded GLB image buffer views.
+- C++ glTF/GLB import currently covers static triangle meshes, node transforms, vertex normals, UVs, vertex colors, base material factors, normal strength, external buffers, embedded GLB buffers, external image references, data URI images, and embedded GLB image buffer views.
 - C++ glTF/GLB import does not yet cover skins, animation clips, morph targets, cameras, light extensions, or tangent-space normal map shading.
 
 Legacy Rust reference still contains:
@@ -153,5 +154,5 @@ For the Rust-to-C++ feature parity ledger, see [RUST_PARITY_AUDIT.md](RUST_PARIT
 1. Visual QA textured OBJ materials, the light workspace background, mesh outline pass, C++ PBR shader, and debug views in the app.
 2. Add glTF/GLB drag-drop import in C++.
 3. Visual QA `.glb/.gltf` imports from Sketchfab-style assets, especially multi-material textured models.
-4. Add tangent generation and tangent-space normal maps.
-5. Continue the PBR pipeline: shadow maps, HDR, tonemapping, and environment lighting.
+4. Add real shadow maps for directional lights.
+5. Continue the PBR pipeline: HDR, tonemapping, image-based/environment lighting, and post-processing.
