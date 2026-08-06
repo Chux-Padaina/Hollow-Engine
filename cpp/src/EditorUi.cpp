@@ -1,7 +1,11 @@
 #include "Forge/EditorUi.hpp"
 
 #include <algorithm>
+#include <cstdlib>
+#include <filesystem>
 #include <numbers>
+#include <string>
+#include <vector>
 
 #include <imgui.h>
 #include <imgui_impl_opengl2.h>
@@ -47,6 +51,34 @@ void apply_style() {
     colors[ImGuiCol_SliderGrabActive] = ImVec4(1.0f, 0.92f, 0.46f, 1.0f);
 }
 
+void apply_editor_font() {
+    ImGuiIO& io = ImGui::GetIO();
+    std::vector<std::filesystem::path> candidates;
+
+    char* local_app_data = nullptr;
+    std::size_t local_app_data_length = 0;
+    if (_dupenv_s(&local_app_data, &local_app_data_length, "LOCALAPPDATA") == 0 && local_app_data != nullptr) {
+        candidates.emplace_back(std::filesystem::path(local_app_data) / "Microsoft" / "Windows" / "Fonts" / "JetBrainsMono-Regular.ttf");
+        std::free(local_app_data);
+    }
+
+    candidates.emplace_back("C:/Windows/Fonts/JetBrainsMono-Regular.ttf");
+    candidates.emplace_back("C:/Program Files/JetBrains/CLion 2025.3.4/jbr/lib/fonts/JetBrainsMono-Regular.ttf");
+    candidates.emplace_back("C:/Program Files/JetBrains/JetBrains Rider 2024.3.4/jbr/lib/fonts/JetBrainsMono-Regular.ttf");
+
+    for (const auto& path : candidates) {
+        if (!std::filesystem::exists(path)) {
+            continue;
+        }
+        std::string font_path = path.string();
+        if (io.Fonts->AddFontFromFileTTF(font_path.c_str(), 15.0f) != nullptr) {
+            return;
+        }
+    }
+
+    io.Fonts->AddFontDefault();
+}
+
 bool tool_button(const char* label, Engine& engine, EditorTool tool) {
     const bool active = engine.active_tool() == tool;
     if (active) {
@@ -78,6 +110,7 @@ void transform_editor(Transform& transform) {
 void EditorUi::initialize(Win32Window& window) {
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
+    apply_editor_font();
     apply_style();
     ImGui_ImplWin32_Init(window.hwnd());
     ImGui_ImplOpenGL2_Init();
