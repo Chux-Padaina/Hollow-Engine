@@ -37,10 +37,14 @@ Recently added in the new C++ implementation:
 - C++ albedo, normal, lighting-only, roughness, and metallic debug views for scene meshes.
 - Temporary light gray editor background before the future skybox/environment lighting pass.
 - First C++ shader-based mesh actor outline pass.
+- Texture-slot storage on C++ materials.
+- Windows WIC texture loading for common image formats.
+- OBJ `.mtl` texture path import.
+- Base-color and combined metallic/roughness texture sampling in the C++ PBR shader.
 
 Not yet implemented in either path:
 
-- Metallic-roughness texture import.
+- glTF metallic-roughness texture import.
 - Normal maps and tangent-space shading.
 - Occlusion and emissive texture import.
 - Real shadow maps.
@@ -99,13 +103,14 @@ Why this matters:
 
 Before importing all texture maps, sliders let us validate the math with simple cubes and known values.
 
-Status: partially implemented and shader-connected for scalar/factor controls.
+Status: partially implemented and shader-connected for scalar/factor controls plus stored texture slots.
 
 Implementation notes:
 
 - The C++ Dear ImGui details panel exposes base color, metallic, and roughness controls for selected mesh actors.
+- The details panel also shows imported texture slot paths for base color, metallic/roughness, normal, and emissive maps when present.
 - The current control applies the same factor values to every mesh in the selected group. That keeps testing simple, but later we should expose per-material slots so imported multi-material assets can preserve different settings per part.
-- Base color, emissive, and normal strength controls are still pending.
+- Emissive factor and normal strength controls are still pending.
 
 ### 3. PBR Debug Views
 
@@ -167,7 +172,14 @@ Why this matters:
 
 This is the standard Sketchfab/glTF workflow. Without it, imported assets cannot preserve their intended material response.
 
-Status: pending.
+Status: partially implemented for the renderer path, pending for glTF import.
+
+Implementation notes:
+
+- The C++ material struct now has texture slots for base color, combined metallic/roughness, normal, and emissive maps.
+- The C++ renderer can load PNG/JPG-style image files through Windows Imaging Component and upload them as OpenGL textures.
+- The object shader samples base-color textures and combined metallic/roughness textures.
+- OBJ `.mtl` import records common texture map references. glTF/GLB material import is still pending, so this is not yet a full Sketchfab/glTF PBR material path.
 
 ### 6. Normal Mapping And Tangents
 

@@ -60,6 +60,28 @@ ObjIndex parse_obj_index(const std::string& token) {
     return out;
 }
 
+std::string resolve_texture_path(const std::filesystem::path& material_path, const std::string& texture_name) {
+    if (texture_name.empty()) {
+        return {};
+    }
+    std::filesystem::path texture_path(texture_name);
+    if (texture_path.is_relative()) {
+        texture_path = material_path.parent_path() / texture_path;
+    }
+    return texture_path.lexically_normal().string();
+}
+
+std::string read_mtl_texture_name(std::stringstream& stream) {
+    std::string token;
+    std::string texture_name;
+    while (stream >> token) {
+        if (!token.empty() && token[0] != '-') {
+            texture_name = token;
+        }
+    }
+    return texture_name;
+}
+
 std::map<std::string, Material> load_mtl_file(const std::filesystem::path& path) {
     std::map<std::string, Material> materials;
     std::ifstream file(path);
@@ -86,6 +108,18 @@ std::map<std::string, Material> load_mtl_file(const std::filesystem::path& path)
             float ns = 0.0f;
             stream >> ns;
             materials[current_name].roughness = std::clamp(1.0f - ns / 1000.0f, 0.04f, 1.0f);
+        } else if ((tag == "map_Kd" || tag == "map_BaseColor") && !current_name.empty()) {
+            const std::string texture_name = read_mtl_texture_name(stream);
+            materials[current_name].base_color_texture_path = resolve_texture_path(path, texture_name);
+        } else if ((tag == "map_Pr" || tag == "map_Roughness" || tag == "map_Pm" || tag == "map_Metallic") && !current_name.empty()) {
+            const std::string texture_name = read_mtl_texture_name(stream);
+            materials[current_name].metallic_roughness_texture_path = resolve_texture_path(path, texture_name);
+        } else if ((tag == "map_Bump" || tag == "bump" || tag == "map_Kn" || tag == "norm") && !current_name.empty()) {
+            const std::string texture_name = read_mtl_texture_name(stream);
+            materials[current_name].normal_texture_path = resolve_texture_path(path, texture_name);
+        } else if ((tag == "map_Ke" || tag == "map_Emissive") && !current_name.empty()) {
+            const std::string texture_name = read_mtl_texture_name(stream);
+            materials[current_name].emissive_texture_path = resolve_texture_path(path, texture_name);
         }
     }
     return materials;

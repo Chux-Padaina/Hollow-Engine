@@ -41,6 +41,10 @@ This file tracks what exists in the Rust prototype and whether it has been porte
 - Directional and point light contribution in the C++ object shader.
 - Albedo/normal/lighting/roughness/metallic debug rendering for C++ scene meshes.
 - Light gray editor workarea background.
+- Material texture slots for base color, metallic/roughness, normal, and emissive maps.
+- OBJ `.mtl` base-color texture path import.
+- Base-color texture loading and sampling in the C++ object shader.
+- Combined metallic/roughness texture loading and sampling in the C++ object shader.
 
 ## Partially Ported
 
@@ -61,7 +65,7 @@ This file tracks what exists in the Rust prototype and whether it has been porte
   - C++ now follows the camera but is still line-rendered.
 - Material/display state:
   - Rust has metallic/roughness sliders and debug views connected to shader uniforms.
-  - C++ now renders material factors and debug views in the object shader, but texture-backed material inputs are still pending.
+  - C++ now renders material factors, texture-backed base color, and texture-backed combined metallic/roughness maps in the object shader, but glTF material import and normal-map shading are still pending.
 
 ## Not Yet Ported
 
@@ -72,8 +76,8 @@ This file tracks what exists in the Rust prototype and whether it has been porte
 - glTF base color factor import.
 - Vertex color import.
 - UV import.
-- Base-color texture import/upload.
-- Texture sampling.
+- glTF base-color texture import/upload.
+- glTF metallic-roughness texture import/upload.
 - Spot lighting in shader.
 - Screen-pixel-stable outline widths.
 - Smooth stylized lighting bands.

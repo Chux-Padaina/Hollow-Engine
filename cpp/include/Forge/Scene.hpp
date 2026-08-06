@@ -56,6 +56,10 @@ struct Material {
     Vec3 base_color{0.75f, 0.72f, 0.62f};
     float metallic = 0.0f;
     float roughness = 0.55f;
+    std::string base_color_texture_path;
+    std::string metallic_roughness_texture_path;
+    std::string normal_texture_path;
+    std::string emissive_texture_path;
 };
 
 struct Vertex {

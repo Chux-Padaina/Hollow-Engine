@@ -235,6 +235,18 @@ EditorCommand EditorUi::draw(Scene& scene, Engine& engine, Camera& camera, bool&
                 changed |= ImGui::ColorEdit3("Base color", &material.base_color.x);
                 changed |= ImGui::SliderFloat("Metallic", &material.metallic, 0.0f, 1.0f);
                 changed |= ImGui::SliderFloat("Roughness", &material.roughness, 0.04f, 1.0f);
+                if (!material.base_color_texture_path.empty()) {
+                    ImGui::TextWrapped("Base texture: %s", material.base_color_texture_path.c_str());
+                }
+                if (!material.metallic_roughness_texture_path.empty()) {
+                    ImGui::TextWrapped("Metallic/roughness texture: %s", material.metallic_roughness_texture_path.c_str());
+                }
+                if (!material.normal_texture_path.empty()) {
+                    ImGui::TextWrapped("Normal texture: %s", material.normal_texture_path.c_str());
+                }
+                if (!material.emissive_texture_path.empty()) {
+                    ImGui::TextWrapped("Emissive texture: %s", material.emissive_texture_path.c_str());
+                }
                 if (changed) {
                     for (MeshPart& part : mesh->parts) {
                         part.material = material;

@@ -35,6 +35,7 @@ add_executable(ForgeEngine
     src/Math.cpp
     src/Renderer.cpp
     src/Scene.cpp
+    src/TextureLoader.cpp
     src/Win32Window.cpp
 )
 
@@ -50,7 +51,7 @@ find_package(OpenGL REQUIRED)
 target_link_libraries(ForgeEngine PRIVATE OpenGL::GL imgui)
 
 if (WIN32)
-    target_link_libraries(ForgeEngine PRIVATE shell32)
+    target_link_libraries(ForgeEngine PRIVATE shell32 windowscodecs ole32)
 endif()
 
 if (WIN32)

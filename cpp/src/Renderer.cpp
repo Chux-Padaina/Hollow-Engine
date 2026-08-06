@@ -1,8 +1,10 @@
 #include "Forge/Renderer.hpp"
+#include "Forge/TextureLoader.hpp"
 
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <filesystem>
 #include <numbers>
 #include <stdexcept>
 #include <string>
@@ -23,11 +25,23 @@ constexpr unsigned int kFloat = 0x1406;
 constexpr unsigned int kFalse = 0;
 constexpr unsigned int kTriangles = 0x0004;
 constexpr unsigned int kUnsignedInt = 0x1405;
+constexpr unsigned int kUnsignedByte = 0x1401;
 constexpr unsigned int kVertexShader = 0x8B31;
 constexpr unsigned int kFragmentShader = 0x8B30;
 constexpr unsigned int kCompileStatus = 0x8B81;
 constexpr unsigned int kLinkStatus = 0x8B82;
 constexpr unsigned int kInfoLogLength = 0x8B84;
+constexpr unsigned int kTexture2D = 0x0DE1;
+constexpr unsigned int kRgba = 0x1908;
+constexpr unsigned int kLinear = 0x2601;
+constexpr unsigned int kRepeat = 0x2901;
+constexpr unsigned int kTextureMinFilter = 0x2801;
+constexpr unsigned int kTextureMagFilter = 0x2800;
+constexpr unsigned int kTextureWrapS = 0x2802;
+constexpr unsigned int kTextureWrapT = 0x2803;
+constexpr unsigned int kUnpackAlignment = 0x0CF5;
+constexpr unsigned int kTexture0 = 0x84C0;
+constexpr unsigned int kTexture1 = 0x84C1;
 
 using GlCreateShader = unsigned int(APIENTRY*)(unsigned int shader_type);
 using GlShaderSource = void(APIENTRY*)(unsigned int shader, int count, const char* const* string, const int* length);
@@ -48,6 +62,7 @@ using GlUniformMatrix4fv = void(APIENTRY*)(int location, int count, unsigned cha
 using GlUniform3f = void(APIENTRY*)(int location, float v0, float v1, float v2);
 using GlUniform1f = void(APIENTRY*)(int location, float v0);
 using GlUniform1i = void(APIENTRY*)(int location, int v0);
+using GlActiveTexture = void(APIENTRY*)(unsigned int texture);
 using GlGenBuffers = void(APIENTRY*)(int count, unsigned int* buffers);
 using GlBindBuffer = void(APIENTRY*)(unsigned int target, unsigned int buffer);
 using GlBufferData = void(APIENTRY*)(unsigned int target, std::ptrdiff_t size, const void* data, unsigned int usage);
@@ -79,6 +94,7 @@ struct ModernGl {
     GlUniform3f uniform_3f = nullptr;
     GlUniform1f uniform_1f = nullptr;
     GlUniform1i uniform_1i = nullptr;
+    GlActiveTexture active_texture = nullptr;
     GlGenBuffers gen_buffers = nullptr;
     GlBindBuffer bind_buffer = nullptr;
     GlBufferData buffer_data = nullptr;
@@ -110,6 +126,7 @@ struct ModernGl {
             && uniform_3f != nullptr
             && uniform_1f != nullptr
             && uniform_1i != nullptr
+            && active_texture != nullptr
             && gen_buffers != nullptr
             && bind_buffer != nullptr
             && buffer_data != nullptr
@@ -151,6 +168,7 @@ bool load_modern_gl() {
     glx.uniform_3f = load_gl_function<GlUniform3f>("glUniform3f");
     glx.uniform_1f = load_gl_function<GlUniform1f>("glUniform1f");
     glx.uniform_1i = load_gl_function<GlUniform1i>("glUniform1i");
+    glx.active_texture = load_gl_function<GlActiveTexture>("glActiveTexture");
     glx.gen_buffers = load_gl_function<GlGenBuffers>("glGenBuffers");
     glx.bind_buffer = load_gl_function<GlBindBuffer>("glBindBuffer");
     glx.buffer_data = load_gl_function<GlBufferData>("glBufferData");
@@ -207,6 +225,7 @@ unsigned int create_program(const char* vertex_source, const char* fragment_sour
     glx.bind_attrib_location(program, 0, "aPosition");
     glx.bind_attrib_location(program, 1, "aNormal");
     glx.bind_attrib_location(program, 2, "aColor");
+    glx.bind_attrib_location(program, 3, "aUv");
     glx.link_program(program);
     glx.delete_shader(vertex);
     glx.delete_shader(fragment);
@@ -237,16 +256,16 @@ Vec3 shade(const Material& material, Vec3 normal) {
 }
 
 std::vector<RenderVertex> cube_vertices() {
-    auto v = [](Vec3 p, Vec3 n) {
-        return RenderVertex{p, n, {1.0f, 1.0f, 1.0f}};
+    auto v = [](Vec3 p, Vec3 n, Vec2 uv) {
+        return RenderVertex{p, n, {1.0f, 1.0f, 1.0f}, uv};
     };
     return {
-        v({-0.5f, -0.5f, 0.5f}, {0, 0, 1}), v({0.5f, -0.5f, 0.5f}, {0, 0, 1}), v({0.5f, 0.5f, 0.5f}, {0, 0, 1}), v({-0.5f, 0.5f, 0.5f}, {0, 0, 1}),
-        v({0.5f, -0.5f, -0.5f}, {0, 0, -1}), v({-0.5f, -0.5f, -0.5f}, {0, 0, -1}), v({-0.5f, 0.5f, -0.5f}, {0, 0, -1}), v({0.5f, 0.5f, -0.5f}, {0, 0, -1}),
-        v({-0.5f, -0.5f, -0.5f}, {-1, 0, 0}), v({-0.5f, -0.5f, 0.5f}, {-1, 0, 0}), v({-0.5f, 0.5f, 0.5f}, {-1, 0, 0}), v({-0.5f, 0.5f, -0.5f}, {-1, 0, 0}),
-        v({0.5f, -0.5f, 0.5f}, {1, 0, 0}), v({0.5f, -0.5f, -0.5f}, {1, 0, 0}), v({0.5f, 0.5f, -0.5f}, {1, 0, 0}), v({0.5f, 0.5f, 0.5f}, {1, 0, 0}),
-        v({-0.5f, 0.5f, 0.5f}, {0, 1, 0}), v({0.5f, 0.5f, 0.5f}, {0, 1, 0}), v({0.5f, 0.5f, -0.5f}, {0, 1, 0}), v({-0.5f, 0.5f, -0.5f}, {0, 1, 0}),
-        v({-0.5f, -0.5f, -0.5f}, {0, -1, 0}), v({0.5f, -0.5f, -0.5f}, {0, -1, 0}), v({0.5f, -0.5f, 0.5f}, {0, -1, 0}), v({-0.5f, -0.5f, 0.5f}, {0, -1, 0}),
+        v({-0.5f, -0.5f, 0.5f}, {0, 0, 1}, {0, 1}), v({0.5f, -0.5f, 0.5f}, {0, 0, 1}, {1, 1}), v({0.5f, 0.5f, 0.5f}, {0, 0, 1}, {1, 0}), v({-0.5f, 0.5f, 0.5f}, {0, 0, 1}, {0, 0}),
+        v({0.5f, -0.5f, -0.5f}, {0, 0, -1}, {0, 1}), v({-0.5f, -0.5f, -0.5f}, {0, 0, -1}, {1, 1}), v({-0.5f, 0.5f, -0.5f}, {0, 0, -1}, {1, 0}), v({0.5f, 0.5f, -0.5f}, {0, 0, -1}, {0, 0}),
+        v({-0.5f, -0.5f, -0.5f}, {-1, 0, 0}, {0, 1}), v({-0.5f, -0.5f, 0.5f}, {-1, 0, 0}, {1, 1}), v({-0.5f, 0.5f, 0.5f}, {-1, 0, 0}, {1, 0}), v({-0.5f, 0.5f, -0.5f}, {-1, 0, 0}, {0, 0}),
+        v({0.5f, -0.5f, 0.5f}, {1, 0, 0}, {0, 1}), v({0.5f, -0.5f, -0.5f}, {1, 0, 0}, {1, 1}), v({0.5f, 0.5f, -0.5f}, {1, 0, 0}, {1, 0}), v({0.5f, 0.5f, 0.5f}, {1, 0, 0}, {0, 0}),
+        v({-0.5f, 0.5f, 0.5f}, {0, 1, 0}, {0, 1}), v({0.5f, 0.5f, 0.5f}, {0, 1, 0}, {1, 1}), v({0.5f, 0.5f, -0.5f}, {0, 1, 0}, {1, 0}), v({-0.5f, 0.5f, -0.5f}, {0, 1, 0}, {0, 0}),
+        v({-0.5f, -0.5f, -0.5f}, {0, -1, 0}, {0, 1}), v({0.5f, -0.5f, -0.5f}, {0, -1, 0}, {1, 1}), v({0.5f, -0.5f, 0.5f}, {0, -1, 0}, {1, 0}), v({-0.5f, -0.5f, 0.5f}, {0, -1, 0}, {0, 0}),
     };
 }
 
@@ -336,6 +355,15 @@ void Renderer::shutdown() {
     destroy_gpu_mesh(cube_mesh_);
     destroy_gpu_mesh(plane_mesh_);
     destroy_gpu_mesh(sphere_mesh_);
+    for (auto& [path, texture] : texture_cache_) {
+        (void)path;
+        destroy_texture(texture);
+    }
+    texture_cache_.clear();
+    if (white_texture_ != 0) {
+        glDeleteTextures(1, &white_texture_);
+        white_texture_ = 0;
+    }
     if (object_program_ != 0 && glx.delete_program != nullptr) {
         glx.delete_program(object_program_);
         object_program_ = 0;
@@ -427,16 +455,19 @@ bool Renderer::initialize_modern_pipeline() {
 attribute vec3 aPosition;
 attribute vec3 aNormal;
 attribute vec3 aColor;
+attribute vec2 aUv;
 uniform mat4 uModel;
 uniform mat4 uMvp;
 varying vec3 vWorldPosition;
 varying vec3 vNormal;
 varying vec3 vColor;
+varying vec2 vUv;
 void main() {
     vec4 worldPosition = uModel * vec4(aPosition, 1.0);
     vWorldPosition = worldPosition.xyz;
     vNormal = normalize(mat3(uModel) * aNormal);
     vColor = aColor;
+    vUv = aUv;
     gl_Position = uMvp * vec4(aPosition, 1.0);
 }
 )";
@@ -455,9 +486,14 @@ uniform vec3 uPointColor;
 uniform float uPointIntensity;
 uniform float uPointRange;
 uniform int uDebugView;
+uniform sampler2D uBaseColorTexture;
+uniform int uHasBaseColorTexture;
+uniform sampler2D uMetallicRoughnessTexture;
+uniform int uHasMetallicRoughnessTexture;
 varying vec3 vWorldPosition;
 varying vec3 vNormal;
 varying vec3 vColor;
+varying vec2 vUv;
 
 const float PI = 3.14159265359;
 
@@ -504,9 +540,11 @@ vec3 pbr_light(vec3 albedo, float metallic, float roughness, vec3 n, vec3 v, vec
 void main() {
     vec3 n = normalize(vNormal);
     vec3 v = normalize(uCameraPosition - vWorldPosition);
-    vec3 albedo = clamp(uBaseColor * vColor, 0.0, 1.0);
-    float roughness = clamp(uRoughness, 0.04, 1.0);
-    float metallic = clamp(uMetallic, 0.0, 1.0);
+    vec3 sampledBaseColor = uHasBaseColorTexture == 1 ? texture2D(uBaseColorTexture, vUv).rgb : vec3(1.0);
+    vec3 albedo = clamp(uBaseColor * vColor * sampledBaseColor, 0.0, 1.0);
+    vec4 sampledMetallicRoughness = uHasMetallicRoughnessTexture == 1 ? texture2D(uMetallicRoughnessTexture, vUv) : vec4(1.0);
+    float roughness = clamp(uRoughness * sampledMetallicRoughness.g, 0.04, 1.0);
+    float metallic = clamp(uMetallic * sampledMetallicRoughness.b, 0.0, 1.0);
 
     vec3 direct = vec3(0.0);
     direct += pbr_light(albedo, metallic, roughness, n, v, normalize(uDirectionalDirection), uDirectionalColor * uDirectionalIntensity);
@@ -563,6 +601,15 @@ void main() {
 
     object_program_ = create_program(vertex_shader, fragment_shader);
     outline_program_ = create_program(outline_vertex_shader, outline_fragment_shader);
+    const unsigned char white_pixel[] = {255, 255, 255, 255};
+    glGenTextures(1, &white_texture_);
+    glBindTexture(kTexture2D, white_texture_);
+    glTexParameteri(kTexture2D, kTextureMinFilter, kLinear);
+    glTexParameteri(kTexture2D, kTextureMagFilter, kLinear);
+    glTexParameteri(kTexture2D, kTextureWrapS, kRepeat);
+    glTexParameteri(kTexture2D, kTextureWrapT, kRepeat);
+    glTexImage2D(kTexture2D, 0, static_cast<int>(kRgba), 1, 1, 0, kRgba, kUnsignedByte, white_pixel);
+    glBindTexture(kTexture2D, 0);
     cube_mesh_ = create_cube_mesh();
     plane_mesh_ = create_plane_mesh();
     sphere_mesh_ = create_sphere_mesh();
@@ -594,6 +641,8 @@ GpuMesh Renderer::create_gpu_mesh(const std::vector<RenderVertex>& vertices, con
     glx.vertex_attrib_pointer(1, 3, kFloat, kFalse, sizeof(RenderVertex), reinterpret_cast<const void*>(offsetof(RenderVertex, normal)));
     glx.enable_vertex_attrib_array(2);
     glx.vertex_attrib_pointer(2, 3, kFloat, kFalse, sizeof(RenderVertex), reinterpret_cast<const void*>(offsetof(RenderVertex, color)));
+    glx.enable_vertex_attrib_array(3);
+    glx.vertex_attrib_pointer(3, 2, kFloat, kFalse, sizeof(RenderVertex), reinterpret_cast<const void*>(offsetof(RenderVertex, uv)));
 
     if (glx.bind_vertex_array != nullptr) {
         glx.bind_vertex_array(0);
@@ -698,7 +747,7 @@ GpuMesh Renderer::create_custom_mesh(const MeshPart& part) const {
     std::vector<RenderVertex> vertices;
     vertices.reserve(part.vertices.size());
     for (const Vertex& vertex : part.vertices) {
-        vertices.push_back({vertex.position, vertex.normal, vertex.color});
+        vertices.push_back({vertex.position, vertex.normal, vertex.color, vertex.uv});
     }
     return create_gpu_mesh(vertices, part.indices);
 }
@@ -720,7 +769,70 @@ void Renderer::destroy_gpu_mesh(GpuMesh& mesh) const {
     mesh = {};
 }
 
-void Renderer::draw_gpu_mesh(const GpuMesh& mesh, const Material& material, const Transform& transform, const Mat4& view_projection, const ObjectUniforms& uniforms) const {
+GpuTexture Renderer::create_texture_from_file(const std::string& path) const {
+    GpuTexture texture;
+    try {
+        const TextureImage image = load_texture_image(std::filesystem::path(path));
+        if (image.width <= 0 || image.height <= 0 || image.rgba.empty()) {
+            texture.failed = true;
+            return texture;
+        }
+
+        glGenTextures(1, &texture.id);
+        glBindTexture(kTexture2D, texture.id);
+        glPixelStorei(kUnpackAlignment, 1);
+        glTexParameteri(kTexture2D, kTextureMinFilter, kLinear);
+        glTexParameteri(kTexture2D, kTextureMagFilter, kLinear);
+        glTexParameteri(kTexture2D, kTextureWrapS, kRepeat);
+        glTexParameteri(kTexture2D, kTextureWrapT, kRepeat);
+        glTexImage2D(kTexture2D, 0, static_cast<int>(kRgba), image.width, image.height, 0, kRgba, kUnsignedByte, image.rgba.data());
+        glBindTexture(kTexture2D, 0);
+        texture.width = image.width;
+        texture.height = image.height;
+    } catch (const std::exception&) {
+        texture.failed = true;
+    }
+    return texture;
+}
+
+unsigned int Renderer::resolve_base_color_texture(const Material& material) const {
+    if (material.base_color_texture_path.empty()) {
+        return white_texture_;
+    }
+
+    auto it = texture_cache_.find(material.base_color_texture_path);
+    if (it == texture_cache_.end()) {
+        it = texture_cache_.emplace(material.base_color_texture_path, create_texture_from_file(material.base_color_texture_path)).first;
+    }
+    if (it->second.failed || it->second.id == 0) {
+        return white_texture_;
+    }
+    return it->second.id;
+}
+
+unsigned int Renderer::resolve_metallic_roughness_texture(const Material& material) const {
+    if (material.metallic_roughness_texture_path.empty()) {
+        return white_texture_;
+    }
+
+    auto it = texture_cache_.find(material.metallic_roughness_texture_path);
+    if (it == texture_cache_.end()) {
+        it = texture_cache_.emplace(material.metallic_roughness_texture_path, create_texture_from_file(material.metallic_roughness_texture_path)).first;
+    }
+    if (it->second.failed || it->second.id == 0) {
+        return white_texture_;
+    }
+    return it->second.id;
+}
+
+void Renderer::destroy_texture(GpuTexture& texture) const {
+    if (texture.id != 0) {
+        glDeleteTextures(1, &texture.id);
+    }
+    texture = {};
+}
+
+void Renderer::draw_gpu_mesh(const GpuMesh& mesh, const Material& material, const Transform& transform, const Mat4& view_projection, const ObjectUniforms& uniforms) {
     if (object_program_ == 0 || mesh.vertex_buffer == 0 || mesh.index_buffer == 0 || mesh.index_count <= 0) {
         return;
     }
@@ -742,6 +854,15 @@ void Renderer::draw_gpu_mesh(const GpuMesh& mesh, const Material& material, cons
     glx.uniform_1f(glx.get_uniform_location(object_program_, "uPointIntensity"), uniforms.point_intensity);
     glx.uniform_1f(glx.get_uniform_location(object_program_, "uPointRange"), uniforms.point_range);
     glx.uniform_1i(glx.get_uniform_location(object_program_, "uDebugView"), uniforms.debug_view);
+    glx.uniform_1i(glx.get_uniform_location(object_program_, "uBaseColorTexture"), 0);
+    glx.uniform_1i(glx.get_uniform_location(object_program_, "uHasBaseColorTexture"), material.base_color_texture_path.empty() ? 0 : 1);
+    glx.uniform_1i(glx.get_uniform_location(object_program_, "uMetallicRoughnessTexture"), 1);
+    glx.uniform_1i(glx.get_uniform_location(object_program_, "uHasMetallicRoughnessTexture"), material.metallic_roughness_texture_path.empty() ? 0 : 1);
+    glx.active_texture(kTexture0);
+    glBindTexture(kTexture2D, resolve_base_color_texture(material));
+    glx.active_texture(kTexture1);
+    glBindTexture(kTexture2D, resolve_metallic_roughness_texture(material));
+    glx.active_texture(kTexture0);
 
     if (mesh.vertex_array != 0 && glx.bind_vertex_array != nullptr) {
         glx.bind_vertex_array(mesh.vertex_array);
@@ -753,6 +874,8 @@ void Renderer::draw_gpu_mesh(const GpuMesh& mesh, const Material& material, cons
         glx.vertex_attrib_pointer(1, 3, kFloat, kFalse, sizeof(RenderVertex), reinterpret_cast<const void*>(offsetof(RenderVertex, normal)));
         glx.enable_vertex_attrib_array(2);
         glx.vertex_attrib_pointer(2, 3, kFloat, kFalse, sizeof(RenderVertex), reinterpret_cast<const void*>(offsetof(RenderVertex, color)));
+        glx.enable_vertex_attrib_array(3);
+        glx.vertex_attrib_pointer(3, 2, kFloat, kFalse, sizeof(RenderVertex), reinterpret_cast<const void*>(offsetof(RenderVertex, uv)));
     }
     glx.bind_buffer(kElementArrayBuffer, mesh.index_buffer);
     glDrawElements(kTriangles, mesh.index_count, kUnsignedInt, nullptr);
@@ -763,9 +886,14 @@ void Renderer::draw_gpu_mesh(const GpuMesh& mesh, const Material& material, cons
         glx.disable_vertex_attrib_array(0);
         glx.disable_vertex_attrib_array(1);
         glx.disable_vertex_attrib_array(2);
+        glx.disable_vertex_attrib_array(3);
     }
     glx.bind_buffer(kArrayBuffer, 0);
     glx.bind_buffer(kElementArrayBuffer, 0);
+    glx.active_texture(kTexture1);
+    glBindTexture(kTexture2D, 0);
+    glx.active_texture(kTexture0);
+    glBindTexture(kTexture2D, 0);
     glx.use_program(0);
 }
 
@@ -813,10 +941,10 @@ GpuMesh Renderer::create_cube_mesh() const {
 
 GpuMesh Renderer::create_plane_mesh() const {
     std::vector<RenderVertex> vertices{
-        {{-0.5f, 0.0f, -0.5f}, {0, 1, 0}, {1, 1, 1}},
-        {{0.5f, 0.0f, -0.5f}, {0, 1, 0}, {1, 1, 1}},
-        {{0.5f, 0.0f, 0.5f}, {0, 1, 0}, {1, 1, 1}},
-        {{-0.5f, 0.0f, 0.5f}, {0, 1, 0}, {1, 1, 1}},
+        {{-0.5f, 0.0f, -0.5f}, {0, 1, 0}, {1, 1, 1}, {0, 1}},
+        {{0.5f, 0.0f, -0.5f}, {0, 1, 0}, {1, 1, 1}, {1, 1}},
+        {{0.5f, 0.0f, 0.5f}, {0, 1, 0}, {1, 1, 1}, {1, 0}},
+        {{-0.5f, 0.0f, 0.5f}, {0, 1, 0}, {1, 1, 1}, {0, 0}},
     };
     std::vector<std::uint32_t> indices{0, 1, 2, 0, 2, 3};
     return create_gpu_mesh(vertices, indices);
@@ -834,7 +962,7 @@ GpuMesh Renderer::create_sphere_mesh() const {
             const float u = static_cast<float>(x) / segments;
             const float theta = u * kPi * 2.0f;
             Vec3 normal{std::cos(phi) * std::cos(theta), std::sin(phi), std::cos(phi) * std::sin(theta)};
-            vertices.push_back({normal * 0.5f, normal, {1, 1, 1}});
+            vertices.push_back({normal * 0.5f, normal, {1, 1, 1}, {u, 1.0f - v}});
         }
     }
     for (int y = 0; y < rings; ++y) {

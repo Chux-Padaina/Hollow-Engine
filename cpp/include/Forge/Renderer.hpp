@@ -7,6 +7,7 @@
 #include <Windows.h>
 
 #include <cstdint>
+#include <string>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -30,6 +31,7 @@ struct RenderVertex {
     Vec3 position;
     Vec3 normal;
     Vec3 color;
+    Vec2 uv;
 };
 
 struct GpuMesh {
@@ -37,6 +39,13 @@ struct GpuMesh {
     unsigned int vertex_buffer = 0;
     unsigned int index_buffer = 0;
     int index_count = 0;
+};
+
+struct GpuTexture {
+    unsigned int id = 0;
+    int width = 0;
+    int height = 0;
+    bool failed = false;
 };
 
 struct ObjectUniforms {
@@ -68,6 +77,8 @@ private:
     GpuMesh plane_mesh_;
     GpuMesh sphere_mesh_;
     std::unordered_map<const MeshPart*, GpuMesh> custom_mesh_cache_;
+    mutable std::unordered_map<std::string, GpuTexture> texture_cache_;
+    unsigned int white_texture_ = 0;
 
     bool initialize_modern_pipeline();
     ObjectUniforms collect_object_uniforms(const Scene& scene, const Camera& camera, const Engine& engine) const;
@@ -75,7 +86,11 @@ private:
     GpuMesh create_gpu_mesh(const std::vector<RenderVertex>& vertices, const std::vector<std::uint32_t>& indices) const;
     GpuMesh create_custom_mesh(const MeshPart& part) const;
     void destroy_gpu_mesh(GpuMesh& mesh) const;
-    void draw_gpu_mesh(const GpuMesh& mesh, const Material& material, const Transform& transform, const Mat4& view_projection, const ObjectUniforms& uniforms) const;
+    GpuTexture create_texture_from_file(const std::string& path) const;
+    unsigned int resolve_base_color_texture(const Material& material) const;
+    unsigned int resolve_metallic_roughness_texture(const Material& material) const;
+    void destroy_texture(GpuTexture& texture) const;
+    void draw_gpu_mesh(const GpuMesh& mesh, const Material& material, const Transform& transform, const Mat4& view_projection, const ObjectUniforms& uniforms);
     GpuMesh create_cube_mesh() const;
     GpuMesh create_plane_mesh() const;
     GpuMesh create_sphere_mesh() const;

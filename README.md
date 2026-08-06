@@ -19,6 +19,8 @@ The project originally started as a Rust prototype. The active implementation is
 - Scene mesh drawing now has a first modern OpenGL path using shader programs and GPU vertex/index buffers.
 - Imported/custom mesh parts are cached on the GPU after first use instead of re-uploading every frame.
 - The object shader now has a first direct-light metallic/roughness PBR pass with directional and point light contribution plus debug views.
+- Materials now carry texture slots for base color, metallic/roughness, normal, and emissive maps.
+- OBJ `.mtl` import now records common texture map paths, and the C++ shader samples base-color plus combined metallic/roughness textures when present.
 - The viewport work area now uses a light gray editor background as a temporary stand-in until a skybox/environment pass exists.
 - Mesh actors now use a first shader-based expanded-backface outline pass instead of the older selected wireframe shortcut.
 - Dear ImGui is vendored under `cpp/vendor/imgui` and now drives the C++ editor UI.
@@ -146,8 +148,8 @@ For the Rust-to-C++ feature parity ledger, see [RUST_PARITY_AUDIT.md](RUST_PARIT
 
 ## Next Engineering Steps
 
-1. Visual QA the light workspace background, mesh outline pass, C++ PBR shader, and debug views in the app.
-2. Move remaining editor-only rendering helpers, especially gizmos and grid, away from immediate mode.
-3. Add glTF/GLB drag-drop import in C++.
-4. Add texture sampling and glTF metallic-roughness textures.
-5. Continue the PBR pipeline: tangent-space normal maps, shadow maps, HDR, and environment lighting.
+1. Visual QA textured OBJ materials, the light workspace background, mesh outline pass, C++ PBR shader, and debug views in the app.
+2. Add glTF/GLB drag-drop import in C++.
+3. Add tangent generation and tangent-space normal maps.
+4. Move remaining editor-only rendering helpers, especially gizmos and grid, away from immediate mode.
+5. Continue the PBR pipeline: shadow maps, HDR, tonemapping, and environment lighting.
