@@ -1,10 +1,12 @@
 # Hollow Engine
 
-**v0.1** — a native C++20/OpenGL game engine and level editor, built from scratch as a portfolio project.
+**v0.1** — a native C++20/OpenGL game engine and level editor, built from scratch.
 
-Hollow Engine imports glTF/GLB/OBJ models and renders them with a real-time, metallic-roughness PBR pipeline: multi-light shading, cascaded + spot shadow maps, image-based lighting from an HDR environment, screen-space ambient occlusion, and an HDR post-processing stack (bloom, vignette, color grading, FXAA). Around that sits a Dear ImGui editor — an outliner, a details/inspector panel, transform gizmos, ray-accurate object picking, and a render-graph/post-FX debug view — styled with a custom gray-and-neon theme instead of ImGui's defaults.
+Hollow Engine imports glTF/GLB/OBJ models and renders them with a real-time, metallic-roughness PBR pipeline: multi-light shading, cascaded + spot shadow maps, image-based lighting from an HDR environment, screen-space ambient occlusion, and an HDR post-processing stack (bloom, vignette, color grading, FXAA). Around that sits a Dear ImGui editor — an outliner, a details/inspector panel, transform gizmos, ray-accurate object picking, and a render-graph/post-FX debug view.
 
 It targets Windows: the windowing/input layer is a native Win32 + WGL implementation (no GLFW/SDL — GL function pointers are loaded by hand), and texture decoding goes through the Windows Imaging Component.
+
+![Hollow Engine v0.1 editor](docs/hollow-engine-screenshot.png)
 
 ## Features
 
