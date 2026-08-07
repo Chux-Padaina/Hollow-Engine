@@ -1,9 +1,14 @@
+// Vector/matrix/transform math used throughout Hollow Engine: Vec2/Vec3,
+// column-major Mat4 (OpenGL-compatible layout), and a TRS Transform helper.
+// Deliberately minimal and free of engine dependencies so it can be pulled
+// into the renderer, scene graph, and glTF importer alike.
+
 #pragma once
 
 #include <array>
 #include <cmath>
 
-namespace Forge {
+namespace Hollow {
 
 struct Vec2 {
     float x = 0.0f;
@@ -57,4 +62,4 @@ struct Transform {
     Mat4 matrix() const;
 };
 
-} // namespace Forge
+} // namespace Hollow

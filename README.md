@@ -1,163 +1,74 @@
-# ZZZ Style Engine Prototype
+# Hollow Engine
 
-Native C++/OpenGL engine-editor prototype for importing meshes and rendering them with a stylized anime/urban look inspired by the broad rendering ingredients in games like Zenless Zone Zero. This project should not copy proprietary models, environments, UI, or exact assets. The goal is a reusable pipeline for user-provided Sketchfab-style assets.
+**v0.1** — a native C++20/OpenGL game engine and level editor, built from scratch as a portfolio project.
 
-The project originally started as a Rust prototype. The active implementation is now moving to C++ so the engine code is easier for the project owner to read, debug, and extend.
+Hollow Engine imports glTF/GLB/OBJ models and renders them with a real-time, metallic-roughness PBR pipeline: multi-light shading, cascaded + spot shadow maps, image-based lighting from an HDR environment, screen-space ambient occlusion, and an HDR post-processing stack (bloom, vignette, color grading, FXAA). Around that sits a Dear ImGui editor — an outliner, a details/inspector panel, transform gizmos, ray-accurate object picking, and a render-graph/post-FX debug view — styled with a custom gray-and-neon theme instead of ImGui's defaults.
 
-## Current Milestone
+It targets Windows: the windowing/input layer is a native Win32 + WGL implementation (no GLFW/SDL — GL function pointers are loaded by hand), and texture decoding goes through the Windows Imaging Component.
 
-- New C++ source tree under `cpp/`.
-- CMake build using Visual Studio C++ build tools.
-- Native Win32 OpenGL window.
-- Component-driven scene skeleton:
-  - every placeable item is an actor
-  - actors own root scene transforms
-  - active components currently include static meshes and lights
-  - placeholders exist for future engine/game systems
-- Default C++ scene with two cube actors, one directional light actor, and one point light actor.
-- C++ renderer draws the world grid, actors, light icons, and local/world-aware gizmos.
-- `Renderer::render` now uses an explicit frame context and named passes for shadows, scene color, editor grid, outlines, opaque geometry, tonemapping, and overlays.
-- Scene mesh drawing now has a first modern OpenGL path using shader programs and GPU vertex/index buffers.
-- Imported/custom mesh parts are cached on the GPU after first use instead of re-uploading every frame.
-- The object shader now has a first direct-light metallic/roughness PBR pass with directional and point light contribution plus debug views.
-- Materials now carry texture slots for base color, metallic/roughness, normal, and emissive maps.
-- OBJ `.mtl` import now records common texture map paths, and the C++ shader samples base-color plus combined metallic/roughness textures when present.
-- Mesh vertices now carry tangent basis data, imported/custom meshes generate tangents from UVs, and the C++ PBR shader samples tangent-space normal maps with an editable normal-strength control.
-- The renderer now has first real directional and point-light shadow map passes with depth framebuffers, shadow texture sampling in the PBR shader, and a toolbar Shadows toggle.
-- The viewport scene now renders through a first HDR framebuffer and ACES-style tonemapping pass with an exposure control.
-- The viewport work area now uses a light gray editor background as a temporary stand-in until a skybox/environment pass exists.
-- Mesh actors now use a first shader-based expanded-backface outline pass instead of the older selected wireframe shortcut.
-- Dear ImGui is vendored under `cpp/vendor/imgui` and now drives the C++ editor UI.
-- C++ editor controls now include:
-  - top toolbar for select/move/rotate/scale, local/world, and snap
-  - left outliner with actor selection, primitive creation, directional/point/spot light creation, and deletion
-  - right details panel with editable selected actor transform/type/light/mesh/material info
-  - right mouse orbit, middle mouse pan, and mouse wheel zoom
-  - camera-following editor grid like the Rust prototype
-  - click selection for actors/lights
-  - mouse-drag move, rotate, and scale handles
-  - Home reset
-- C++ import currently supports `.obj`, `.gltf`, and `.glb` by command-line argument or drag/drop.
-- C++ glTF/GLB import currently covers static triangle meshes, node transforms, vertex normals, UVs, vertex colors, base material factors, normal strength, external buffers, embedded GLB buffers, external image references, data URI images, and embedded GLB image buffer views.
-- C++ glTF/GLB import does not yet cover skins, animation clips, morph targets, cameras, light extensions, or tangent-space normal map shading.
+## Features
 
-Legacy Rust reference still contains:
+**Rendering**
+- Metallic-roughness PBR object shader, up to 16 directional/point/spot lights per draw call
+- Cascaded shadow maps (4 cascades) for the directional light, plus a spot-light shadow map
+- Image-based lighting: irradiance + GGX specular convolution baked from a loaded `.hdr` environment, with a skybox draw
+- Screen-space ambient occlusion (hemisphere-kernel, depth+normal based)
+- HDR pipeline: ACES-style tonemapping, bloom, vignette, parametric color grading, FXAA
+- Full glTF material support: base color, metallic/roughness, tangent-space normal mapping, emissive, occlusion, alpha blend/mask
+- 8 debug views (`F1`–`F8`): final, albedo, normals, lighting-only, roughness, metallic, occlusion, emissive
+- 3 style presets (`1`/`2`/`3`) for quick material/lighting look changes
 
-- OpenGL window and render loop.
-- Drag and drop `.glb`, `.gltf`, or `.obj` files into the window.
-- Basic CPU import path for mesh positions, normals, indices, and base material color.
-- GPU mesh upload with a direct-light Cook-Torrance/GGX PBR shader and a backface-expanded outline pass.
-- Scene architecture uses a single actor list. Actors own root scene components and component lists; current active components are static mesh and light, so everything in the outliner is a selectable actor.
-- Engine subsystem placeholders are split into `src/engine.rs`, and shader source is split into `src/shaders.rs`.
-- Details-panel material controls for selected mesh actors: metallic and roughness.
-- Default lighting test scene with two cube actors, one directional light actor, one point light actor, and a non-scene editor/world grid overlay.
-- Scene-owned lights affect object shading through the details panel.
-- Viewport outliner/details panels for scene objects, transforms, and lights.
-- Outliner creation/deletion for scene primitives and lights:
-  - objects: cube, plane, sphere
-  - lights: directional, point, spot
-- Lights use distinct editor icons and can be selected from the outliner or viewport, then moved/rotated with the active gizmo.
-- Toolbar snap toggle for grid-snapped movement on the X/Z plane.
-- The grid is a visual editor guide only; it does not receive shadows, block movement, or constrain objects to `Y >= 0`.
-- Click selection plus active 3D transform gizmos:
-  - move lines with cone arrowheads, center free-move, and two-axis plane handles
-  - smooth rotate axis rings with angle-based drag
-  - scale axis boxes, center uniform scale, and two-axis plane handles
-  - hover/active highlighting for the handle being targeted
-  - toolbar toggle for Global/Local transform space
-- Style presets:
-  - `1`: character-biased palette
-  - `2`: street palette
-  - `3`: combat palette
-  - `F1`: final shaded view
-  - `F2`: albedo/base color debug view
-  - `F3`: normal debug view
-  - `F4`: lighting-only debug view
-  - `F5`: roughness debug view
-  - `F6`: metallic debug view
-  - `Q`: select tool
-  - `W`: move tool
-  - `E`: rotate tool
-  - `R`: scale tool
-  - `Delete`: delete selected actor
-  - `Snap`: toggle grid snapping while moving
-  - `Global`/`Local` toolbar button: toggle transform space
-  - `Home`: reset scene
-  - Right mouse drag: orbit camera
-  - Middle mouse drag: pan camera
-  - Mouse wheel: zoom camera
-  - Click an object in the viewport to select it
-  - Click active gizmo center/axis/plane/ring handles to move, rotate, or scale
-  - `Esc`: quit
+**Editor**
+- Outliner, details/inspector panel, and a toolbar with select/move/rotate/scale gizmo tools
+- Ray-accurate click-anywhere-on-the-object picking (bounding-sphere ray cast, not a fixed on-screen click radius)
+- Local/world transform space toggle, grid snapping
+- Render Graph and Post FX debug windows (live pass reads/writes, resolved target list, all post-processing controls)
+- Drag-and-drop import of `.obj`/`.gltf`/`.glb` models and `.hdr` environments
+- UI scales with window size, and the outliner/details panels resize by dragging their border
 
-## Build And Run C++
+## Building
 
-From PowerShell in this folder:
+Requires Visual Studio 2022 (Community or better) with the C++ build tools, and CMake 3.24+.
+
+From PowerShell, in this folder:
 
 ```powershell
 .\build_cpp.bat
 ```
 
-Then run:
+This opens the VS developer environment, configures CMake (`cpp\build-msvc`, NMake Makefiles), and builds the engine. Then run it:
 
 ```powershell
-.\cpp\build-msvc\ForgeEngine.exe
+.\cpp\build-msvc\HollowEngine.exe
 ```
 
-The build script opens the Visual Studio developer environment for you, configures CMake, and builds `ForgeEngine.exe`.
-
-## Run Legacy Rust Prototype
+You can also pass a model path on the command line to import it at startup:
 
 ```powershell
-cargo run
+.\cpp\build-msvc\HollowEngine.exe "C:\path\to\model.glb"
 ```
 
-You can also pass a model path:
+A default scene (one sphere, one directional light, and a bundled default environment map) loads automatically — no arguments required.
 
-```powershell
-cargo run -- "C:\path\to\model.glb"
-```
+## Controls
 
-## Pipeline Target
+| Input | Action |
+|---|---|
+| `Q` / `W` / `E` / `R` | Select / Move / Rotate / Scale tool |
+| `X` | Toggle local/world transform space |
+| `G` | Toggle grid snapping |
+| Click | Select the object under the cursor |
+| Right mouse drag | Orbit camera |
+| Middle mouse drag | Pan camera |
+| Mouse wheel | Zoom camera |
+| `4` / `5` / `6` | Add directional / point / spot light |
+| `Delete` | Delete the selected actor |
+| `Home` | Reset scene |
+| `F1`–`F8` | Debug views (final, albedo, normals, lighting-only, roughness, metallic, occlusion, emissive) |
+| `1` / `2` / `3` | Style presets |
+| `Esc` | Quit |
 
-For the basic PBR renderer checklist and learning notes, see [PBR_PIPELINE.md](PBR_PIPELINE.md).
-For the long-term engine/editor architecture notes, see [ENGINE_ARCHITECTURE.md](ENGINE_ARCHITECTURE.md).
-For the Rust-to-C++ feature parity ledger, see [RUST_PARITY_AUDIT.md](RUST_PARITY_AUDIT.md).
-For a compact current-state summary, see [ENGINE_STATUS_SHORT.md](ENGINE_STATUS_SHORT.md).
-For a fresh-thread handoff, see [HANDOVER.md](HANDOVER.md) and [CONTINUE_PROMPT.md](CONTINUE_PROMPT.md).
+## More
 
-1. Import model data from `.glb/.gltf/.obj`.
-2. Normalize scale and origin so arbitrary Sketchfab assets enter the scene at a predictable size.
-3. Extract useful material inputs:
-   - base color/albedo
-   - normal/tangent data
-   - emissive surfaces
-   - roughness/metalness as style hints, not strict PBR
-4. Convert material data into stylized render parameters:
-   - stepped diffuse bands
-   - colored shadows
-   - directional, point, and spot light contribution
-   - graphic specular highlights derived from imported albedo
-   - rim-light color and width
-   - outline width/color
-   - emissive accent intensity
-5. Render with separate passes:
-   - depth prepass
-   - toon base pass
-   - inverted-hull or screen-space outlines
-   - emissive/bloom accents
-   - optional post-process color grade, vignette, and halftone/noise texture
-6. Add editor affordances:
-   - asset browser
-   - object selection
-   - translate/rotate/scale gizmos
-   - material style controls
-   - save/load scene files
-
-## Next Engineering Steps
-
-1. Visual QA textured OBJ materials, the light workspace background, mesh outline pass, C++ PBR shader, and debug views in the app.
-2. Add glTF/GLB drag-drop import in C++.
-3. Visual QA `.glb/.gltf` imports from Sketchfab-style assets, especially multi-material textured models.
-4. Visual QA directional and first point-light shadow map coverage, bias, and softness on imported GLB assets.
-5. Continue the PBR pipeline: image-based/environment lighting, emissive/bloom, and broader post-processing.
+- [ARCHITECTURE.md](ARCHITECTURE.md) — a detailed tour of the current engine and editor architecture.
+- [ROADMAP.md](ROADMAP.md) — what's built, what's in progress, and what's planned next.

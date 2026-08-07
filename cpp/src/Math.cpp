@@ -1,8 +1,13 @@
-#include "Forge/Math.hpp"
+// Implementation of the Vec2/Vec3/Mat4/Transform math declared in
+// Math.hpp. Matrices are stored column-major (matching OpenGL's expected
+// layout), so translation lives in m[12..14] and matrix multiplication
+// combines column/row indices accordingly — see operator* below.
+
+#include "Hollow/Math.hpp"
 
 #include <algorithm>
 
-namespace Forge {
+namespace Hollow {
 
 Vec3 Vec3::zero() { return {}; }
 
@@ -221,4 +226,4 @@ Mat4 Transform::matrix() const {
     return Mat4::translation(translation) * Mat4::rotation_xyz(rotation) * Mat4::scale(scale);
 }
 
-} // namespace Forge
+} // namespace Hollow

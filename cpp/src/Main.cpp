@@ -1,4 +1,6 @@
-#include "Forge/App.hpp"
+// Executable entry point: forwards command-line arguments as startup asset
+// imports and hands off to Hollow::App.
+#include "Hollow/App.hpp"
 
 #include <filesystem>
 #include <vector>
@@ -8,6 +10,6 @@ int main(int argc, char** argv) {
     for (int i = 1; i < argc; ++i) {
         startup_imports.emplace_back(argv[i]);
     }
-    Forge::App app;
+    Hollow::App app;
     return app.run(startup_imports);
 }

@@ -1,6 +1,13 @@
+// Scene graph data model: Actor/Component composition, mesh/material/vertex
+// types (MeshPart, Material, Vertex), and the Scene container that owns and
+// selects actors. Importer::import_model_file() produces MeshPart data that
+// Scene::create_mesh_actor() consumes to add imported models to a scene;
+// make_default_scene() builds the app's starting scene from these types.
+// This header has no rendering or file I/O dependencies of its own.
+
 #pragma once
 
-#include "Forge/Math.hpp"
+#include "Hollow/Math.hpp"
 
 #include <cstdint>
 #include <memory>
@@ -8,7 +15,7 @@
 #include <utility>
 #include <vector>
 
-namespace Forge {
+namespace Hollow {
 
 enum class Mobility {
     Static,
@@ -52,15 +59,27 @@ private:
     ComponentKind kind_;
 };
 
+enum class AlphaMode {
+    Opaque,
+    Mask,
+    Blend,
+};
+
 struct Material {
     Vec3 base_color{0.75f, 0.72f, 0.62f};
+    float base_color_alpha = 1.0f;
     float metallic = 0.0f;
     float roughness = 0.55f;
     float normal_strength = 1.0f;
+    Vec3 emissive_factor{0.0f, 0.0f, 0.0f};
+    float occlusion_strength = 1.0f;
+    AlphaMode alpha_mode = AlphaMode::Opaque;
+    float alpha_cutoff = 0.5f;
     std::string base_color_texture_path;
     std::string metallic_roughness_texture_path;
     std::string normal_texture_path;
     std::string emissive_texture_path;
+    std::string occlusion_texture_path;
 };
 
 struct Vertex {
@@ -208,4 +227,4 @@ private:
 
 Scene make_default_scene();
 
-} // namespace Forge
+} // namespace Hollow

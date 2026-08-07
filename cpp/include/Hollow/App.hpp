@@ -1,10 +1,17 @@
+// App is the engine's top-level owner and main-loop driver: it creates the
+// window/renderer/scene, ticks the Engine each frame, and turns raw window
+// input into editor actions (camera orbit/pan, gizmo dragging, ray-based
+// actor picking, drag-and-drop model/HDR import). It also loads the bundled
+// default environment on startup so a fresh checkout renders lit immediately.
+// EditorUi owns and draws the Dear ImGui panels; App just feeds it state each
+// frame and applies back whatever EditorCommand it returns.
 #pragma once
 
-#include "Forge/EditorUi.hpp"
-#include "Forge/Engine.hpp"
-#include "Forge/Renderer.hpp"
-#include "Forge/Scene.hpp"
-#include "Forge/Win32Window.hpp"
+#include "Hollow/EditorUi.hpp"
+#include "Hollow/Engine.hpp"
+#include "Hollow/Renderer.hpp"
+#include "Hollow/Scene.hpp"
+#include "Hollow/Win32Window.hpp"
 
 #include <chrono>
 #include <filesystem>
@@ -12,7 +19,7 @@
 #include <string>
 #include <vector>
 
-namespace Forge {
+namespace Hollow {
 
 enum class DragMode {
     None,
@@ -69,7 +76,7 @@ private:
     int drag_start_x_ = 0;
     int drag_start_y_ = 0;
     bool snap_to_grid_ = false;
-    std::string status_ = "Drop a Sketchfab-style .glb/.gltf/.obj to import";
+    std::string status_ = "Drop a .glb/.gltf/.obj to import, or a .hdr to set the environment";
 };
 
-} // namespace Forge
+} // namespace Hollow

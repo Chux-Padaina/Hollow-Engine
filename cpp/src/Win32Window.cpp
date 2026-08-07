@@ -1,4 +1,8 @@
-#include "Forge/Win32Window.hpp"
+// Implementation of Win32Window: window/class registration, WGL OpenGL
+// context creation via a legacy pixel-format + wglCreateContext path, the
+// window procedure (mouse input, WM_DROPFILES, resize), and ImGui's Win32
+// backend hook.
+#include "Hollow/Win32Window.hpp"
 
 #include <Windows.h>
 #include <windowsx.h>
@@ -10,7 +14,7 @@
 
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam);
 
-namespace Forge {
+namespace Hollow {
 
 Win32Window::~Win32Window() {
     if (gl_context_ != nullptr) {
@@ -26,11 +30,23 @@ Win32Window::~Win32Window() {
 }
 
 bool Win32Window::create(const wchar_t* title, int width, int height) {
+    // Must happen before any window is created. Without this, Windows
+    // treats the process as DPI-unaware and silently bitmap-stretches the
+    // whole window (including our already-rendered OpenGL framebuffer) to
+    // match the display's scale factor on any monitor with scaling enabled
+    // (100% is the only scale factor this wouldn't affect) — the most
+    // common cause of a "pixelated" look that's independent of whatever
+    // render resolution is actually chosen. SetProcessDPIAware() is the
+    // simple Vista+ form (vs. SetProcessDpiAwarenessContext, which needs a
+    // newer SDK header and Windows 10 1703+); per-monitor-v2 awareness
+    // would be a nicer upgrade later but isn't needed to fix the blur.
+    SetProcessDPIAware();
+
     width_ = width;
     height_ = height;
 
     HINSTANCE instance = GetModuleHandleW(nullptr);
-    constexpr wchar_t class_name[] = L"ForgeEngineWindow";
+    constexpr wchar_t class_name[] = L"HollowEngineWindow";
 
     WNDCLASSW wc{};
     wc.lpfnWndProc = Win32Window::window_proc;
@@ -98,6 +114,22 @@ bool Win32Window::create(const wchar_t* title, int width, int height) {
     ShowWindow(hwnd_, SW_SHOW);
     DragAcceptFiles(hwnd_, TRUE);
     return true;
+}
+
+void Win32Window::set_client_size(int width, int height) {
+    if (hwnd_ == nullptr) {
+        return;
+    }
+
+    RECT rect{0, 0, width, height};
+    if (AdjustWindowRect(&rect, WS_OVERLAPPEDWINDOW, FALSE) == FALSE) {
+        return;
+    }
+
+    // SWP_NOMOVE keeps the window's current top-left corner; only the size
+    // changes. The resulting WM_SIZE message updates width_/height_ from
+    // the new client area, same as a user manually dragging the border.
+    SetWindowPos(hwnd_, nullptr, 0, 0, rect.right - rect.left, rect.bottom - rect.top, SWP_NOMOVE | SWP_NOZORDER);
 }
 
 bool Win32Window::poll_messages() {
@@ -222,4 +254,4 @@ void Win32Window::set_last_error(std::wstring message) {
     last_error_ = std::move(message);
 }
 
-} // namespace Forge
+} // namespace Hollow

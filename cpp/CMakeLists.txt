@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 
-project(ForgeEnginePrototype LANGUAGES CXX)
+project(HollowEngine VERSION 0.1 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -26,10 +26,11 @@ if (WIN32)
     target_compile_definitions(imgui PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
 endif()
 
-add_executable(ForgeEngine
+add_executable(HollowEngine
     src/App.cpp
     src/EditorUi.cpp
     src/Engine.cpp
+    src/HdrLoader.cpp
     src/Importer.cpp
     src/Json.cpp
     src/Main.cpp
@@ -40,21 +41,33 @@ add_executable(ForgeEngine
     src/Win32Window.cpp
 )
 
-target_include_directories(ForgeEngine PRIVATE include)
+target_include_directories(HollowEngine PRIVATE include)
 
 if (MSVC)
-    target_compile_options(ForgeEngine PRIVATE /W4 /permissive- /EHsc)
+    target_compile_options(HollowEngine PRIVATE /W4 /permissive- /EHsc)
 else()
-    target_compile_options(ForgeEngine PRIVATE -Wall -Wextra -Wpedantic)
+    target_compile_options(HollowEngine PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
 find_package(OpenGL REQUIRED)
-target_link_libraries(ForgeEngine PRIVATE OpenGL::GL imgui)
+target_link_libraries(HollowEngine PRIVATE OpenGL::GL imgui)
 
 if (WIN32)
-    target_link_libraries(ForgeEngine PRIVATE shell32 windowscodecs ole32)
+    target_link_libraries(HollowEngine PRIVATE shell32 windowscodecs ole32)
 endif()
 
 if (WIN32)
-    target_compile_definitions(ForgeEngine PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
+    target_compile_definitions(HollowEngine PRIVATE WIN32_LEAN_AND_MEAN NOMINMAX)
 endif()
+
+# Bundled runtime assets (currently just the default skybox HDR) live next
+# to the built executable, not the source tree, so App::run can find them
+# from a stable, launch-method-independent path (see executable_directory()
+# in App.cpp). Re-run on every build rather than only when stale, since
+# CMake's own up-to-date check on a whole directory copy is unreliable
+# across generators.
+add_custom_command(TARGET HollowEngine POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        ${CMAKE_CURRENT_SOURCE_DIR}/assets
+        $<TARGET_FILE_DIR:HollowEngine>/assets
+)

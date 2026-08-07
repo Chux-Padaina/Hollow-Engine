@@ -1,9 +1,13 @@
-#include "Forge/Scene.hpp"
+// Implements the Scene/Actor/Component types declared in Scene.hpp: actor
+// creation and lookup, per-light-kind default parameters, and
+// make_default_scene(), which builds the scene the editor opens with.
+
+#include "Hollow/Scene.hpp"
 
 #include <algorithm>
 #include <numbers>
 
-namespace Forge {
+namespace Hollow {
 
 Component::Component(ComponentKind kind) : kind_(kind) {}
 
@@ -162,37 +166,33 @@ std::string Scene::unique_actor_name(const std::string& base) const {
     }
 }
 
+// Deliberately minimal: one sphere, one directional light, and the default
+// environment map (loaded separately by App::run — see its comment for why
+// that lives outside the scene) for a plain, portfolio-ready first look at
+// the renderer. Earlier revisions also seeded a cube alongside the sphere,
+// plus a blue point light and an orange spot light to exercise every light
+// type by default, but once IBL started sampling a real environment
+// correctly those extra lights' direct contributions became a much more
+// visible (and confusing) part of the image, making it hard to tell an
+// actual rendering bug from "that's just the scene's own point light," and
+// the second mesh added nothing the single sphere didn't already show.
+// Cubes, point lights, and spot lights are all still fully supported (see
+// MeshPrimitive, LightKind, the outliner's "Add Object"/"Add Light" menus)
+// — they're just not part of the default scene anymore.
 Scene make_default_scene() {
     Scene scene;
-    Transform cube_a;
-    cube_a.translation = {-1.2f, 0.5f, 0.0f};
-    auto& a = scene.create_static_mesh_actor("Cube A", MeshPrimitive::Cube, cube_a);
-    if (auto* mesh = a.find_component<StaticMeshComponent>()) {
-        mesh->parts.front().material.base_color = {0.82f, 0.66f, 0.42f};
-        mesh->parts.front().material.roughness = 0.72f;
-    }
 
-    Transform cube_b;
-    cube_b.translation = {1.2f, 0.5f, 0.0f};
-    cube_b.scale = {0.8f, 0.8f, 0.8f};
-    auto& b = scene.create_static_mesh_actor("Cube B", MeshPrimitive::Cube, cube_b);
-    if (auto* mesh = b.find_component<StaticMeshComponent>()) {
-        mesh->parts.front().material.base_color = {0.42f, 0.58f, 0.76f};
-        mesh->parts.front().material.metallic = 1.0f;
-        mesh->parts.front().material.roughness = 0.28f;
-    }
+    Transform sphere;
+    sphere.translation = {0.0f, 0.5f, 0.0f};
+    scene.create_static_mesh_actor("Sphere", MeshPrimitive::Sphere, sphere);
 
     Transform directional;
     directional.translation = {1.35f, 2.7f, 1.05f};
     directional.rotation = {0.5f, -0.45f, 0.0f};
     scene.create_light_actor("Key Directional", LightKind::Directional, directional);
 
-    Transform point;
-    point.translation = {0.0f, 2.4f, 2.2f};
-    scene.create_light_actor("Test Point", LightKind::Point, point);
-
     scene.select_actor(1);
     return scene;
 }
 
-} // namespace Forge
+} // namespace Hollow

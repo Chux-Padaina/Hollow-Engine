@@ -1,10 +1,14 @@
-#include "Forge/Json.hpp"
+// Recursive-descent parser backing the JsonValue type declared in
+// Json.hpp. Parses the standard object/array/string/number/bool/null
+// grammar; see JsonParser below for the entry point.
+
+#include "Hollow/Json.hpp"
 
 #include <cctype>
 #include <charconv>
 #include <stdexcept>
 
-namespace Forge {
+namespace Hollow {
 namespace {
 
 const JsonValue kNullValue{};
@@ -237,4 +241,4 @@ JsonValue parse_json(const std::string& text) {
     return JsonParser(text).parse();
 }
 
-} // namespace Forge
+} // namespace Hollow

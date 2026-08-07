@@ -18,4 +18,4 @@ cmake --build cpp\build-msvc --config Debug
 if errorlevel 1 exit /b %errorlevel%
 
 echo.
-echo Built cpp\build-msvc\ForgeEngine.exe
+echo Built cpp\build-msvc\HollowEngine.exe

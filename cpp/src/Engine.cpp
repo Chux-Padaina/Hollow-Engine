@@ -1,6 +1,9 @@
-#include "Forge/Engine.hpp"
+// Implementation of the Engine/SystemRegistry declared in Engine.hpp: enum
+// name lookups for the editor UI, the placeholder system registration list,
+// and the editor tool/transform-space state transitions.
+#include "Hollow/Engine.hpp"
 
-namespace Forge {
+namespace Hollow {
 
 const char* name_of(StylePreset style) {
     switch (style) {
@@ -28,6 +31,10 @@ const char* name_of(DebugView view) {
         return "Roughness";
     case DebugView::Metallic:
         return "Metallic";
+    case DebugView::Occlusion:
+        return "Occlusion";
+    case DebugView::Emissive:
+        return "Emissive";
     }
     return "Unknown";
 }
@@ -56,4 +63,4 @@ void Engine::toggle_transform_space() {
     transform_space_ = transform_space_ == TransformSpace::World ? TransformSpace::Local : TransformSpace::World;
 }
 
-} // namespace Forge
+} // namespace Hollow

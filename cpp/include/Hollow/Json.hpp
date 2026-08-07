@@ -1,10 +1,15 @@
+// Minimal hand-rolled JSON value type and recursive-descent parser. Used by
+// the glTF importer to read .gltf scene/asset files; it is not a
+// general-purpose JSON library (no serialization/pretty-printing, and
+// \uXXXX string escapes are not decoded to their real codepoint).
+
 #pragma once
 
 #include <map>
 #include <string>
 #include <vector>
 
-namespace Forge {
+namespace Hollow {
 
 class JsonValue {
 public:
@@ -40,4 +45,4 @@ public:
 
 JsonValue parse_json(const std::string& text);
 
-} // namespace Forge
+} // namespace Hollow

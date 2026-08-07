@@ -1,15 +1,22 @@
-#include "Forge/App.hpp"
-#include "Forge/Importer.hpp"
+// Implementation of App: the main loop, keyboard/mouse handling, transform
+// gizmo math (axis/ring picking and drag-to-delta conversion), actor
+// ray-picking, and model/environment import glue. See App.hpp for the
+// class-level summary of how this fits together with EditorUi, Renderer,
+// and Scene.
+
+#include "Hollow/App.hpp"
+#include "Hollow/Importer.hpp"
 
 #include <Windows.h>
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <iostream>
 #include <sstream>
 #include <stdexcept>
 
-namespace Forge {
+namespace Hollow {
 namespace {
 
 bool key_pressed(int key) {
@@ -37,16 +44,101 @@ std::wstring widen(const std::string& value) {
     return {value.begin(), value.end()};
 }
 
+// A world-space ray from the camera through a screen pixel, used for object
+// picking (App::pick_actor). Built directly from the camera's own basis
+// vectors and vertical FOV rather than unprojecting through an inverse
+// view-projection matrix, since `Math.hpp` has no `Mat4::inverse()` — the
+// same no-matrix-inverse approach already used for the cascade shadow
+// frustum-corner fitting and the SSAO world-position reconstruction
+// (Renderer.cpp), valid here for the same reason: the camera is always a
+// symmetric perspective projection.
+struct PickRay {
+    Vec3 origin;
+    Vec3 direction;
+};
+
+PickRay make_pick_ray(const Camera& camera, int x, int y, int viewport_width, int viewport_height) {
+    const float width = static_cast<float>(std::max(1, viewport_width));
+    const float height = static_cast<float>(std::max(1, viewport_height));
+    // Same pixel<->NDC mapping as Renderer::project, inverted: that function
+    // maps ndc [-1,1] to screen [0,width]/[0,height] (with y flipped since
+    // screen space grows downward); this is the same mapping solved for ndc
+    // given a screen pixel.
+    const float ndc_x = (2.0f * static_cast<float>(x) / width) - 1.0f;
+    const float ndc_y = 1.0f - (2.0f * static_cast<float>(y) / height);
+    const float half_height = std::tan(camera.fov_y_radians * 0.5f);
+    const float half_width = half_height * (width / height);
+    const Vec3 direction = normalize(camera.forward() + camera.right() * (ndc_x * half_width) + camera.up() * (ndc_y * half_height));
+    return {camera.position(), direction};
+}
+
+// Nearest positive intersection distance of `ray` with the sphere at
+// `center`/`radius`, or a negative value if the ray misses it (or the
+// sphere is entirely behind the ray's origin). Falls back to the far
+// intersection point if the origin is inside the sphere, so a camera that's
+// clipped into an object's bounding sphere still resolves to a sane pick.
+float ray_sphere_hit_distance(const PickRay& ray, Vec3 center, float radius) {
+    const Vec3 to_center = center - ray.origin;
+    const float projection = dot(to_center, ray.direction);
+    const float closest_distance_sq = dot(to_center, to_center) - projection * projection;
+    const float radius_sq = radius * radius;
+    if (closest_distance_sq > radius_sq) {
+        return -1.0f;
+    }
+    const float half_chord = std::sqrt(radius_sq - closest_distance_sq);
+    const float near_hit = projection - half_chord;
+    if (near_hit >= 0.0f) {
+        return near_hit;
+    }
+    const float far_hit = projection + half_chord;
+    return far_hit >= 0.0f ? far_hit : -1.0f;
+}
+
+bool is_hdr_environment_file(const std::filesystem::path& path) {
+    std::string extension = path.extension().string();
+    std::transform(extension.begin(), extension.end(), extension.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return extension == ".hdr";
+}
+
+// Directory the running .exe lives in, used to find bundled assets (the
+// default skybox below) regardless of the process's current working
+// directory — which varies by launch method (VS/CLion debugger, a build
+// output folder, a double-click) and can't be relied on for relative paths.
+std::filesystem::path executable_directory() {
+    wchar_t buffer[MAX_PATH] = {};
+    const DWORD length = GetModuleFileNameW(nullptr, buffer, MAX_PATH);
+    if (length == 0 || length == MAX_PATH) {
+        return std::filesystem::current_path();
+    }
+    return std::filesystem::path(buffer).parent_path();
+}
+
 } // namespace
 
 int App::run(const std::vector<std::filesystem::path>& startup_imports) {
-    if (!window_.create(L"Forge Engine C++ Prototype", 1280, 720)) {
-        std::wcerr << L"Failed to create Forge window: " << window_.last_error() << L"\n";
+    if (!window_.create(L"Hollow Engine v0.1", 1280, 720)) {
+        std::wcerr << L"Failed to create Hollow window: " << window_.last_error() << L"\n";
         return 1;
     }
 
     renderer_.initialize(window_.device_context());
     editor_ui_.initialize(window_);
+
+    // Load the bundled default skybox/environment map so a fresh checkout
+    // shows a lit, IBL-shaded scene immediately instead of a flat gray
+    // sphere — CMake copies assets/ next to the built executable (see
+    // cpp/CMakeLists.txt), so this path is stable across debugger and
+    // double-click launches alike. Silently skipped if it's missing (e.g. a
+    // partial checkout) rather than failing startup over a missing asset.
+    const std::filesystem::path default_environment = executable_directory() / "assets" / "skybox" / "default_sky.hdr";
+    if (std::filesystem::exists(default_environment)) {
+        try {
+            renderer_.load_environment(default_environment.string());
+        } catch (const std::exception& error) {
+            status_ = std::string("Default environment load failed: ") + error.what();
+        }
+    }
+
     for (const auto& path : startup_imports) {
         import_model(path);
     }
@@ -72,7 +164,7 @@ int App::run(const std::vector<std::filesystem::path>& startup_imports) {
         engine_.tick(delta);
         renderer_.resize(window_.width(), window_.height());
         renderer_.render(scene_, camera_, engine_);
-        execute_editor_command(editor_ui_.draw(scene_, engine_, camera_, snap_to_grid_, status_));
+        execute_editor_command(editor_ui_.draw(scene_, engine_, camera_, snap_to_grid_, status_, renderer_));
         editor_ui_.render();
         window_.swap_buffers();
         update_window_title();
@@ -122,6 +214,8 @@ void App::handle_keyboard() {
     if (key_pressed(VK_F4)) engine_.set_debug_view(DebugView::LightingOnly);
     if (key_pressed(VK_F5)) engine_.set_debug_view(DebugView::Roughness);
     if (key_pressed(VK_F6)) engine_.set_debug_view(DebugView::Metallic);
+    if (key_pressed(VK_F7)) engine_.set_debug_view(DebugView::Occlusion);
+    if (key_pressed(VK_F8)) engine_.set_debug_view(DebugView::Emissive);
     if (key_pressed('X')) {
         engine_.toggle_transform_space();
     }
@@ -335,6 +429,16 @@ void App::reset_scene() {
 }
 
 void App::import_model(const std::filesystem::path& path) {
+    if (is_hdr_environment_file(path)) {
+        try {
+            renderer_.load_environment(path.string());
+            status_ = "Loaded environment: " + path.filename().string();
+        } catch (const std::exception& error) {
+            status_ = std::string("Environment load failed: ") + error.what();
+        }
+        return;
+    }
+
     try {
         ImportedModel model = import_model_file(path);
         if (model.parts.empty()) {
@@ -357,17 +461,58 @@ void App::import_pending_drops() {
     }
 }
 
+// Ray-casts against each actor's world-space bounding sphere and picks the
+// nearest hit along the ray (nearest in 3D, not nearest to the click point
+// in 2D screen space) — this is what makes clicking anywhere on an object's
+// visible surface select it, Unreal-style, rather than needing to land
+// within a small fixed screen-space radius of its origin. A bounding
+// sphere, not a precise per-triangle or even per-OBB test, is a deliberate
+// scoping choice consistent with this engine's other "good enough, no
+// matrix inverse needed" approximations (the cascade shadow frustum fit,
+// the SSAO position reconstruction): it can over-select just past an
+// object's actual silhouette (e.g. near a flat plane's corners, or just
+// beyond a cube's edges), but that's a much smaller usability problem than
+// the previous fixed ~18px screen-space radius, which could require
+// clicking within a few pixels of an object's dead center — especially for
+// large or close-up meshes, whose pick radius never grew to match their
+// actual on-screen size.
 ActorId App::pick_actor(int x, int y) const {
+    const PickRay ray = make_pick_ray(camera_, x, y, window_.width(), window_.height());
+
     ActorId best_id = 0;
     float best_distance = 1000000.0f;
-    const Vec2 mouse{static_cast<float>(x), static_cast<float>(y)};
     for (const auto& actor : scene_.actors()) {
         const Transform& t = actor->root().local_transform;
-        Vec2 p = renderer_.project(t.translation, camera_);
-        float radius = actor->find_component<LightComponent>() ? 18.0f : std::max({18.0f, t.scale.x * 28.0f, t.scale.y * 28.0f, t.scale.z * 28.0f});
-        float dist = distance_2d(mouse, p);
-        if (dist < radius && dist < best_distance) {
-            best_distance = dist;
+        float world_radius;
+        if (const auto* mesh = actor->find_component<StaticMeshComponent>()) {
+            if (!mesh->visible || mesh->parts.empty()) {
+                continue;
+            }
+            // Every part on an actor shares the actor's root transform as
+            // its local origin (Importer.cpp's normalize_parts re-centers
+            // and scales every part of an imported model into one shared
+            // local space, sharing one `center`), so a single sphere per
+            // actor — the largest of its parts' radii — is enough; no need
+            // to test each part separately.
+            float local_radius = 0.0f;
+            for (const MeshPart& part : mesh->parts) {
+                local_radius = std::max(local_radius, part.bounds_radius);
+            }
+            const float max_scale = std::max({std::abs(t.scale.x), std::abs(t.scale.y), std::abs(t.scale.z), 0.01f});
+            world_radius = local_radius * max_scale;
+        } else if (actor->find_component<LightComponent>() != nullptr) {
+            // Light icons are drawn at a fixed local scale regardless of
+            // the actor's own transform (Renderer::draw_light_icon), so
+            // their pick radius is a fixed world size too, not scaled by
+            // `t.scale`.
+            world_radius = 0.3f;
+        } else {
+            continue;
+        }
+
+        const float hit_distance = ray_sphere_hit_distance(ray, t.translation, world_radius);
+        if (hit_distance >= 0.0f && hit_distance < best_distance) {
+            best_distance = hit_distance;
             best_id = actor->id();
         }
     }
@@ -515,11 +660,11 @@ float App::screen_ring_drag_delta(DragMode rotate_mode, const Transform& transfo
 void App::update_window_title() {
     const Actor* selected = scene_.selected_actor();
     std::wstringstream title;
-    title << L"Forge Engine C++ Prototype";
+    title << L"Hollow Engine v0.1";
     title << L" | actors: " << scene_.actors().size();
     title << L" | selected: " << (selected != nullptr ? widen(selected->name()) : L"None");
     title << L" | RMB orbit, MMB pan, wheel zoom, Q/W/E/R tools, X local/world, G snap";
     SetWindowTextW(window_.hwnd(), title.str().c_str());
 }
 
-} // namespace Forge
+} // namespace Hollow

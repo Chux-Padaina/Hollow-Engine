@@ -1,5 +1,12 @@
-#include "Forge/Importer.hpp"
-#include "Forge/Json.hpp"
+// Implements Importer.hpp: parses glTF/GLB (via Json.hpp) and Wavefront OBJ
+// (with its companion MTL material files) into MeshPart/Vertex/Material
+// data, including tangent generation and bounds normalization shared by
+// both formats. All parsing helpers are file-local (anonymous namespace);
+// import_model_file() dispatches on file extension and is the only
+// externally visible entry point besides supported_import_extensions().
+
+#include "Hollow/Importer.hpp"
+#include "Hollow/Json.hpp"
 
 #include <algorithm>
 #include <array>
@@ -15,7 +22,7 @@
 #include <stdexcept>
 #include <string_view>
 
-namespace Forge {
+namespace Hollow {
 namespace {
 
 struct GltfDocument {
@@ -311,6 +318,18 @@ std::map<std::string, Material> load_mtl_file(const std::filesystem::path& path)
             float ns = 0.0f;
             stream >> ns;
             materials[current_name].roughness = std::clamp(1.0f - ns / 1000.0f, 0.04f, 1.0f);
+        } else if (tag == "Ke" && !current_name.empty()) {
+            stream >> materials[current_name].emissive_factor.x >> materials[current_name].emissive_factor.y >> materials[current_name].emissive_factor.z;
+        } else if ((tag == "d" || tag == "Tr") && !current_name.empty()) {
+            float value = 1.0f;
+            stream >> value;
+            // OBJ has two conventions for the same concept: `d` is opacity
+            // (1 = fully opaque), `Tr` is transparency (0 = fully opaque).
+            const float opacity = std::clamp(tag == "d" ? value : 1.0f - value, 0.0f, 1.0f);
+            materials[current_name].base_color_alpha = opacity;
+            if (opacity < 0.999f) {
+                materials[current_name].alpha_mode = AlphaMode::Blend;
+            }
         } else if ((tag == "map_Kd" || tag == "map_BaseColor") && !current_name.empty()) {
             const std::string texture_name = read_mtl_texture_name(stream);
             materials[current_name].base_color_texture_path = resolve_texture_path(path, texture_name);
@@ -482,7 +501,7 @@ std::filesystem::path extracted_image_path(const std::filesystem::path& model_pa
     } else if (mime_type == "image/webp") {
         ext = ".webp";
     }
-    return std::filesystem::temp_directory_path() / ("forge_gltf_" + model_path.stem().string() + "_" + std::to_string(index) + ext);
+    return std::filesystem::temp_directory_path() / ("hollow_gltf_" + model_path.stem().string() + "_" + std::to_string(index) + ext);
 }
 
 AttributeReader accessor_reader(const GltfDocument& document, int accessor_index) {
@@ -601,6 +620,9 @@ Material read_gltf_material(const GltfDocument& document, int material_index) {
         const JsonValue& factor = pbr.at("baseColorFactor");
         if (factor.is_array() && factor.array_value.size() >= 3) {
             material.base_color = {factor.at(0).as_float(1.0f), factor.at(1).as_float(1.0f), factor.at(2).as_float(1.0f)};
+            if (factor.array_value.size() >= 4) {
+                material.base_color_alpha = std::clamp(factor.at(3).as_float(1.0f), 0.0f, 1.0f);
+            }
         }
         material.metallic = std::clamp(pbr.at("metallicFactor").as_float(1.0f), 0.0f, 1.0f);
         material.roughness = std::clamp(pbr.at("roughnessFactor").as_float(1.0f), 0.04f, 1.0f);
@@ -610,7 +632,31 @@ Material read_gltf_material(const GltfDocument& document, int material_index) {
     const JsonValue& normal_texture = material_json.at("normalTexture");
     material.normal_texture_path = texture_image_path(document, normal_texture);
     material.normal_strength = normal_texture.at("scale").as_float(1.0f);
+
+    const JsonValue& emissive_factor = material_json.at("emissiveFactor");
+    if (emissive_factor.is_array() && emissive_factor.array_value.size() >= 3) {
+        material.emissive_factor = {
+            emissive_factor.at(0).as_float(0.0f),
+            emissive_factor.at(1).as_float(0.0f),
+            emissive_factor.at(2).as_float(0.0f),
+        };
+    }
     material.emissive_texture_path = texture_image_path(document, material_json.at("emissiveTexture"));
+
+    const JsonValue& occlusion_texture = material_json.at("occlusionTexture");
+    material.occlusion_texture_path = texture_image_path(document, occlusion_texture);
+    material.occlusion_strength = std::clamp(occlusion_texture.at("strength").as_float(1.0f), 0.0f, 1.0f);
+
+    const std::string alpha_mode = material_json.at("alphaMode").as_string("OPAQUE");
+    if (alpha_mode == "MASK") {
+        material.alpha_mode = AlphaMode::Mask;
+    } else if (alpha_mode == "BLEND") {
+        material.alpha_mode = AlphaMode::Blend;
+    } else {
+        material.alpha_mode = AlphaMode::Opaque;
+    }
+    material.alpha_cutoff = material_json.at("alphaCutoff").as_float(0.5f);
+
     return material;
 }
 
@@ -926,4 +972,4 @@ std::string supported_import_extensions() {
     return ".obj, .gltf, .glb";
 }
 
-} // namespace Forge
+} // namespace Hollow

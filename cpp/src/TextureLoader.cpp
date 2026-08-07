@@ -1,4 +1,10 @@
-#include "Forge/TextureLoader.hpp"
+// WIC (Windows Imaging Component)-based implementation of
+// load_texture_image() from TextureLoader.hpp. Decodes the source image
+// and converts it to 32bpp RGBA before copying pixels out, so callers
+// always get a consistent 4-channel byte buffer regardless of the source
+// format.
+
+#include "Hollow/TextureLoader.hpp"
 
 #include <Windows.h>
 #include <wincodec.h>
@@ -6,7 +12,7 @@
 #include <stdexcept>
 #include <string>
 
-namespace Forge {
+namespace Hollow {
 namespace {
 
 class ComPtr {
@@ -92,4 +98,4 @@ TextureImage load_texture_image(const std::filesystem::path& path) {
     return image;
 }
 
-} // namespace Forge
+} // namespace Hollow

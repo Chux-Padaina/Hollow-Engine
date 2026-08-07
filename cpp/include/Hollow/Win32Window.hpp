@@ -1,3 +1,8 @@
+// Win32 window creation, the message pump, and mouse/drag-drop input state.
+// Owns the WGL OpenGL context created alongside the window; Renderer targets
+// that context but doesn't manage its lifetime. This project loads GL
+// function pointers manually (no GLFW/SDL), so this is also where the
+// pixel-format setup for a compatible OpenGL context lives.
 #pragma once
 
 #include <Windows.h>
@@ -5,7 +10,7 @@
 #include <string>
 #include <vector>
 
-namespace Forge {
+namespace Hollow {
 
 struct MouseState {
     int x = 0;
@@ -31,6 +36,13 @@ public:
     Win32Window& operator=(const Win32Window&) = delete;
 
     bool create(const wchar_t* title, int width, int height);
+    // Resizes the actual OS window's client area to the given size
+    // (mirrors create()'s AdjustWindowRect-then-size logic, but applied to
+    // the already-created hwnd_). Everything downstream — Renderer::resize
+    // and every render target it recreates — already tracks width()/
+    // height() every frame via the WM_SIZE handler, so this is the only
+    // piece a resolution-preset UI control needs to call.
+    void set_client_size(int width, int height);
     bool poll_messages();
     void begin_frame();
     void swap_buffers();
@@ -60,4 +72,4 @@ private:
     std::vector<std::wstring> dropped_files_;
 };
 
-} // namespace Forge
+} // namespace Hollow
