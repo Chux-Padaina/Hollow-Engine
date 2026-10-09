@@ -1,0 +1,56 @@
+// Contact shadows: a short screen-space ray march toward the sun that
+// catches small-scale occlusion shadow maps miss (crevices, feet on the
+// ground). 1 = lit.
+#include "frame.glsl"
+
+layout(local_size_x = 8, local_size_y = 8) in;
+layout(binding = 0) uniform sampler2D t_depth;
+layout(r8, binding = 0) uniform writeonly image2D i_out;
+uniform float u_length;
+uniform int u_steps;
+
+void main() {
+    ivec2 p = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 size = ivec2(u_render_size.xy);
+    if (any(greaterThanEqual(p, size))) {
+        return;
+    }
+    float depth = texelFetch(t_depth, p, 0).r;
+    if (depth <= 0.0 || u_sun_direction.w < 0.0) {
+        imageStore(i_out, p, vec4(1.0));
+        return;
+    }
+    vec2 uv = (vec2(p) + 0.5) * u_render_size.zw;
+    vec3 world = world_from_depth(uv, depth);
+    vec3 dir = normalize(u_sun_direction.xyz);
+    float view_z = linear_depth(depth);
+    // Thickness grows with distance (depth precision).
+    float thickness = 0.02 + view_z * 0.004;
+    float noise = interleaved_gradient_noise(vec2(p), float(u_flags.w));
+    float shadow = 1.0;
+    for (int i = 0; i < u_steps; ++i) {
+        float t = (float(i) + noise) / float(u_steps);
+        vec3 s = world + dir * (t * u_length + view_z * 0.002);
+        vec4 clip = u_view_projection * vec4(s, 1.0);
+        if (clip.w <= 0.0) {
+            break;
+        }
+        vec2 suv = clip.xy / clip.w * 0.5 + 0.5;
+        if (any(lessThan(suv, vec2(0.0))) || any(greaterThan(suv, vec2(1.0)))) {
+            break;
+        }
+        float scene_d = textureLod(t_depth, suv, 0.0).r;
+        if (scene_d <= 0.0) {
+            continue;
+        }
+        float scene_z = linear_depth(scene_d);
+        float ray_z = clip.w;
+        float diff = ray_z - scene_z;
+        if (diff > 0.0 && diff < thickness) {
+            // Fade near the end of the ray and at screen edges.
+            shadow = mix(0.0, 1.0, t * t);
+            break;
+        }
+    }
+    imageStore(i_out, p, vec4(shadow));
+}

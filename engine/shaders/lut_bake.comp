@@ -1,0 +1,56 @@
+// Bakes color grading + the tonemapper into a 32^3 LUT indexed by the
+// log-encoded scene color. Output: display-linear color.
+#include "tonemappers.glsl"
+
+layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
+layout(rgba16f, binding = 0) uniform writeonly image3D i_lut;
+layout(binding = 0) uniform sampler3D t_user_lut;
+uniform int u_tonemapper;   // 0 ACES, 1 AgX, 2 AgX punchy, 3 Neutral
+uniform float u_temperature;
+uniform float u_tint;
+uniform float u_contrast;
+uniform float u_saturation;
+uniform vec3 u_lift;
+uniform vec3 u_gamma;
+uniform vec3 u_gain;
+uniform float u_user_lut; // contribution (0 = none)
+
+void main() {
+    ivec3 p = ivec3(gl_GlobalInvocationID.xyz);
+    ivec3 size = imageSize(i_lut);
+    if (any(greaterThanEqual(p, size))) {
+        return;
+    }
+    vec3 encoded = vec3(p) / vec3(size - 1);
+    vec3 c = lut_decode(encoded);
+    // White balance: warm/cool along blue-yellow, tint along green-magenta.
+    vec3 wb = vec3(1.0 + 0.18 * u_temperature, 1.0 - 0.12 * u_tint, 1.0 - 0.18 * u_temperature);
+    wb.rb *= 1.0 + 0.06 * u_tint;
+    c *= wb / max(luminance(wb), 1e-4);
+    // Contrast around middle gray in log space.
+    c = 0.18 * pow(max(c / 0.18, vec3(1e-6)), vec3(u_contrast));
+    float luma = luminance(c);
+    c = max(vec3(0.0), mix(vec3(luma), c, u_saturation));
+    vec3 d;
+    if (u_tonemapper == 0) {
+        d = tonemap_aces(c);
+    } else if (u_tonemapper == 1) {
+        d = tonemap_agx(c, false);
+    } else if (u_tonemapper == 2) {
+        d = tonemap_agx(c, true);
+    } else {
+        d = tonemap_neutral(c);
+    }
+    // Lift / gamma / gain in display space.
+    d = u_gain * (d + u_lift * (1.0 - d));
+    d = pow(max(d, vec3(0.0)), 1.0 / max(u_gamma, vec3(0.01)));
+    if (u_user_lut > 0.0) {
+        // .cube LUTs expect display-encoded (sRGB) input and output.
+        vec3 s = linear_to_srgb(saturate(d));
+        ivec3 lsize = textureSize(t_user_lut, 0);
+        vec3 coord = s * (vec3(lsize - 1) / vec3(lsize)) + 0.5 / vec3(lsize);
+        vec3 graded = srgb_to_linear(textureLod(t_user_lut, coord, 0.0).rgb);
+        d = mix(d, graded, u_user_lut);
+    }
+    imageStore(i_lut, p, vec4(saturate(d), 1.0));
+}

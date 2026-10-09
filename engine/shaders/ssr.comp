@@ -1,0 +1,133 @@
+// Screen-space reflections: one GGX-importance-sampled ray per pixel
+// (stochastic for rough surfaces, mirror for smooth), marched in view
+// space against the depth buffer with a binary refinement, shading the hit
+// with last frame's lit color (reprojected). rgb = radiance (pre-exposed),
+// a = confidence. TAA accumulates the stochastic samples.
+#include "frame.glsl"
+
+layout(local_size_x = 8, local_size_y = 8) in;
+layout(binding = 0) uniform sampler2D t_depth;
+layout(binding = 1) uniform sampler2D t_normals;
+layout(binding = 2) uniform sampler2D t_previous; // last frame's scene color (render res)
+layout(rgba16f, binding = 0) uniform writeonly image2D i_out;
+uniform int u_steps;
+uniform float u_thickness;
+uniform float u_max_roughness;
+uniform float u_exposure_ratio; // this frame's exposure / last frame's
+
+vec3 importance_sample_ggx(vec2 xi, float a, vec3 n) {
+    float phi = TWO_PI * xi.x;
+    float cos_theta = sqrt((1.0 - xi.y) / (1.0 + (a * a - 1.0) * xi.y));
+    float sin_theta = sqrt(1.0 - cos_theta * cos_theta);
+    vec3 t;
+    vec3 b;
+    basis(n, t, b);
+    return normalize(t * (cos(phi) * sin_theta) + b * (sin(phi) * sin_theta) + n * cos_theta);
+}
+
+void main() {
+    ivec2 p = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 size = ivec2(u_render_size.xy);
+    if (any(greaterThanEqual(p, size))) {
+        return;
+    }
+    float depth = texelFetch(t_depth, p, 0).r;
+    vec4 nr = texelFetch(t_normals, p, 0);
+    float roughness = nr.z;
+    if (depth <= 0.0 || roughness > u_max_roughness) {
+        imageStore(i_out, p, vec4(0.0));
+        return;
+    }
+    vec2 uv = (vec2(p) + 0.5) * u_render_size.zw;
+    vec3 P = view_from_depth(uv, depth);
+    vec3 N = normalize(mat3(u_view) * decode_normal(nr.xy * 2.0 - 1.0));
+    vec3 V = normalize(-P);
+    vec2 xi = vec2(interleaved_gradient_noise(vec2(p), float(u_flags.w)), interleaved_gradient_noise(vec2(p) + 17.0, float(u_flags.w) + 3.0));
+    xi.y *= 0.8; // trim the long tail (fewer fireflies)
+    float a = max(roughness * roughness, 0.001);
+    vec3 H = roughness < 0.05 ? N : importance_sample_ggx(xi, a, N);
+    vec3 R = reflect(-V, H);
+    if (R.z > 0.0 && dot(R, N) <= 0.0) {
+        imageStore(i_out, p, vec4(0.0));
+        return;
+    }
+    // March in view space, stepping in roughly constant screen-space pixels.
+    float max_distance = -P.z * 2.0 + 10.0;
+    vec3 end = P + R * max_distance;
+    if (end.z > -u_camera_position.w) {
+        // Clip at the near plane.
+        float t = (-u_camera_position.w - P.z) / (end.z - P.z);
+        end = P + (end - P) * clamp(t * 0.99, 0.0, 1.0);
+    }
+    vec4 h0 = u_projection * vec4(P, 1.0);
+    vec4 h1 = u_projection * vec4(end, 1.0);
+    vec2 s0 = h0.xy / h0.w * 0.5 + 0.5;
+    vec2 s1 = h1.xy / h1.w * 0.5 + 0.5;
+    float k0 = 1.0 / h0.w;
+    float k1 = 1.0 / h1.w;
+    vec3 q0 = P * k0;
+    vec3 q1 = end * k1;
+    float jitter = interleaved_gradient_noise(vec2(p) + 31.0, float(u_flags.w));
+    bool hit = false;
+    vec2 hit_uv = vec2(0.0);
+    float prev_t = 0.0;
+    float hit_t = 0.0;
+    for (int i = 0; i < u_steps; ++i) {
+        float t = (float(i) + jitter) / float(u_steps);
+        t = t * t; // finer steps near the origin
+        vec2 suv = mix(s0, s1, t);
+        if (any(lessThan(suv, vec2(0.0))) || any(greaterThan(suv, vec2(1.0)))) {
+            break;
+        }
+        float k = mix(k0, k1, t);
+        float ray_z = -mix(q0.z, q1.z, t) / k;
+        float scene_d = textureLod(t_depth, suv, 0.0).r;
+        if (scene_d > 0.0) {
+            float scene_z = linear_depth(scene_d);
+            float diff = ray_z - scene_z;
+            if (diff > 0.0 && diff < u_thickness + ray_z * 0.02) {
+                // Binary refinement between the previous and this step.
+                float lo = prev_t;
+                float hi = t;
+                for (int r = 0; r < 5; ++r) {
+                    float mid = 0.5 * (lo + hi);
+                    vec2 muv = mix(s0, s1, mid);
+                    float mk = mix(k0, k1, mid);
+                    float mz = -mix(q0.z, q1.z, mid) / mk;
+                    float md = textureLod(t_depth, muv, 0.0).r;
+                    if (md > 0.0 && mz > linear_depth(md)) {
+                        hi = mid;
+                    } else {
+                        lo = mid;
+                    }
+                }
+                hit_t = hi;
+                hit_uv = mix(s0, s1, hi);
+                hit = true;
+                break;
+            }
+        }
+        prev_t = t;
+    }
+    if (!hit) {
+        imageStore(i_out, p, vec4(0.0));
+        return;
+    }
+    // Reproject the hit into last frame.
+    float hit_d = textureLod(t_depth, hit_uv, 0.0).r;
+    vec3 hit_world = world_from_depth(hit_uv, hit_d);
+    vec4 prev_clip = u_prev_view_projection * vec4(hit_world, 1.0);
+    vec2 prev_uv = prev_clip.xy / prev_clip.w * 0.5 + 0.5;
+    if (any(lessThan(prev_uv, vec2(0.0))) || any(greaterThan(prev_uv, vec2(1.0)))) {
+        imageStore(i_out, p, vec4(0.0));
+        return;
+    }
+    vec3 color = textureLod(t_previous, prev_uv, 0.0).rgb * u_exposure_ratio;
+    // Confidence: screen edges, roughness cutoff, rays toward the camera.
+    vec2 edge = smoothstep(0.0, 0.08, hit_uv) * (1.0 - smoothstep(0.92, 1.0, hit_uv));
+    float confidence = edge.x * edge.y;
+    confidence *= 1.0 - smoothstep(u_max_roughness * 0.7, u_max_roughness, roughness);
+    confidence *= saturate(1.0 - R.z * 1.5 + 0.5);
+    confidence *= 1.0 - smoothstep(0.85, 1.0, hit_t);
+    imageStore(i_out, p, vec4(min(color, vec3(64000.0)), saturate(confidence)));
+}

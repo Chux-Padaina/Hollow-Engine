@@ -1,0 +1,5 @@
+// Windows resources: the application icon (Explorer, taskbar, title bar).
+// Source artwork: assets/branding/hollow_logo.svg
+#include "Platform/Resource.h"
+
+IDI_HOLLOW_APP ICON "../../assets/branding/hollow.ico"

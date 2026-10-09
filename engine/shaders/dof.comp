@@ -1,0 +1,72 @@
+// Depth of field: physically based circle of confusion (thin lens) and a
+// gather over a 48-sample disc that respects foreground/background
+// ordering (Jimenez-style scatter-as-gather).
+#include "frame.glsl"
+
+layout(local_size_x = 8, local_size_y = 8) in;
+layout(binding = 0) uniform sampler2D t_color; // output res HDR
+layout(binding = 1) uniform sampler2D t_depth; // render res
+layout(rgba16f, binding = 0) uniform writeonly image2D i_output;
+uniform float u_focus;      // meters
+uniform float u_aperture;   // lens diameter (m) = focal / f-stop
+uniform float u_focal;      // meters
+uniform float u_sensor;     // sensor height in pixels per meter on the image plane
+uniform float u_max_coc;    // pixels
+uniform int u_autofocus;
+
+float g_focus;
+
+float coc_pixels(float z) {
+    // Thin lens: c = A * f * |z - S| / (z * (S - f))
+    float c = u_aperture * u_focal * (z - g_focus) / max(z * (g_focus - u_focal), 1e-4);
+    return clamp(c * u_sensor, -u_max_coc, u_max_coc); // signed: <0 foreground
+}
+
+float view_z(vec2 uv) {
+    float d = textureLod(t_depth, uv, 0.0).r;
+    return d <= 0.0 ? 1e5 : linear_depth(d);
+}
+
+void main() {
+    ivec2 p = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 size = imageSize(i_output);
+    if (any(greaterThanEqual(p, size))) {
+        return;
+    }
+    vec2 uv = (vec2(p) + 0.5) / vec2(size);
+    g_focus = u_focus;
+    if (u_autofocus != 0) {
+        g_focus = clamp(view_z(vec2(0.5)), u_focal * 2.0, 1000.0);
+    }
+    vec3 center_color = textureLod(t_color, uv, 0.0).rgb;
+    float center_coc = coc_pixels(view_z(uv));
+    float radius = u_max_coc;
+    if (abs(center_coc) < 0.5 && radius < 0.5) {
+        imageStore(i_output, p, vec4(center_color, 1.0));
+        return;
+    }
+    vec3 sum = vec3(0.0);
+    float weight = 0.0;
+    const int RINGS = 4;
+    float golden = 2.39996323;
+    const int SAMPLES = 48;
+    for (int i = 0; i < SAMPLES; ++i) {
+        float r = sqrt((float(i) + 0.5) / float(SAMPLES)) * radius;
+        float a = float(i) * golden;
+        vec2 offset = vec2(cos(a), sin(a)) * r;
+        vec2 suv = uv + offset / vec2(size);
+        float scoc = coc_pixels(view_z(suv));
+        // A sample contributes if its blur disc reaches this pixel; the
+        // background can't bleed over a sharper foreground.
+        float reach = abs(scoc);
+        float bg = min(reach, abs(center_coc) + 2.0);
+        float s = scoc < center_coc ? reach : bg;
+        float w = smoothstep(r - 1.0, r + 1.0, s);
+        sum += textureLod(t_color, suv, 0.0).rgb * w;
+        weight += w;
+    }
+    vec3 blurred = weight > 0.0 ? sum / weight : center_color;
+    float mix_t = smoothstep(0.5, 2.5, abs(center_coc));
+    imageStore(i_output, p, vec4(mix(center_color, blurred, mix_t), 1.0));
+
+}

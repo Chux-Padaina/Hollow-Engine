@@ -1,0 +1,35 @@
+// Hi-Z pyramid: mip 0 copies the depth buffer, every next mip keeps the
+// farthest depth (reversed-Z: the minimum) of the texels it covers. Odd
+// sizes fold the extra row/column in so no occluder is lost.
+#include "common.glsl"
+
+layout(local_size_x = 8, local_size_y = 8) in;
+
+layout(binding = 0) uniform sampler2D t_source; // depth (level 0) or previous mip
+layout(r32f, binding = 0) uniform writeonly image2D i_dest;
+uniform int u_source_level;
+uniform int u_first; // 1: copy depth
+
+void main() {
+    ivec2 p = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 dest_size = imageSize(i_dest);
+    if (any(greaterThanEqual(p, dest_size))) {
+        return;
+    }
+    if (u_first != 0) {
+        imageStore(i_dest, p, vec4(texelFetch(t_source, p, 0).r));
+        return;
+    }
+    ivec2 src_size = textureSize(t_source, u_source_level);
+    ivec2 base = p * 2;
+    float d = 1.0;
+    int ex = (src_size.x & 1) != 0 && p.x == dest_size.x - 1 ? 3 : 2;
+    int ey = (src_size.y & 1) != 0 && p.y == dest_size.y - 1 ? 3 : 2;
+    for (int y = 0; y < ey; ++y) {
+        for (int x = 0; x < ex; ++x) {
+            ivec2 c = min(base + ivec2(x, y), src_size - 1);
+            d = min(d, texelFetch(t_source, c, u_source_level).r);
+        }
+    }
+    imageStore(i_dest, p, vec4(d));
+}

@@ -1,0 +1,14 @@
+# Normalize text files; keep Windows scripts CRLF.
+* text=auto
+*.bat text eol=crlf
+*.rc text eol=crlf
+
+# Binary assets
+*.png binary
+*.jpg binary
+*.hdr binary
+*.glb binary
+*.bin binary
+*.ico binary
+*.ktx2 binary
+*.dds binary

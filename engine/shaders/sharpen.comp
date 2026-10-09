@@ -1,0 +1,32 @@
+// Contrast-adaptive sharpening (after AMD CAS / FSR RCAS): a 5-tap cross
+// whose negative lobe is limited by the local contrast so edges don't ring.
+#include "common.glsl"
+
+layout(local_size_x = 8, local_size_y = 8) in;
+layout(binding = 0) uniform sampler2D t_input;
+layout(rgba16f, binding = 0) uniform writeonly image2D i_output;
+uniform float u_sharpness; // 0..1
+
+vec3 tm(vec3 c) { return c / (1.0 + max3(c)); }
+vec3 itm(vec3 c) { return c / max(1.0 - max3(c), 1e-4); }
+
+void main() {
+    ivec2 p = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 size = imageSize(i_output);
+    if (any(greaterThanEqual(p, size))) {
+        return;
+    }
+    vec3 c = tm(texelFetch(t_input, p, 0).rgb);
+    vec3 n = tm(texelFetch(t_input, clamp(p + ivec2(0, -1), ivec2(0), size - 1), 0).rgb);
+    vec3 s = tm(texelFetch(t_input, clamp(p + ivec2(0, 1), ivec2(0), size - 1), 0).rgb);
+    vec3 w = tm(texelFetch(t_input, clamp(p + ivec2(-1, 0), ivec2(0), size - 1), 0).rgb);
+    vec3 e = tm(texelFetch(t_input, clamp(p + ivec2(1, 0), ivec2(0), size - 1), 0).rgb);
+    vec3 mn = min(c, min(min(n, s), min(w, e)));
+    vec3 mx = max(c, max(max(n, s), max(w, e)));
+    // Amount from the headroom to 0/1, CAS style.
+    vec3 amp = sqrt(saturate(min(mn, 1.0 - mx) / max(mx, 1e-4)));
+    float peak = -1.0 / mix(8.0, 5.0, saturate(u_sharpness));
+    vec3 wgt = amp * peak;
+    vec3 result = (c + (n + s + w + e) * wgt) / (1.0 + 4.0 * wgt);
+    imageStore(i_output, p, vec4(itm(saturate(result)), 1.0));
+}

@@ -1,0 +1,37 @@
+// Volumetric fog, step 2: front-to-back integration along each froxel
+// column (energy-conserving, Hillaire 2015). Output: rgb accumulated
+// in-scattering (pre-exposed), a transmittance.
+#include "frame.glsl"
+
+layout(local_size_x = 8, local_size_y = 8) in;
+layout(binding = 0) uniform sampler3D t_scatter;
+layout(rgba16f, binding = 0) uniform writeonly image3D i_out;
+
+void main() {
+    ivec2 p = ivec2(gl_GlobalInvocationID.xy);
+    ivec3 size = imageSize(i_out);
+    if (any(greaterThanEqual(p, size.xy))) {
+        return;
+    }
+    vec2 uv = (vec2(p) + 0.5) / vec2(size.xy);
+    vec4 clip = vec4(uv * 2.0 - 1.0, 0.5, 1.0);
+    vec4 wp = u_inv_view_projection * clip;
+    vec3 dir = normalize(wp.xyz / wp.w - u_camera_position.xyz);
+    float cos_view = max(dot(dir, u_camera_forward.xyz), 1e-3);
+    vec3 accumulated = vec3(0.0);
+    float transmittance = 1.0;
+    float previous_z = 0.0;
+    for (int z = 0; z < size.z; ++z) {
+        float w = (float(z) + 1.0) / float(size.z);
+        float view_z = pow(w, u_fog2.z) * u_fog1.w;
+        float step_len = (view_z - previous_z) / cos_view;
+        previous_z = view_z;
+        vec4 s = texelFetch(t_scatter, ivec3(p, z), 0);
+        float extinction = max(s.a, 1e-6);
+        float step_t = exp(-extinction * step_len);
+        vec3 integ = (s.rgb - s.rgb * step_t) / extinction;
+        accumulated += transmittance * integ;
+        transmittance *= step_t;
+        imageStore(i_out, ivec3(p, z), vec4(accumulated, transmittance));
+    }
+}

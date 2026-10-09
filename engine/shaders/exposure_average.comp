@@ -1,0 +1,38 @@
+// Auto exposure, step 2: average EV100 inside the 45%..95% percentile
+// window of the histogram (ignores the darkest half and specular hits).
+layout(local_size_x = 1) in;
+layout(std430, binding = 14) buffer Histogram {
+    uint bins[128];
+    uint pad[128];
+    float result[4];
+};
+
+const float EV_MIN = -10.0;
+const float EV_RANGE = 34.0;
+
+void main() {
+    float total = 0.0;
+    for (int i = 0; i < 128; ++i) {
+        total += float(bins[i]);
+    }
+    if (total < 1.0) {
+        result[0] = -100.0;
+        return;
+    }
+    float low = total * 0.45;
+    float high = total * 0.95;
+    float accumulated = 0.0;
+    float sum = 0.0;
+    float weight = 0.0;
+    for (int i = 0; i < 128; ++i) {
+        float count = float(bins[i]);
+        float from = accumulated;
+        float to = accumulated + count;
+        float inside = max(min(to, high) - max(from, low), 0.0);
+        float ev = EV_MIN + (float(i) + 0.5) / 128.0 * EV_RANGE;
+        sum += ev * inside;
+        weight += inside;
+        accumulated = to;
+    }
+    result[0] = weight > 0.0 ? sum / weight : -100.0;
+}

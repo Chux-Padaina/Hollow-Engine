@@ -1,0 +1,34 @@
+// Depth-aware 5x5 blur for the AO (TAA does the temporal part).
+#include "frame.glsl"
+
+layout(local_size_x = 8, local_size_y = 8) in;
+layout(binding = 0) uniform sampler2D t_ao;
+layout(binding = 1) uniform sampler2D t_depth;
+layout(r16f, binding = 0) uniform writeonly image2D i_out;
+
+void main() {
+    ivec2 p = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 size = textureSize(t_ao, 0);
+    if (any(greaterThanEqual(p, size))) {
+        return;
+    }
+    float center_depth = texelFetch(t_depth, p, 0).r;
+    if (center_depth <= 0.0) {
+        imageStore(i_out, p, vec4(1.0));
+        return;
+    }
+    float center_z = linear_depth(center_depth);
+    float sum = 0.0;
+    float weight = 0.0;
+    for (int y = -2; y <= 2; ++y) {
+        for (int x = -2; x <= 2; ++x) {
+            ivec2 q = clamp(p + ivec2(x, y), ivec2(0), size - 1);
+            float d = texelFetch(t_depth, q, 0).r;
+            float z = d > 0.0 ? linear_depth(d) : 1e6;
+            float w = exp(-abs(z - center_z) / (center_z * 0.03 + 0.01)) * (1.0 - 0.1 * float(abs(x) + abs(y)));
+            sum += texelFetch(t_ao, q, 0).r * w;
+            weight += w;
+        }
+    }
+    imageStore(i_out, p, vec4(sum / max(weight, 1e-4)));
+}

@@ -1,0 +1,57 @@
+// Linear blend skinning: reads a skinned mesh's bind-pose vertices from the
+// mesh pool and writes the posed vertices into the instance's own pool
+// region (the previous frame's region keeps the old pose for motion vectors).
+#include "common.glsl"
+
+layout(local_size_x = 64) in;
+
+layout(std430, binding = SSBO_VERTICES) buffer VertexPool {
+    float vertex_floats[]; // 15 floats per vertex (see Vertex)
+};
+layout(std430, binding = SSBO_SCRATCH0) readonly buffer SkinData {
+    uvec4 skin[]; // joints 0-1, joints 2-3 (u16 pairs), weights (unorm16 pairs)
+};
+layout(std430, binding = SSBO_SCRATCH1) readonly buffer JointPalette {
+    mat4 joints[];
+};
+
+uniform uint u_source;
+uniform uint u_dest;
+uniform uint u_count;
+uniform uint u_skin_offset;
+uniform uint u_joint_offset;
+
+void main() {
+    uint i = gl_GlobalInvocationID.x;
+    if (i >= u_count) {
+        return;
+    }
+    uvec4 s = skin[u_skin_offset + i];
+    uvec4 j = uvec4(s.x & 0xFFFFu, s.x >> 16u, s.y & 0xFFFFu, s.y >> 16u) + u_joint_offset;
+    vec2 w01 = unpackUnorm2x16(s.z);
+    vec2 w23 = unpackUnorm2x16(s.w);
+    mat4 m = joints[j.x] * w01.x + joints[j.y] * w01.y + joints[j.z] * w23.x + joints[j.w] * w23.y;
+
+    uint src = (u_source + i) * 15u;
+    uint dst = (u_dest + i) * 15u;
+    vec3 position = vec3(vertex_floats[src], vertex_floats[src + 1u], vertex_floats[src + 2u]);
+    vec3 normal = vec3(vertex_floats[src + 3u], vertex_floats[src + 4u], vertex_floats[src + 5u]);
+    vec3 tangent = vec3(vertex_floats[src + 6u], vertex_floats[src + 7u], vertex_floats[src + 8u]);
+    vec3 p = (m * vec4(position, 1.0)).xyz;
+    mat3 nm = mat3(m);
+    vec3 n = normalize(nm * normal);
+    vec3 t = nm * tangent;
+    t = length(t) > 1e-6 ? normalize(t) : vec3(1.0, 0.0, 0.0);
+    vertex_floats[dst] = p.x;
+    vertex_floats[dst + 1u] = p.y;
+    vertex_floats[dst + 2u] = p.z;
+    vertex_floats[dst + 3u] = n.x;
+    vertex_floats[dst + 4u] = n.y;
+    vertex_floats[dst + 5u] = n.z;
+    vertex_floats[dst + 6u] = t.x;
+    vertex_floats[dst + 7u] = t.y;
+    vertex_floats[dst + 8u] = t.z;
+    for (uint k = 9u; k < 15u; ++k) {
+        vertex_floats[dst + k] = vertex_floats[src + k];
+    }
+}

@@ -1,0 +1,425 @@
+{
+  "camera": {
+    "distance": 9.5,
+    "fov_degrees": 60.16056,
+    "pitch": 0.75,
+    "target": [0, 1.2, 0],
+    "yaw": 0.6
+  },
+  "environment": "../skybox/default_sky.hdr",
+  "format": "hollow-scene",
+  "render_settings": {
+    "ao": true,
+    "ao_bias": 0.02,
+    "ao_intensity": 1,
+    "ao_radius": 0.5,
+    "bloom": true,
+    "bloom_intensity": 0.22,
+    "bloom_threshold": 1.35,
+    "contrast": 1,
+    "exposure": 1,
+    "fxaa": true,
+    "hdr": true,
+    "ibl": true,
+    "saturation": 1,
+    "shadows": true,
+    "sky_intensity": 0.85,
+    "temperature": 0,
+    "vignette": true,
+    "vignette_intensity": 0.35
+  },
+  "scene": {
+    "actors": [
+      {
+        "active": true,
+        "components": [
+          {
+            "cast_shadows": true,
+            "parts": [
+              {
+                "material": {
+                  "alpha": 1,
+                  "alpha_cutoff": 0.5,
+                  "alpha_mode": "opaque",
+                  "base_color": [1, 1, 1],
+                  "emissive": [0, 0, 0],
+                  "metallic": 0,
+                  "normal_strength": 1,
+                  "occlusion_strength": 1,
+                  "roughness": 1,
+                  "textures": {
+                    "base_color": "../showcase/dungeon/Textures/colormap.png"
+                  }
+                },
+                "mesh": {
+                  "model": "../showcase/dungeon/room-large-variation.glb",
+                  "part": 0
+                },
+                "name": "room-large-variation:0"
+              }
+            ],
+            "type": "StaticMesh",
+            "visible": true
+          }
+        ],
+        "id": 1,
+        "name": "Room",
+        "parent": 0,
+        "transform": {
+          "position": [0, 0, 0],
+          "rotation_degrees": [0, 0, 0],
+          "scale": [1, 1, 1]
+        }
+      },
+      {
+        "active": true,
+        "components": [
+          {
+            "cast_shadows": true,
+            "parts": [
+              {
+                "material": {
+                  "alpha": 1,
+                  "alpha_cutoff": 0.5,
+                  "alpha_mode": "opaque",
+                  "base_color": [1, 1, 1],
+                  "emissive": [0, 0, 0],
+                  "metallic": 1,
+                  "normal_strength": 1,
+                  "occlusion_strength": 1,
+                  "roughness": 1,
+                  "textures": {
+                    "base_color": "../showcase/characters/Textures/texture-a.png"
+                  }
+                },
+                "mesh": {
+                  "model": "../showcase/characters/adventurer.glb",
+                  "part": 0
+                },
+                "name": "leg-left:0"
+              },
+              {
+                "material": {
+                  "alpha": 1,
+                  "alpha_cutoff": 0.5,
+                  "alpha_mode": "opaque",
+                  "base_color": [1, 1, 1],
+                  "emissive": [0, 0, 0],
+                  "metallic": 1,
+                  "normal_strength": 1,
+                  "occlusion_strength": 1,
+                  "roughness": 1,
+                  "textures": {
+                    "base_color": "../showcase/characters/Textures/texture-a.png"
+                  }
+                },
+                "mesh": {
+                  "model": "../showcase/characters/adventurer.glb",
+                  "part": 1
+                },
+                "name": "leg-right:0"
+              },
+              {
+                "material": {
+                  "alpha": 1,
+                  "alpha_cutoff": 0.5,
+                  "alpha_mode": "opaque",
+                  "base_color": [1, 1, 1],
+                  "emissive": [0, 0, 0],
+                  "metallic": 1,
+                  "normal_strength": 1,
+                  "occlusion_strength": 1,
+                  "roughness": 1,
+                  "textures": {
+                    "base_color": "../showcase/characters/Textures/texture-a.png"
+                  }
+                },
+                "mesh": {
+                  "model": "../showcase/characters/adventurer.glb",
+                  "part": 2
+                },
+                "name": "torso:0"
+              },
+              {
+                "material": {
+                  "alpha": 1,
+                  "alpha_cutoff": 0.5,
+                  "alpha_mode": "opaque",
+                  "base_color": [1, 1, 1],
+                  "emissive": [0, 0, 0],
+                  "metallic": 1,
+                  "normal_strength": 1,
+                  "occlusion_strength": 1,
+                  "roughness": 1,
+                  "textures": {
+                    "base_color": "../showcase/characters/Textures/texture-a.png"
+                  }
+                },
+                "mesh": {
+                  "model": "../showcase/characters/adventurer.glb",
+                  "part": 3
+                },
+                "name": "arm-left:0"
+              },
+              {
+                "material": {
+                  "alpha": 1,
+                  "alpha_cutoff": 0.5,
+                  "alpha_mode": "opaque",
+                  "base_color": [1, 1, 1],
+                  "emissive": [0, 0, 0],
+                  "metallic": 1,
+                  "normal_strength": 1,
+                  "occlusion_strength": 1,
+                  "roughness": 1,
+                  "textures": {
+                    "base_color": "../showcase/characters/Textures/texture-a.png"
+                  }
+                },
+                "mesh": {
+                  "model": "../showcase/characters/adventurer.glb",
+                  "part": 4
+                },
+                "name": "arm-right:0"
+              },
+              {
+                "material": {
+                  "alpha": 1,
+                  "alpha_cutoff": 0.5,
+                  "alpha_mode": "opaque",
+                  "base_color": [1, 1, 1],
+                  "emissive": [0, 0, 0],
+                  "metallic": 1,
+                  "normal_strength": 1,
+                  "occlusion_strength": 1,
+                  "roughness": 1,
+                  "textures": {
+                    "base_color": "../showcase/characters/Textures/texture-a.png"
+                  }
+                },
+                "mesh": {
+                  "model": "../showcase/characters/adventurer.glb",
+                  "part": 5
+                },
+                "name": "head:0"
+              }
+            ],
+            "type": "StaticMesh",
+            "visible": true
+          }
+        ],
+        "id": 2,
+        "name": "Adventurer",
+        "parent": 0,
+        "transform": {
+          "position": [1.5, 0, 2],
+          "rotation_degrees": [0, 28.647888, 0],
+          "scale": [1, 1, 1]
+        }
+      },
+      {
+        "active": true,
+        "components": [
+          {
+            "cast_shadows": true,
+            "parts": [
+              {
+                "material": {
+                  "alpha": 1,
+                  "alpha_cutoff": 0.5,
+                  "alpha_mode": "opaque",
+                  "base_color": [1, 1, 1],
+                  "emissive": [0, 0, 0],
+                  "metallic": 1,
+                  "normal_strength": 1,
+                  "occlusion_strength": 1,
+                  "roughness": 1,
+                  "textures": {
+                    "base_color": "../showcase/characters/Textures/texture-d.png"
+                  }
+                },
+                "mesh": {
+                  "model": "../showcase/characters/robot.glb",
+                  "part": 0
+                },
+                "name": "leg-left:0"
+              },
+              {
+                "material": {
+                  "alpha": 1,
+                  "alpha_cutoff": 0.5,
+                  "alpha_mode": "opaque",
+                  "base_color": [1, 1, 1],
+                  "emissive": [0, 0, 0],
+                  "metallic": 1,
+                  "normal_strength": 1,
+                  "occlusion_strength": 1,
+                  "roughness": 1,
+                  "textures": {
+                    "base_color": "../showcase/characters/Textures/texture-d.png"
+                  }
+                },
+                "mesh": {
+                  "model": "../showcase/characters/robot.glb",
+                  "part": 1
+                },
+                "name": "leg-right:0"
+              },
+              {
+                "material": {
+                  "alpha": 1,
+                  "alpha_cutoff": 0.5,
+                  "alpha_mode": "opaque",
+                  "base_color": [1, 1, 1],
+                  "emissive": [0, 0, 0],
+                  "metallic": 1,
+                  "normal_strength": 1,
+                  "occlusion_strength": 1,
+                  "roughness": 1,
+                  "textures": {
+                    "base_color": "../showcase/characters/Textures/texture-d.png"
+                  }
+                },
+                "mesh": {
+                  "model": "../showcase/characters/robot.glb",
+                  "part": 2
+                },
+                "name": "torso:0"
+              },
+              {
+                "material": {
+                  "alpha": 1,
+                  "alpha_cutoff": 0.5,
+                  "alpha_mode": "opaque",
+                  "base_color": [1, 1, 1],
+                  "emissive": [0, 0, 0],
+                  "metallic": 1,
+                  "normal_strength": 1,
+                  "occlusion_strength": 1,
+                  "roughness": 1,
+                  "textures": {
+                    "base_color": "../showcase/characters/Textures/texture-d.png"
+                  }
+                },
+                "mesh": {
+                  "model": "../showcase/characters/robot.glb",
+                  "part": 3
+                },
+                "name": "arm-left:0"
+              },
+              {
+                "material": {
+                  "alpha": 1,
+                  "alpha_cutoff": 0.5,
+                  "alpha_mode": "opaque",
+                  "base_color": [1, 1, 1],
+                  "emissive": [0, 0, 0],
+                  "metallic": 1,
+                  "normal_strength": 1,
+                  "occlusion_strength": 1,
+                  "roughness": 1,
+                  "textures": {
+                    "base_color": "../showcase/characters/Textures/texture-d.png"
+                  }
+                },
+                "mesh": {
+                  "model": "../showcase/characters/robot.glb",
+                  "part": 4
+                },
+                "name": "arm-right:0"
+              },
+              {
+                "material": {
+                  "alpha": 1,
+                  "alpha_cutoff": 0.5,
+                  "alpha_mode": "opaque",
+                  "base_color": [1, 1, 1],
+                  "emissive": [0, 0, 0],
+                  "metallic": 1,
+                  "normal_strength": 1,
+                  "occlusion_strength": 1,
+                  "roughness": 1,
+                  "textures": {
+                    "base_color": "../showcase/characters/Textures/texture-d.png"
+                  }
+                },
+                "mesh": {
+                  "model": "../showcase/characters/robot.glb",
+                  "part": 5
+                },
+                "name": "head:0"
+              }
+            ],
+            "type": "StaticMesh",
+            "visible": true
+          },
+          {
+            "params": {
+              "speed_x": 0,
+              "speed_y": 20,
+              "speed_z": 0
+            },
+            "script": "Rotator",
+            "type": "Script"
+          }
+        ],
+        "id": 3,
+        "name": "Robot",
+        "parent": 0,
+        "transform": {
+          "position": [-2.5, 0, -1],
+          "rotation_degrees": [0, -34.37747, 0],
+          "scale": [1, 1, 1]
+        }
+      },
+      {
+        "active": true,
+        "components": [
+          {
+            "cast_shadows": true,
+            "color": [1, 0.98, 0.9],
+            "enabled": true,
+            "intensity": 1.2,
+            "kind": "Directional",
+            "range": 5,
+            "spot_angle_degrees": 31.512678,
+            "type": "Light"
+          }
+        ],
+        "id": 4,
+        "name": "Sun",
+        "parent": 0,
+        "transform": {
+          "position": [3, 8, 3],
+          "rotation_degrees": [34.37747, -28.647888, 0],
+          "scale": [1, 1, 1]
+        }
+      },
+      {
+        "active": true,
+        "components": [
+          {
+            "cast_shadows": true,
+            "color": [1, 0.62, 0.3],
+            "enabled": true,
+            "intensity": 3,
+            "kind": "Point",
+            "range": 9,
+            "spot_angle_degrees": 31.512678,
+            "type": "Light"
+          }
+        ],
+        "id": 5,
+        "name": "Torch",
+        "parent": 0,
+        "transform": {
+          "position": [0, 2.2, 0],
+          "rotation_degrees": [0, 0, 0],
+          "scale": [1, 1, 1]
+        }
+      }
+    ],
+    "selected": 0
+  },
+  "version": 1
+}

@@ -1,0 +1,876 @@
+{
+  "camera": {
+    "distance": 16,
+    "fov_degrees": 60.16056,
+    "pitch": 0.5,
+    "target": [0, 0.5, 0],
+    "yaw": 0.72
+  },
+  "environment": "../skybox/default_sky.hdr",
+  "format": "hollow-scene",
+  "render_settings": {
+    "ao": true,
+    "ao_bias": 0.02,
+    "ao_intensity": 1,
+    "ao_radius": 0.5,
+    "bloom": true,
+    "bloom_intensity": 0.22,
+    "bloom_threshold": 1.35,
+    "contrast": 1,
+    "exposure": 1,
+    "fxaa": true,
+    "hdr": true,
+    "ibl": true,
+    "saturation": 1,
+    "shadows": true,
+    "sky_intensity": 0.85,
+    "temperature": 0,
+    "vignette": true,
+    "vignette_intensity": 0.35
+  },
+  "scene": {
+    "actors": [
+      {
+        "active": true,
+        "components": [
+          {
+            "cast_shadows": true,
+            "parts": [
+              {
+                "material": {
+                  "alpha": 1,
+                  "alpha_cutoff": 0.5,
+                  "alpha_mode": "opaque",
+                  "base_color": [0.42, 0.44, 0.43],
+                  "emissive": [0, 0, 0],
+                  "metallic": 0,
+                  "normal_strength": 1,
+                  "occlusion_strength": 1,
+                  "roughness": 0.9
+                },
+                "mesh": {
+                  "builtin": "cube"
+                },
+                "name": "Ground"
+              }
+            ],
+            "type": "StaticMesh",
+            "visible": true
+          },
+          {
+            "center": [0, 0, 0],
+            "half_extents": [0.5, 0.5, 0.5],
+            "radius": 0.5,
+            "shape": "box",
+            "trigger": false,
+            "type": "Collider"
+          }
+        ],
+        "id": 1,
+        "name": "Ground",
+        "parent": 0,
+        "transform": {
+          "position": [0, -0.51, 0],
+          "rotation_degrees": [0, 0, 0],
+          "scale": [30, 1, 30]
+        }
+      },
+      {
+        "active": true,
+        "components": [
+          {
+            "cast_shadows": true,
+            "parts": [
+              {
+                "material": {
+                  "alpha": 1,
+                  "alpha_cutoff": 0.5,
+                  "alpha_mode": "opaque",
+                  "base_color": [0.25, 0.55, 0.95],
+                  "emissive": [0, 0, 0],
+                  "metallic": 0,
+                  "normal_strength": 1,
+                  "occlusion_strength": 1,
+                  "roughness": 0.35
+                },
+                "mesh": {
+                  "builtin": "sphere"
+                },
+                "name": "Player"
+              }
+            ],
+            "type": "StaticMesh",
+            "visible": true
+          },
+          {
+            "center": [0, 0, 0],
+            "half_extents": [0.5, 0.5, 0.5],
+            "radius": 0.5,
+            "shape": "sphere",
+            "trigger": false,
+            "type": "Collider"
+          },
+          {
+            "friction": 0.2,
+            "kinematic": false,
+            "linear_damping": 0.05,
+            "mass": 1,
+            "restitution": 0.1,
+            "type": "RigidBody",
+            "use_gravity": true
+          },
+          {
+            "params": {
+              "jump_speed": 5.5,
+              "speed": 4,
+              "sprint_multiplier": 1.8
+            },
+            "script": "PlayerController",
+            "type": "Script"
+          }
+        ],
+        "id": 2,
+        "name": "Player",
+        "parent": 0,
+        "transform": {
+          "position": [0, 1, 3],
+          "rotation_degrees": [0, 0, 0],
+          "scale": [1, 1, 1]
+        }
+      },
+      {
+        "active": true,
+        "components": [
+          {
+            "fov_degrees": 60.16056,
+            "primary": true,
+            "type": "Camera"
+          },
+          {
+            "params": {
+              "distance": 7,
+              "height": 3.5,
+              "look_height": 0.8,
+              "smoothing": 6,
+              "target": "Player",
+              "yaw_degrees": 0
+            },
+            "script": "FollowCamera",
+            "type": "Script"
+          }
+        ],
+        "id": 3,
+        "name": "Main Camera",
+        "parent": 0,
+        "transform": {
+          "position": [0, 4.5, 10],
+          "rotation_degrees": [-26.56505, -0, 0],
+          "scale": [1, 1, 1]
+        }
+      },
+      {
+        "active": true,
+        "components": [
+          {
+            "cast_shadows": true,
+            "parts": [
+              {
+                "material": {
+                  "alpha": 1,
+                  "alpha_cutoff": 0.5,
+                  "alpha_mode": "opaque",
+                  "base_color": [0.62, 0.43, 0.24],
+                  "emissive": [0, 0, 0],
+                  "metallic": 0,
+                  "normal_strength": 1,
+                  "occlusion_strength": 1,
+                  "roughness": 0.7
+                },
+                "mesh": {
+                  "builtin": "cube"
+                },
+                "name": "Crate 1"
+              }
+            ],
+            "type": "StaticMesh",
+            "visible": true
+          },
+          {
+            "center": [0, 0, 0],
+            "half_extents": [0.5, 0.5, 0.5],
+            "radius": 0.5,
+            "shape": "box",
+            "trigger": false,
+            "type": "Collider"
+          },
+          {
+            "friction": 0.6,
+            "kinematic": false,
+            "linear_damping": 0.05,
+            "mass": 0.6,
+            "restitution": 0.1,
+            "type": "RigidBody",
+            "use_gravity": true
+          }
+        ],
+        "id": 4,
+        "name": "Crate 1",
+        "parent": 0,
+        "transform": {
+          "position": [-1.05, 0.5, -3],
+          "rotation_degrees": [0, 0, 0],
+          "scale": [1, 1, 1]
+        }
+      },
+      {
+        "active": true,
+        "components": [
+          {
+            "cast_shadows": true,
+            "parts": [
+              {
+                "material": {
+                  "alpha": 1,
+                  "alpha_cutoff": 0.5,
+                  "alpha_mode": "opaque",
+                  "base_color": [0.62, 0.43, 0.24],
+                  "emissive": [0, 0, 0],
+                  "metallic": 0,
+                  "normal_strength": 1,
+                  "occlusion_strength": 1,
+                  "roughness": 0.7
+                },
+                "mesh": {
+                  "builtin": "cube"
+                },
+                "name": "Crate 2"
+              }
+            ],
+            "type": "StaticMesh",
+            "visible": true
+          },
+          {
+            "center": [0, 0, 0],
+            "half_extents": [0.5, 0.5, 0.5],
+            "radius": 0.5,
+            "shape": "box",
+            "trigger": false,
+            "type": "Collider"
+          },
+          {
+            "friction": 0.6,
+            "kinematic": false,
+            "linear_damping": 0.05,
+            "mass": 0.6,
+            "restitution": 0.1,
+            "type": "RigidBody",
+            "use_gravity": true
+          }
+        ],
+        "id": 5,
+        "name": "Crate 2",
+        "parent": 0,
+        "transform": {
+          "position": [0, 0.5, -3],
+          "rotation_degrees": [0, 0, 0],
+          "scale": [1, 1, 1]
+        }
+      },
+      {
+        "active": true,
+        "components": [
+          {
+            "cast_shadows": true,
+            "parts": [
+              {
+                "material": {
+                  "alpha": 1,
+                  "alpha_cutoff": 0.5,
+                  "alpha_mode": "opaque",
+                  "base_color": [0.62, 0.43, 0.24],
+                  "emissive": [0, 0, 0],
+                  "metallic": 0,
+                  "normal_strength": 1,
+                  "occlusion_strength": 1,
+                  "roughness": 0.7
+                },
+                "mesh": {
+                  "builtin": "cube"
+                },
+                "name": "Crate 3"
+              }
+            ],
+            "type": "StaticMesh",
+            "visible": true
+          },
+          {
+            "center": [0, 0, 0],
+            "half_extents": [0.5, 0.5, 0.5],
+            "radius": 0.5,
+            "shape": "box",
+            "trigger": false,
+            "type": "Collider"
+          },
+          {
+            "friction": 0.6,
+            "kinematic": false,
+            "linear_damping": 0.05,
+            "mass": 0.6,
+            "restitution": 0.1,
+            "type": "RigidBody",
+            "use_gravity": true
+          }
+        ],
+        "id": 6,
+        "name": "Crate 3",
+        "parent": 0,
+        "transform": {
+          "position": [1.05, 0.5, -3],
+          "rotation_degrees": [0, 0, 0],
+          "scale": [1, 1, 1]
+        }
+      },
+      {
+        "active": true,
+        "components": [
+          {
+            "cast_shadows": true,
+            "parts": [
+              {
+                "material": {
+                  "alpha": 1,
+                  "alpha_cutoff": 0.5,
+                  "alpha_mode": "opaque",
+                  "base_color": [0.62, 0.43, 0.24],
+                  "emissive": [0, 0, 0],
+                  "metallic": 0,
+                  "normal_strength": 1,
+                  "occlusion_strength": 1,
+                  "roughness": 0.7
+                },
+                "mesh": {
+                  "builtin": "cube"
+                },
+                "name": "Crate 4"
+              }
+            ],
+            "type": "StaticMesh",
+            "visible": true
+          },
+          {
+            "center": [0, 0, 0],
+            "half_extents": [0.5, 0.5, 0.5],
+            "radius": 0.5,
+            "shape": "box",
+            "trigger": false,
+            "type": "Collider"
+          },
+          {
+            "friction": 0.6,
+            "kinematic": false,
+            "linear_damping": 0.05,
+            "mass": 0.6,
+            "restitution": 0.1,
+            "type": "RigidBody",
+            "use_gravity": true
+          }
+        ],
+        "id": 7,
+        "name": "Crate 4",
+        "parent": 0,
+        "transform": {
+          "position": [-0.525, 1.5, -3],
+          "rotation_degrees": [0, 0, 0],
+          "scale": [1, 1, 1]
+        }
+      },
+      {
+        "active": true,
+        "components": [
+          {
+            "cast_shadows": true,
+            "parts": [
+              {
+                "material": {
+                  "alpha": 1,
+                  "alpha_cutoff": 0.5,
+                  "alpha_mode": "opaque",
+                  "base_color": [0.62, 0.43, 0.24],
+                  "emissive": [0, 0, 0],
+                  "metallic": 0,
+                  "normal_strength": 1,
+                  "occlusion_strength": 1,
+                  "roughness": 0.7
+                },
+                "mesh": {
+                  "builtin": "cube"
+                },
+                "name": "Crate 5"
+              }
+            ],
+            "type": "StaticMesh",
+            "visible": true
+          },
+          {
+            "center": [0, 0, 0],
+            "half_extents": [0.5, 0.5, 0.5],
+            "radius": 0.5,
+            "shape": "box",
+            "trigger": false,
+            "type": "Collider"
+          },
+          {
+            "friction": 0.6,
+            "kinematic": false,
+            "linear_damping": 0.05,
+            "mass": 0.6,
+            "restitution": 0.1,
+            "type": "RigidBody",
+            "use_gravity": true
+          }
+        ],
+        "id": 8,
+        "name": "Crate 5",
+        "parent": 0,
+        "transform": {
+          "position": [0.525, 1.5, -3],
+          "rotation_degrees": [0, 0, 0],
+          "scale": [1, 1, 1]
+        }
+      },
+      {
+        "active": true,
+        "components": [
+          {
+            "cast_shadows": true,
+            "parts": [
+              {
+                "material": {
+                  "alpha": 1,
+                  "alpha_cutoff": 0.5,
+                  "alpha_mode": "opaque",
+                  "base_color": [0.62, 0.43, 0.24],
+                  "emissive": [0, 0, 0],
+                  "metallic": 0,
+                  "normal_strength": 1,
+                  "occlusion_strength": 1,
+                  "roughness": 0.7
+                },
+                "mesh": {
+                  "builtin": "cube"
+                },
+                "name": "Crate 6"
+              }
+            ],
+            "type": "StaticMesh",
+            "visible": true
+          },
+          {
+            "center": [0, 0, 0],
+            "half_extents": [0.5, 0.5, 0.5],
+            "radius": 0.5,
+            "shape": "box",
+            "trigger": false,
+            "type": "Collider"
+          },
+          {
+            "friction": 0.6,
+            "kinematic": false,
+            "linear_damping": 0.05,
+            "mass": 0.6,
+            "restitution": 0.1,
+            "type": "RigidBody",
+            "use_gravity": true
+          }
+        ],
+        "id": 9,
+        "name": "Crate 6",
+        "parent": 0,
+        "transform": {
+          "position": [0, 2.5, -3],
+          "rotation_degrees": [0, 0, 0],
+          "scale": [1, 1, 1]
+        }
+      },
+      {
+        "active": true,
+        "components": [
+          {
+            "cast_shadows": true,
+            "parts": [
+              {
+                "material": {
+                  "alpha": 1,
+                  "alpha_cutoff": 0.5,
+                  "alpha_mode": "opaque",
+                  "base_color": [0.8, 0.3, 0.3],
+                  "emissive": [0, 0, 0],
+                  "metallic": 0,
+                  "normal_strength": 1,
+                  "occlusion_strength": 1,
+                  "roughness": 0.55
+                },
+                "mesh": {
+                  "builtin": "cube"
+                },
+                "name": "Spinning Block"
+              }
+            ],
+            "type": "StaticMesh",
+            "visible": true
+          },
+          {
+            "center": [0, 0, 0],
+            "half_extents": [0.5, 0.5, 0.5],
+            "radius": 0.5,
+            "shape": "box",
+            "trigger": false,
+            "type": "Collider"
+          },
+          {
+            "params": {
+              "speed_x": 0,
+              "speed_y": 30,
+              "speed_z": 0
+            },
+            "script": "Rotator",
+            "type": "Script"
+          }
+        ],
+        "id": 10,
+        "name": "Spinning Block",
+        "parent": 0,
+        "transform": {
+          "position": [-6, 0.3, -1],
+          "rotation_degrees": [0, 0, 0],
+          "scale": [3, 0.6, 3]
+        }
+      },
+      {
+        "active": true,
+        "components": [
+          {
+            "cast_shadows": true,
+            "parts": [
+              {
+                "material": {
+                  "alpha": 1,
+                  "alpha_cutoff": 0.5,
+                  "alpha_mode": "opaque",
+                  "base_color": [0.3, 0.75, 0.45],
+                  "emissive": [0, 0, 0],
+                  "metallic": 0,
+                  "normal_strength": 1,
+                  "occlusion_strength": 1,
+                  "roughness": 0.55
+                },
+                "mesh": {
+                  "builtin": "cube"
+                },
+                "name": "Lift"
+              }
+            ],
+            "type": "StaticMesh",
+            "visible": true
+          },
+          {
+            "center": [0, 0, 0],
+            "half_extents": [0.5, 0.5, 0.5],
+            "radius": 0.5,
+            "shape": "box",
+            "trigger": false,
+            "type": "Collider"
+          },
+          {
+            "friction": 0.6,
+            "kinematic": true,
+            "linear_damping": 0.05,
+            "mass": 0.1,
+            "restitution": 0.1,
+            "type": "RigidBody",
+            "use_gravity": true
+          },
+          {
+            "params": {
+              "amplitude": 0.9,
+              "axis_x": 0,
+              "axis_y": 1,
+              "axis_z": 0,
+              "frequency": 0.25
+            },
+            "script": "Oscillator",
+            "type": "Script"
+          }
+        ],
+        "id": 11,
+        "name": "Lift",
+        "parent": 0,
+        "transform": {
+          "position": [6, 1, -2],
+          "rotation_degrees": [0, 0, 0],
+          "scale": [2.5, 0.3, 2.5]
+        }
+      },
+      {
+        "active": true,
+        "components": [
+          {
+            "cast_shadows": true,
+            "parts": [
+              {
+                "material": {
+                  "alpha": 1,
+                  "alpha_cutoff": 0.5,
+                  "alpha_mode": "opaque",
+                  "base_color": [1, 0.8, 0.2],
+                  "emissive": [0.6, 0.4, 0.05],
+                  "metallic": 1,
+                  "normal_strength": 1,
+                  "occlusion_strength": 1,
+                  "roughness": 0.25
+                },
+                "mesh": {
+                  "builtin": "sphere"
+                },
+                "name": "Coin 1"
+              }
+            ],
+            "type": "StaticMesh",
+            "visible": true
+          },
+          {
+            "center": [0, 0, 0],
+            "half_extents": [0.5, 0.5, 0.5],
+            "radius": 0.5,
+            "shape": "sphere",
+            "trigger": true,
+            "type": "Collider"
+          },
+          {
+            "params": {
+              "collector": "Player",
+              "spin_degrees": 90
+            },
+            "script": "Collectible",
+            "type": "Script"
+          }
+        ],
+        "id": 12,
+        "name": "Coin 1",
+        "parent": 0,
+        "transform": {
+          "position": [3, 0.6, 0],
+          "rotation_degrees": [0, 0, 0],
+          "scale": [0.4, 0.4, 0.4]
+        }
+      },
+      {
+        "active": true,
+        "components": [
+          {
+            "cast_shadows": true,
+            "parts": [
+              {
+                "material": {
+                  "alpha": 1,
+                  "alpha_cutoff": 0.5,
+                  "alpha_mode": "opaque",
+                  "base_color": [1, 0.8, 0.2],
+                  "emissive": [0.6, 0.4, 0.05],
+                  "metallic": 1,
+                  "normal_strength": 1,
+                  "occlusion_strength": 1,
+                  "roughness": 0.25
+                },
+                "mesh": {
+                  "builtin": "sphere"
+                },
+                "name": "Coin 2"
+              }
+            ],
+            "type": "StaticMesh",
+            "visible": true
+          },
+          {
+            "center": [0, 0, 0],
+            "half_extents": [0.5, 0.5, 0.5],
+            "radius": 0.5,
+            "shape": "sphere",
+            "trigger": true,
+            "type": "Collider"
+          },
+          {
+            "params": {
+              "collector": "Player",
+              "spin_degrees": 90
+            },
+            "script": "Collectible",
+            "type": "Script"
+          }
+        ],
+        "id": 13,
+        "name": "Coin 2",
+        "parent": 0,
+        "transform": {
+          "position": [-3, 0.6, 2],
+          "rotation_degrees": [0, 0, 0],
+          "scale": [0.4, 0.4, 0.4]
+        }
+      },
+      {
+        "active": true,
+        "components": [
+          {
+            "cast_shadows": true,
+            "parts": [
+              {
+                "material": {
+                  "alpha": 1,
+                  "alpha_cutoff": 0.5,
+                  "alpha_mode": "opaque",
+                  "base_color": [1, 0.8, 0.2],
+                  "emissive": [0.6, 0.4, 0.05],
+                  "metallic": 1,
+                  "normal_strength": 1,
+                  "occlusion_strength": 1,
+                  "roughness": 0.25
+                },
+                "mesh": {
+                  "builtin": "sphere"
+                },
+                "name": "Coin 3"
+              }
+            ],
+            "type": "StaticMesh",
+            "visible": true
+          },
+          {
+            "center": [0, 0, 0],
+            "half_extents": [0.5, 0.5, 0.5],
+            "radius": 0.5,
+            "shape": "sphere",
+            "trigger": true,
+            "type": "Collider"
+          },
+          {
+            "params": {
+              "collector": "Player",
+              "spin_degrees": 90
+            },
+            "script": "Collectible",
+            "type": "Script"
+          }
+        ],
+        "id": 14,
+        "name": "Coin 3",
+        "parent": 0,
+        "transform": {
+          "position": [6, 2.6, -2],
+          "rotation_degrees": [0, 0, 0],
+          "scale": [0.4, 0.4, 0.4]
+        }
+      },
+      {
+        "active": true,
+        "components": [
+          {
+            "cast_shadows": true,
+            "parts": [
+              {
+                "material": {
+                  "alpha": 1,
+                  "alpha_cutoff": 0.5,
+                  "alpha_mode": "opaque",
+                  "base_color": [1, 0.8, 0.2],
+                  "emissive": [0.6, 0.4, 0.05],
+                  "metallic": 1,
+                  "normal_strength": 1,
+                  "occlusion_strength": 1,
+                  "roughness": 0.25
+                },
+                "mesh": {
+                  "builtin": "sphere"
+                },
+                "name": "Coin 4"
+              }
+            ],
+            "type": "StaticMesh",
+            "visible": true
+          },
+          {
+            "center": [0, 0, 0],
+            "half_extents": [0.5, 0.5, 0.5],
+            "radius": 0.5,
+            "shape": "sphere",
+            "trigger": true,
+            "type": "Collider"
+          },
+          {
+            "params": {
+              "collector": "Player",
+              "spin_degrees": 90
+            },
+            "script": "Collectible",
+            "type": "Script"
+          }
+        ],
+        "id": 15,
+        "name": "Coin 4",
+        "parent": 0,
+        "transform": {
+          "position": [0, 0.6, -6],
+          "rotation_degrees": [0, 0, 0],
+          "scale": [0.4, 0.4, 0.4]
+        }
+      },
+      {
+        "active": true,
+        "components": [
+          {
+            "cast_shadows": true,
+            "color": [1, 0.98, 0.9],
+            "enabled": true,
+            "intensity": 1.2,
+            "kind": "Directional",
+            "range": 5,
+            "spot_angle_degrees": 31.512678,
+            "type": "Light"
+          }
+        ],
+        "id": 16,
+        "name": "Sun",
+        "parent": 0,
+        "transform": {
+          "position": [2, 6, 2],
+          "rotation_degrees": [42.971832, -28.647888, 0],
+          "scale": [1, 1, 1]
+        }
+      },
+      {
+        "active": true,
+        "components": [
+          {
+            "cast_shadows": false,
+            "color": [1, 0.75, 0.5],
+            "enabled": true,
+            "intensity": 1.5,
+            "kind": "Point",
+            "range": 12,
+            "spot_angle_degrees": 31.512678,
+            "type": "Light"
+          }
+        ],
+        "id": 17,
+        "name": "Fill Light",
+        "parent": 0,
+        "transform": {
+          "position": [-4, 3, 3],
+          "rotation_degrees": [0, 0, 0],
+          "scale": [1, 1, 1]
+        }
+      }
+    ],
+    "selected": 2
+  },
+  "version": 1
+}

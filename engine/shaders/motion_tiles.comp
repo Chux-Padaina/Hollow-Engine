@@ -1,0 +1,47 @@
+// Motion blur tiles: the largest velocity (pixels) in each 16x16 tile,
+// then (pass 2) the largest in each 3x3 tile neighborhood.
+#include "frame.glsl"
+
+layout(local_size_x = 8, local_size_y = 8) in;
+layout(binding = 0) uniform sampler2D t_source; // velocity (pass 1) or tiles (pass 2)
+layout(rg16f, binding = 0) uniform writeonly image2D i_dest;
+uniform int u_pass;
+uniform float u_scale;
+
+void main() {
+    ivec2 p = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 size = imageSize(i_dest);
+    if (any(greaterThanEqual(p, size))) {
+        return;
+    }
+    vec2 best = vec2(0.0);
+    float best_len = 0.0;
+    if (u_pass == 0) {
+        ivec2 src = textureSize(t_source, 0);
+        vec2 ratio = vec2(src) / vec2(size);
+        ivec2 start = ivec2(vec2(p) * ratio);
+        ivec2 end = min(ivec2(vec2(p + 1) * ratio), src);
+        for (int y = start.y; y < end.y; y += 2) {
+            for (int x = start.x; x < end.x; x += 2) {
+                vec2 v = texelFetch(t_source, ivec2(x, y), 0).xy * 0.5 * u_output_size.xy * u_scale;
+                float l = dot(v, v);
+                if (l > best_len) {
+                    best_len = l;
+                    best = v;
+                }
+            }
+        }
+    } else {
+        for (int y = -1; y <= 1; ++y) {
+            for (int x = -1; x <= 1; ++x) {
+                vec2 v = texelFetch(t_source, clamp(p + ivec2(x, y), ivec2(0), size - 1), 0).xy;
+                float l = dot(v, v);
+                if (l > best_len) {
+                    best_len = l;
+                    best = v;
+                }
+            }
+        }
+    }
+    imageStore(i_dest, p, vec4(best, 0.0, 0.0));
+}

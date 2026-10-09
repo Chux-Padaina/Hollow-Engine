@@ -1,0 +1,44 @@
+// Culls grass blades (distance, density falloff, frustum) into a visible
+// list and its glDrawArraysIndirect command.
+#include "frame.glsl"
+#include "grass_common.glsl"
+
+layout(local_size_x = 64) in;
+
+layout(std430, binding = SSBO_SCRATCH1) writeonly buffer GrassVisible {
+    uint grass_visible[];
+};
+layout(std430, binding = SSBO_COMMANDS) buffer GrassArgs {
+    uint grass_args[]; // count, instance count, first, base instance
+};
+
+uniform uint u_count;
+uniform uint u_command;
+
+void main() {
+    uint i = gl_GlobalInvocationID.x;
+    if (i >= u_count) {
+        return;
+    }
+    vec4 a = grass_blades[i * 2u];
+    vec4 b = grass_blades[i * 2u + 1u];
+    vec3 world = (u_model * vec4(a.xyz, 1.0)).xyz;
+    float d = distance(world, u_camera_position.xyz);
+    if (d > u_distance) {
+        return;
+    }
+    if (hash_float(i * 747796405u + 12345u) > grass_keep(d)) {
+        return;
+    }
+    vec4 clip = u_unjittered_view_projection * vec4(world + vec3(0.0, b.x * 0.5, 0.0), 1.0);
+    float margin = b.x + 0.2;
+    if (clip.w < -margin) {
+        return;
+    }
+    vec2 limit = vec2(clip.w) + margin * vec2(u_projection[0][0], u_projection[1][1]);
+    if (any(greaterThan(abs(clip.xy), limit))) {
+        return;
+    }
+    uint slot = atomicAdd(grass_args[u_command * 4u + 1u], 1u);
+    grass_visible[u_offset + slot] = i;
+}

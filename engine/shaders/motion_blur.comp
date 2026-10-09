@@ -1,0 +1,56 @@
+// Motion blur: per-pixel reconstruction along the dominant velocity of
+// the neighborhood (tile max, McGuire et al. 2012, simplified): samples
+// are weighted by depth ordering and how far each sample's own motion
+// reaches.
+#include "frame.glsl"
+
+layout(local_size_x = 8, local_size_y = 8) in;
+layout(binding = 0) uniform sampler2D t_color;    // output res
+layout(binding = 1) uniform sampler2D t_velocity; // render res
+layout(binding = 2) uniform sampler2D t_depth;    // render res
+layout(binding = 3) uniform sampler2D t_tiles;    // neighbor-max velocity (pixels)
+layout(rgba16f, binding = 0) uniform writeonly image2D i_output;
+uniform float u_scale;  // shutter fraction
+uniform int u_samples;
+
+vec2 velocity_px(vec2 uv, vec2 size) {
+    return textureLod(t_velocity, uv, 0.0).xy * 0.5 * size * u_scale;
+}
+
+void main() {
+    ivec2 p = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 size = imageSize(i_output);
+    if (any(greaterThanEqual(p, size))) {
+        return;
+    }
+    vec2 fsize = vec2(size);
+    vec2 uv = (vec2(p) + 0.5) / fsize;
+    vec3 color = textureLod(t_color, uv, 0.0).rgb;
+    vec2 tile_v = textureLod(t_tiles, uv, 0.0).xy;
+    float tile_len = length(tile_v);
+    if (tile_len < 0.5) {
+        imageStore(i_output, p, vec4(color, 1.0));
+        return;
+    }
+    vec2 v = velocity_px(uv, fsize);
+    float center_depth = textureLod(t_depth, uv, 0.0).r;
+    float noise = interleaved_gradient_noise(vec2(p), float(u_flags.w)) - 0.5;
+    vec3 sum = color;
+    float total = 1.0;
+    for (int i = 0; i < u_samples; ++i) {
+        float t = mix(-0.5, 0.5, (float(i) + 0.5 + noise) / float(u_samples));
+        vec2 offset = tile_v * t;
+        vec2 suv = uv + offset / fsize;
+        float sd = textureLod(t_depth, suv, 0.0).r;
+        float sv = length(velocity_px(suv, fsize));
+        float dist = length(offset);
+        // Foreground samples blur over us if their motion reaches; samples
+        // behind us only if our own motion reaches them.
+        float fg = sd > center_depth ? 1.0 : 0.0;
+        float w = fg * step(dist, sv) + (1.0 - fg) * step(dist, length(v)) + 0.0;
+        w = max(w, 0.05);
+        sum += textureLod(t_color, suv, 0.0).rgb * w;
+        total += w;
+    }
+    imageStore(i_output, p, vec4(sum / total, 1.0));
+}

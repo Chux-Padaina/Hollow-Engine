@@ -1,0 +1,32 @@
+// Bloom upsample: 3x3 tent filter of the smaller mip added onto the larger.
+#include "common.glsl"
+
+layout(local_size_x = 8, local_size_y = 8) in;
+layout(binding = 0) uniform sampler2D t_small; // mip being upsampled
+layout(binding = 1) uniform sampler2D t_large; // the downsampled level to add to
+layout(rgba16f, binding = 0) uniform writeonly image2D i_dest;
+uniform float u_small_lod;
+uniform float u_large_lod;
+uniform float u_radius;
+
+void main() {
+    ivec2 p = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 size = imageSize(i_dest);
+    if (any(greaterThanEqual(p, size))) {
+        return;
+    }
+    vec2 uv = (vec2(p) + 0.5) / vec2(size);
+    vec2 t = 1.0 / vec2(size) * u_radius;
+    vec3 s = textureLod(t_small, uv + vec2(-t.x, -t.y), u_small_lod).rgb
+           + textureLod(t_small, uv + vec2(0.0, -t.y), u_small_lod).rgb * 2.0
+           + textureLod(t_small, uv + vec2(t.x, -t.y), u_small_lod).rgb
+           + textureLod(t_small, uv + vec2(-t.x, 0.0), u_small_lod).rgb * 2.0
+           + textureLod(t_small, uv, u_small_lod).rgb * 4.0
+           + textureLod(t_small, uv + vec2(t.x, 0.0), u_small_lod).rgb * 2.0
+           + textureLod(t_small, uv + vec2(-t.x, t.y), u_small_lod).rgb
+           + textureLod(t_small, uv + vec2(0.0, t.y), u_small_lod).rgb * 2.0
+           + textureLod(t_small, uv + vec2(t.x, t.y), u_small_lod).rgb;
+    s /= 16.0;
+    vec3 large = textureLod(t_large, uv, u_large_lod).rgb;
+    imageStore(i_dest, p, vec4(large + s, 1.0));
+}

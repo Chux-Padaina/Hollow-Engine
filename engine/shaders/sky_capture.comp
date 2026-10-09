@@ -1,0 +1,17 @@
+// Renders the atmosphere into a cubemap (environment lighting source).
+#include "sky_common.glsl"
+#include "cubemap.glsl"
+
+layout(local_size_x = 8, local_size_y = 8) in;
+layout(rgba16f, binding = 0) uniform writeonly imageCube i_cube;
+
+void main() {
+    ivec3 p = ivec3(gl_GlobalInvocationID.xyz);
+    int size = imageSize(i_cube).x;
+    if (p.x >= size || p.y >= size) {
+        return;
+    }
+    vec3 d = cube_direction(p.z, (vec2(p.xy) + 0.5) / float(size));
+    vec3 color = atmosphere_radiance(d); // includes the lit ground below the horizon
+    imageStore(i_cube, p, vec4(min(color, vec3(60000.0)), 1.0));
+}

@@ -1,0 +1,23 @@
+// Equirectangular HDR -> cubemap (with a rotation around Y).
+#include "common.glsl"
+#include "cubemap.glsl"
+
+layout(local_size_x = 8, local_size_y = 8) in;
+layout(binding = 0) uniform sampler2D t_equirect;
+layout(r11f_g11f_b10f, binding = 0) uniform writeonly imageCube i_cube;
+uniform float u_rotation;
+
+void main() {
+    ivec3 p = ivec3(gl_GlobalInvocationID.xyz);
+    int size = imageSize(i_cube).x;
+    if (p.x >= size || p.y >= size) {
+        return;
+    }
+    vec3 d = cube_direction(p.z, (vec2(p.xy) + 0.5) / float(size));
+    float c = cos(u_rotation);
+    float s = sin(u_rotation);
+    d = vec3(c * d.x + s * d.z, d.y, -s * d.x + c * d.z);
+    vec2 uv = direction_to_equirect(d);
+    vec3 color = textureLod(t_equirect, uv, 0.0).rgb;
+    imageStore(i_cube, p, vec4(min(color, vec3(60000.0)), 1.0));
+}

@@ -1,0 +1,105 @@
+// Volumetric fog, step 1: per froxel (160x90x64-ish grid), media density
+// (exponential height fog + 3D noise) and in-scattered light from the sun
+// (with cascade shadows), clustered local lights and the sky ambient,
+// blended with last frame's result (temporal reprojection).
+#include "lights.glsl"
+#include "ibl.glsl"
+
+layout(local_size_x = 4, local_size_y = 4, local_size_z = 4) in;
+layout(rgba16f, binding = 0) uniform writeonly image3D i_out;
+layout(binding = 0) uniform sampler3D t_history;
+uniform int u_history_valid;
+
+float hg_phase(float g, float c) {
+    float g2 = g * g;
+    return (1.0 - g2) / (4.0 * PI * pow(max(1.0 + g2 - 2.0 * g * c, 1e-4), 1.5));
+}
+
+float value_noise3(vec3 p) {
+    vec3 i = floor(p);
+    vec3 f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    float n = 0.0;
+    for (int z = 0; z < 2; ++z) {
+        for (int y = 0; y < 2; ++y) {
+            for (int x = 0; x < 2; ++x) {
+                vec3 c = i + vec3(x, y, z);
+                float h = hash_float(uint(int(c.x) * 73856093 ^ int(c.y) * 19349663 ^ int(c.z) * 83492791));
+                vec3 w = mix(1.0 - f, f, vec3(x, y, z));
+                n += h * w.x * w.y * w.z;
+            }
+        }
+    }
+    return n;
+}
+
+void main() {
+    ivec3 p = ivec3(gl_GlobalInvocationID.xyz);
+    ivec3 size = imageSize(i_out);
+    if (any(greaterThanEqual(p, size))) {
+        return;
+    }
+    float jitter = interleaved_gradient_noise(vec2(p.xy) + float(p.z) * 7.0, float(u_flags.w));
+    vec2 uv = (vec2(p.xy) + 0.5) / vec2(size.xy);
+    float w = (float(p.z) + jitter) / float(size.z);
+    float view_z = pow(w, u_fog2.z) * u_fog1.w + 0.01;
+    // World position of the froxel sample along the view ray.
+    vec4 clip = vec4(uv * 2.0 - 1.0, 0.5, 1.0);
+    vec4 wp = u_inv_view_projection * clip;
+    vec3 dir = normalize(wp.xyz / wp.w - u_camera_position.xyz);
+    float along = view_z / max(dot(dir, u_camera_forward.xyz), 1e-3);
+    vec3 world = u_camera_position.xyz + dir * along;
+
+    float height = world.y - u_fog0.z;
+    float density = u_fog0.x * exp(-max(height, 0.0) * u_fog0.y);
+    if (u_fog2.y > 0.0) {
+        vec3 q = world * 0.18 - u_fog_wind.xyz * 0.18;
+        float n = value_noise3(q) * 0.6 + value_noise3(q * 2.7) * 0.4;
+        density *= mix(1.0, saturate(n * 1.8 - 0.25), u_fog2.y);
+    }
+    vec3 scattering = u_fog1.rgb * density;
+    vec3 light = vec3(0.0);
+    // Sun with cascade shadows.
+    if (u_sun_direction.w >= 0.0) {
+        float c = dot(dir, normalize(u_sun_direction.xyz));
+        float shadow = sun_shadow(world, vec3(0.0, 1.0, 0.0), vec2(p.xy) * 8.0, view_z);
+        Light sun = lights[int(u_sun_direction.w)];
+        light += sun.color.rgb * shadow * hg_phase(u_fog0.w, c) * sun.spot_shadow.w;
+    }
+    // Local lights from the cluster this froxel falls in.
+    vec2 pixel = uv * u_render_size.xy;
+    uint cluster = cluster_index(pixel, view_z);
+    uvec4 cl = clusters[cluster];
+    for (uint i = 0u; i < cl.y; ++i) {
+        Light l = lights[cluster_items[cl.x + i]];
+        vec3 to_light = l.position_range.xyz - world;
+        float d2 = dot(to_light, to_light);
+        float range = l.position_range.w;
+        if (d2 > range * range) {
+            continue;
+        }
+        vec3 ldir = to_light * inversesqrt(max(d2, 1e-6));
+        float atten = distance_attenuation(d2, range);
+        if (int(l.direction_type.w) == LIGHT_SPOT) {
+            atten *= spot_attenuation(l, ldir);
+        }
+        light += l.color.rgb * atten * hg_phase(u_fog0.w, dot(dir, -ldir)) * l.spot_shadow.w;
+    }
+    // Sky ambient (isotropic).
+    light += sky_diffuse(vec3(0.0, 1.0, 0.0)) * u_ambient.x * u_fog2.x;
+    vec3 in_scatter = scattering * light * u_exposure.x;
+    vec4 result = vec4(in_scatter, density);
+
+    if (u_history_valid != 0) {
+        // Reproject this froxel into last frame's grid.
+        vec4 prev = u_prev_view_projection * vec4(world, 1.0);
+        vec2 prev_uv = prev.xy / prev.w * 0.5 + 0.5;
+        float prev_view_z = prev.w;
+        float prev_w = pow(saturate(prev_view_z / u_fog1.w), 1.0 / u_fog2.z);
+        if (all(greaterThanEqual(prev_uv, vec2(0.0))) && all(lessThanEqual(prev_uv, vec2(1.0))) && prev_w <= 1.0) {
+            vec4 history = textureLod(t_history, vec3(prev_uv, prev_w), 0.0);
+            result = mix(result, history, 0.88);
+        }
+    }
+    imageStore(i_out, p, result);
+}

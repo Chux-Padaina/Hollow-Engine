@@ -1,0 +1,54 @@
+// DFG lookup table for split-sum image-based lighting:
+// x = scale and y = bias on F0 (height-correlated Smith GGX), z = the
+// Charlie sheen DG term. Indexed by (NoV, roughness).
+#include "brdf.glsl"
+
+layout(local_size_x = 8, local_size_y = 8) in;
+layout(rgba16f, binding = 0) uniform writeonly image2D i_lut;
+
+vec3 importance_sample_ggx(vec2 xi, float a, vec3 n) {
+    float phi = TWO_PI * xi.x;
+    float cos_theta = sqrt((1.0 - xi.y) / (1.0 + (a * a - 1.0) * xi.y));
+    float sin_theta = sqrt(1.0 - cos_theta * cos_theta);
+    return vec3(cos(phi) * sin_theta, sin(phi) * sin_theta, cos_theta);
+}
+
+void main() {
+    ivec2 p = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 size = imageSize(i_lut);
+    if (any(greaterThanEqual(p, size))) {
+        return;
+    }
+    float NoV = (float(p.x) + 0.5) / float(size.x);
+    float roughness = (float(p.y) + 0.5) / float(size.y);
+    float a = roughness * roughness;
+    vec3 v = vec3(sqrt(1.0 - NoV * NoV), 0.0, NoV);
+    float A = 0.0;
+    float B = 0.0;
+    float sheen = 0.0;
+    const uint SAMPLES = 512u;
+    for (uint i = 0u; i < SAMPLES; ++i) {
+        vec2 xi = hammersley(i, SAMPLES);
+        vec3 h = importance_sample_ggx(xi, a, vec3(0, 0, 1));
+        vec3 l = 2.0 * dot(v, h) * h - v;
+        float NoL = saturate(l.z);
+        float NoH = saturate(h.z);
+        float VoH = saturate(dot(v, h));
+        if (NoL > 0.0) {
+            float V = V_SmithGGXCorrelated(NoV, NoL, a);
+            float Gv = 4.0 * V * VoH * NoL / max(NoH, 1e-4);
+            float Fc = pow(1.0 - VoH, 5.0);
+            A += (1.0 - Fc) * Gv;
+            B += Fc * Gv;
+        }
+        // Sheen: uniform hemisphere sampling of D_Charlie * V_Neubelt.
+        float phi = TWO_PI * xi.x;
+        float cos_theta = 1.0 - xi.y;
+        float sin_theta = sqrt(1.0 - cos_theta * cos_theta);
+        vec3 ls = vec3(cos(phi) * sin_theta, sin(phi) * sin_theta, cos_theta);
+        vec3 hs = normalize(ls + v);
+        float sNoL = saturate(ls.z);
+        sheen += D_Charlie(max(roughness, 0.05), saturate(hs.z)) * V_Neubelt(NoV, sNoL) * sNoL * TWO_PI;
+    }
+    imageStore(i_lut, p, vec4(A / float(SAMPLES), B / float(SAMPLES), sheen / float(SAMPLES), 1.0));
+}

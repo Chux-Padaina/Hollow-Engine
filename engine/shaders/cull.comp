@@ -1,0 +1,168 @@
+// GPU culling: one thread per instance. Tests the instance's bounding
+// sphere against a view frustum (and optionally the Hi-Z depth pyramid),
+// picks a LOD from its projected size and writes one indirect draw command
+// per instance (instance_count 0 = culled).
+//
+// Modes: 0 single pass; 1 occlusion phase 1 (only instances visible last
+// frame, no Hi-Z); 2 occlusion phase 2 (everything, against the Hi-Z built
+// from phase 1: writes the phase-2 commands, the union used by later
+// passes, and this frame's visibility).
+#include "frame.glsl"
+#include "scene_data.glsl"
+
+layout(local_size_x = 64) in;
+
+layout(std140, binding = UBO_PASS) uniform CullBlock {
+    vec4 u_planes[6];
+    mat4 u_cull_view_projection;
+    vec4 u_cull_camera;  // xyz LOD reference position, w projection scale (proj[1][1])
+    uvec4 u_cull_params; // instance count, command offset, mode, flags
+    vec4 u_hiz_size;     // width, height, mip count, lod bias
+    uvec4 u_cull_params2; // union command offset, unused...
+};
+
+#define CULL_SHADOW_CASTERS 1u
+#define CULL_LOD 2u
+#define CULL_OCCLUSION 4u
+#define CULL_FRUSTUM 8u
+#define CULL_MAIN_VIEW 16u
+
+layout(std430, binding = SSBO_COMMANDS) buffer CommandBuffer {
+    DrawCommand commands[];
+};
+
+layout(std430, binding = SSBO_VISIBILITY) buffer Visibility {
+    uint visibility[];
+};
+
+layout(std430, binding = SSBO_PREV_VISIBILITY) readonly buffer PrevVisibility {
+    uint prev_visibility[];
+};
+
+layout(std430, binding = SSBO_SCRATCH0) buffer CullStats {
+    uint visible_count; // main view, for the editor stats
+};
+
+layout(std430, binding = SSBO_SCRATCH1) buffer InstanceLods {
+    uint instance_lods[];
+};
+
+layout(binding = TEX_EXTRA) uniform sampler2D t_hiz;
+
+bool in_frustum(vec4 sphere) {
+    if ((u_cull_params.w & CULL_FRUSTUM) == 0u) {
+        return true;
+    }
+    for (int i = 0; i < 6; ++i) {
+        if (dot(u_planes[i].xyz, sphere.xyz) + u_planes[i].w < -sphere.w) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool occluded(vec4 sphere) {
+    // Screen-space bounds of the sphere's box.
+    vec2 uv_min = vec2(1.0);
+    vec2 uv_max = vec2(0.0);
+    float nearest = 0.0; // reversed-Z: larger = closer
+    for (int i = 0; i < 8; ++i) {
+        vec3 corner = sphere.xyz + vec3((i & 1) != 0 ? sphere.w : -sphere.w, (i & 2) != 0 ? sphere.w : -sphere.w, (i & 4) != 0 ? sphere.w : -sphere.w);
+        vec4 clip = u_cull_view_projection * vec4(corner, 1.0);
+        if (clip.w <= u_camera_position.w) {
+            return false; // crosses the near plane
+        }
+        vec3 ndc = clip.xyz / clip.w;
+        vec2 uv = ndc.xy * 0.5 + 0.5;
+        uv_min = min(uv_min, uv);
+        uv_max = max(uv_max, uv);
+        nearest = max(nearest, ndc.z);
+    }
+    uv_min = saturate(uv_min);
+    uv_max = saturate(uv_max);
+    vec2 size_px = (uv_max - uv_min) * u_hiz_size.xy;
+    float mip = ceil(log2(max(max(size_px.x, size_px.y), 1.0)));
+    mip = clamp(mip, 0.0, u_hiz_size.z - 1.0);
+    // Four taps at that mip cover the rectangle. The mip size is derived
+    // from the uniform (not textureSize) and fetched with textureLod so a
+    // per-invocation LOD is handled the same on every driver.
+    float farthest = 1.0;
+    int level = int(mip);
+    ivec2 mip_size = max(ivec2(u_hiz_size.xy) >> level, ivec2(1));
+    ivec2 a = clamp(ivec2(uv_min * vec2(mip_size)), ivec2(0), mip_size - 1);
+    ivec2 b = clamp(ivec2(uv_max * vec2(mip_size)), ivec2(0), mip_size - 1);
+    vec2 inv = 1.0 / vec2(mip_size);
+    farthest = min(farthest, textureLod(t_hiz, (vec2(a.x, a.y) + 0.5) * inv, mip).r);
+    farthest = min(farthest, textureLod(t_hiz, (vec2(b.x, a.y) + 0.5) * inv, mip).r);
+    farthest = min(farthest, textureLod(t_hiz, (vec2(a.x, b.y) + 0.5) * inv, mip).r);
+    farthest = min(farthest, textureLod(t_hiz, (vec2(b.x, b.y) + 0.5) * inv, mip).r);
+    return nearest < farthest;
+}
+
+uint select_lod(Instance inst, MeshInfo mesh) {
+    if ((u_cull_params.w & CULL_LOD) == 0u || mesh.lod_levels <= 1u) {
+        return 0u;
+    }
+    float distance = max(length(inst.bounds.xyz - u_cull_camera.xyz) - inst.bounds.w, 0.01);
+    float screen = inst.bounds.w / distance * u_cull_camera.w * u_hiz_size.w;
+    uint lod = 0u;
+    for (uint i = 1u; i < mesh.lod_levels; ++i) {
+        if (screen < mesh.lod_error[i]) {
+            lod = i;
+        }
+    }
+    return lod;
+}
+
+DrawCommand make_command(Instance inst, uint index, bool visible, uint lod) {
+    MeshInfo mesh = meshes[inst.mesh];
+    DrawCommand cmd;
+    cmd.count = mesh.lod_count[lod];
+    cmd.instance_count = visible ? 1u : 0u;
+    cmd.first_index = mesh.lod_first[lod];
+    cmd.base_vertex = inst.base_vertex;
+    cmd.base_instance = index;
+    return cmd;
+}
+
+void main() {
+    uint index = gl_GlobalInvocationID.x;
+    if (index >= u_cull_params.x) {
+        return;
+    }
+    Instance inst = instances[index];
+    MeshInfo mesh = meshes[inst.mesh];
+    uint flags = u_cull_params.w;
+    bool eligible = (flags & CULL_SHADOW_CASTERS) == 0u || (inst.flags & INSTANCE_CAST_SHADOWS) != 0u;
+    bool frustum = eligible && in_frustum(inst.bounds);
+    uint lod = select_lod(inst, mesh);
+    uint mode = u_cull_params.z;
+    uint offset = u_cull_params.y;
+
+    if (mode == 0u) {
+        bool visible = frustum && !((flags & CULL_OCCLUSION) != 0u && occluded(inst.bounds));
+        commands[offset + index] = make_command(inst, index, visible, lod);
+        if ((flags & CULL_MAIN_VIEW) != 0u) {
+            instance_lods[index] = lod;
+            if (visible) {
+                atomicAdd(visible_count, 1u);
+            }
+        }
+        return;
+    }
+
+    bool was_visible = inst.prev_slot != 0xFFFFFFFFu && prev_visibility[inst.prev_slot] != 0u;
+    bool drawn_phase1 = frustum && was_visible;
+    if (mode == 1u) {
+        commands[offset + index] = make_command(inst, index, drawn_phase1, lod);
+        instance_lods[index] = lod;
+        return;
+    }
+    bool visible_now = frustum && !occluded(inst.bounds);
+    visibility[index] = visible_now ? 1u : 0u;
+    commands[offset + index] = make_command(inst, index, visible_now && !drawn_phase1, lod);
+    commands[u_cull_params2.x + index] = make_command(inst, index, visible_now || drawn_phase1, lod);
+    if (visible_now || drawn_phase1) {
+        atomicAdd(visible_count, 1u);
+    }
+}

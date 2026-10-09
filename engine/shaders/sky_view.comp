@@ -1,0 +1,81 @@
+// Sky-view LUT (192 x 108): sky radiance around the camera, latitude
+// mapped non-linearly to keep detail at the horizon, longitude relative to
+// the sun. Single scattering + the multiple-scattering LUT.
+#include "atmosphere.glsl"
+
+layout(local_size_x = 8, local_size_y = 8) in;
+layout(rgba16f, binding = 0) uniform writeonly image2D i_lut;
+layout(binding = 0) uniform sampler2D t_multiscatter;
+
+vec3 multiscatter(Atmosphere a, float r, float sun_cos) {
+    vec2 uv = vec2(sun_cos * 0.5 + 0.5, saturate((r - a.bottom) / (a.top - a.bottom)));
+    return textureLod(t_multiscatter, uv, 0.0).rgb;
+}
+
+void main() {
+    ivec2 p = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 size = imageSize(i_lut);
+    if (any(greaterThanEqual(p, size))) {
+        return;
+    }
+    Atmosphere a = get_atmosphere();
+    vec3 ro = atmosphere_position(u_camera_position.xyz);
+    float r = length(ro);
+    vec2 uv = (vec2(p) + 0.5) / vec2(size);
+    // Latitude: v in [0,1] -> view zenith with horizon at v = 0.5.
+    float horizon = acos(clamp(sqrt(max(r * r - a.bottom * a.bottom, 0.0)) / r, -1.0, 1.0)) - 0.5 * PI; // elevation of the horizon (<= 0)
+    float lat;
+    if (uv.y < 0.5) {
+        float c = 1.0 - 2.0 * uv.y;
+        lat = (0.5 * PI - horizon) * c * c; // above the horizon (up)
+        lat = horizon + lat;
+    } else {
+        float c = 2.0 * uv.y - 1.0;
+        lat = horizon - (horizon + 0.5 * PI) * c * c;
+    }
+    float lon = uv.x * TWO_PI;
+    vec3 sun = normalize(u_sun_direction.xyz);
+    vec3 sun_flat = normalize(vec3(sun.x, 0.0, sun.z) + vec3(1e-5, 0.0, 0.0));
+    vec3 side = cross(vec3(0.0, 1.0, 0.0), sun_flat);
+    vec3 dir_flat = cos(lon) * sun_flat + sin(lon) * side;
+    vec3 rd = normalize(vec3(dir_flat.x * cos(lat), sin(lat), dir_flat.z * cos(lat)));
+
+    float t_ground = ray_sphere(ro, rd, a.bottom);
+    float t_top = ray_sphere(ro, rd, a.top);
+    float t_max = t_ground > 0.0 ? t_ground : t_top;
+    t_max = min(t_max, 600.0);
+    const int STEPS = 30;
+    vec3 lum = vec3(0.0);
+    vec3 throughput = vec3(1.0);
+    float cos_theta = dot(rd, sun);
+    float phase_r = rayleigh_phase(cos_theta);
+    float phase_m = cornette_shanks_phase(a.mie_g, cos_theta);
+    float t = 0.0;
+    for (int s = 0; s < STEPS; ++s) {
+        // Quadratic step distribution: denser near the camera.
+        float t1 = t_max * sq(float(s + 1) / float(STEPS));
+        float dt = t1 - t;
+        vec3 pos = ro + rd * (t + dt * 0.5);
+        t = t1;
+        Medium m = sample_medium(a, pos);
+        vec3 step_t = exp(-m.extinction * dt);
+        float pr = length(pos);
+        vec3 up = pos / pr;
+        float sun_cos = dot(sun, up);
+        vec3 sun_t = transmittance_to_top(a, pr, sun_cos);
+        float planet = ray_sphere(pos, sun, a.bottom) > 0.0 ? 0.0 : 1.0;
+        vec3 ms = multiscatter(a, pr, sun_cos);
+        vec3 s_light = planet * sun_t * (m.rayleigh * phase_r + m.mie * phase_m) + ms * m.scattering;
+        vec3 integ = (s_light - s_light * step_t) / max(m.extinction, vec3(1e-6));
+        lum += throughput * integ;
+        throughput *= step_t;
+    }
+    // Rays that hit the planet see its lit ground (Lambertian, albedo).
+    if (t_ground > 0.0 && t_ground <= t_max + 1e-3) {
+        vec3 pos = ro + rd * t_ground;
+        vec3 up = normalize(pos);
+        vec3 sun_t = transmittance_to_top(a, length(pos), dot(sun, up));
+        lum += throughput * sun_t * saturate(dot(up, sun)) * a.ground_albedo / PI;
+    }
+    imageStore(i_lut, p, vec4(lum, 1.0));
+}

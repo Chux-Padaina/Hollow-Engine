@@ -1,0 +1,42 @@
+// Auto exposure, step 1: a 128-bin histogram of scene EV100 over the
+// frame (center-weighted metering).
+#include "frame.glsl"
+
+layout(local_size_x = 16, local_size_y = 16) in;
+layout(binding = 0) uniform sampler2D t_color;
+layout(std430, binding = SSBO_SCRATCH0) buffer Histogram {
+    uint bins[128];
+    uint pad[128];
+    float result[4];
+};
+
+const float EV_MIN = -10.0;
+const float EV_RANGE = 34.0;
+
+shared uint local_bins[128];
+
+void main() {
+    uint index = gl_LocalInvocationIndex;
+    if (index < 128u) {
+        local_bins[index] = 0u;
+    }
+    barrier();
+    ivec2 size = textureSize(t_color, 0);
+    // Every other pixel is plenty.
+    ivec2 p = ivec2(gl_GlobalInvocationID.xy) * 2;
+    if (all(lessThan(p, size))) {
+        vec3 c = texelFetch(t_color, p, 0).rgb * u_exposure.w; // undo pre-exposure
+        float lum = luminance(c);
+        if (lum > 1e-5) {
+            float ev = log2(lum * 100.0 / 12.5);
+            uint bin = uint(clamp((ev - EV_MIN) / EV_RANGE, 0.0, 0.999) * 128.0);
+            vec2 uv = (vec2(p) + 0.5) / vec2(size) - 0.5;
+            float weight = mix(1.0, 4.0, saturate(1.0 - length(uv) * 2.0)); // center weighted
+            atomicAdd(local_bins[bin], uint(weight));
+        }
+    }
+    barrier();
+    if (index < 128u) {
+        atomicAdd(bins[index], local_bins[index]);
+    }
+}

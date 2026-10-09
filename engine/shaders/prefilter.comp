@@ -1,0 +1,70 @@
+// GGX prefiltering of a source cubemap into one layer/mip of the probe
+// cubemap array (filtered importance sampling, Karis 2013 / Colbert 2007).
+// Mip 0 is a straight copy (mirror reflections).
+#include "common.glsl"
+#include "cubemap.glsl"
+
+layout(local_size_x = 8, local_size_y = 8) in;
+layout(binding = 0) uniform samplerCube t_source;
+layout(rgba16f, binding = 0) uniform writeonly imageCubeArray i_target;
+uniform float u_roughness;
+uniform int u_layer;
+uniform float u_source_size;
+uniform float u_scale;
+uniform float u_rotation; // environment rotation around Y
+
+vec3 rotate_y(vec3 d) {
+    float c = cos(-u_rotation);
+    float s = sin(-u_rotation);
+    return vec3(c * d.x + s * d.z, d.y, -s * d.x + c * d.z);
+}
+
+vec3 importance_sample_ggx(vec2 xi, float a, vec3 n) {
+    float phi = TWO_PI * xi.x;
+    float cos_theta = sqrt((1.0 - xi.y) / (1.0 + (a * a - 1.0) * xi.y));
+    float sin_theta = sqrt(1.0 - cos_theta * cos_theta);
+    vec3 h = vec3(cos(phi) * sin_theta, sin(phi) * sin_theta, cos_theta);
+    vec3 t;
+    vec3 b;
+    basis(n, t, b);
+    return normalize(t * h.x + b * h.y + n * h.z);
+}
+
+void main() {
+    ivec3 p = ivec3(gl_GlobalInvocationID.xyz);
+    int size = imageSize(i_target).x;
+    if (p.x >= size || p.y >= size) {
+        return;
+    }
+    vec3 n = cube_direction(p.z, (vec2(p.xy) + 0.5) / float(size));
+    vec3 color;
+    if (u_roughness <= 0.0) {
+        float lod = log2(max(u_source_size / float(size), 1.0));
+        color = textureLod(t_source, rotate_y(n), lod).rgb;
+    } else {
+        float a = u_roughness * u_roughness;
+        vec3 sum = vec3(0.0);
+        float weight = 0.0;
+        const uint SAMPLES = 64u;
+        float texel_solid_angle = 4.0 * PI / (6.0 * u_source_size * u_source_size);
+        for (uint i = 0u; i < SAMPLES; ++i) {
+            vec2 xi = hammersley(i, SAMPLES);
+            vec3 h = importance_sample_ggx(xi, a, n);
+            vec3 l = normalize(2.0 * dot(n, h) * h - n);
+            float NoL = dot(n, l);
+            if (NoL > 0.0) {
+                float NoH = saturate(dot(n, h));
+                float a2 = a * a;
+                float d = (NoH * a2 - NoH) * NoH + 1.0;
+                float D = a2 / (PI * d * d);
+                float pdf = D * 0.25;
+                float sample_solid_angle = 1.0 / (float(SAMPLES) * pdf + 1e-5);
+                float lod = clamp(0.5 * log2(sample_solid_angle / texel_solid_angle) + 1.0, 0.0, 12.0);
+                sum += textureLod(t_source, rotate_y(l), lod).rgb * NoL;
+                weight += NoL;
+            }
+        }
+        color = sum / max(weight, 1e-5);
+    }
+    imageStore(i_target, ivec3(p.xy, u_layer * 6 + p.z), vec4(color * u_scale, 1.0));
+}

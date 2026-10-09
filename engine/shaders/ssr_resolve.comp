@@ -1,0 +1,42 @@
+// SSR resolve: roughness-aware 3x3 bilateral filter of the traced result.
+#include "frame.glsl"
+
+layout(local_size_x = 8, local_size_y = 8) in;
+layout(binding = 0) uniform sampler2D t_ssr;
+layout(binding = 1) uniform sampler2D t_normals;
+layout(binding = 2) uniform sampler2D t_depth;
+layout(rgba16f, binding = 0) uniform writeonly image2D i_out;
+
+void main() {
+    ivec2 p = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 size = textureSize(t_ssr, 0);
+    if (any(greaterThanEqual(p, size))) {
+        return;
+    }
+    vec4 center = texelFetch(t_ssr, p, 0);
+    float roughness = texelFetch(t_normals, p, 0).z;
+    float d0 = texelFetch(t_depth, p, 0).r;
+    if (d0 <= 0.0) {
+        imageStore(i_out, p, vec4(0.0));
+        return;
+    }
+    float z0 = linear_depth(d0);
+    int radius = roughness > 0.15 ? 2 : 1;
+    vec4 sum = vec4(0.0);
+    float weight = 0.0;
+    for (int y = -radius; y <= radius; ++y) {
+        for (int x = -radius; x <= radius; ++x) {
+            ivec2 q = clamp(p + ivec2(x, y), ivec2(0), size - 1);
+            float d = texelFetch(t_depth, q, 0).r;
+            float z = d > 0.0 ? linear_depth(d) : 1e6;
+            float w = exp(-abs(z - z0) / (z0 * 0.02 + 0.01));
+            vec4 s = texelFetch(t_ssr, q, 0);
+            // Weight by confidence so misses don't darken hits.
+            sum += vec4(s.rgb * s.a, s.a) * w;
+            weight += w;
+        }
+    }
+    vec4 result = sum / max(weight, 1e-4);
+    result.rgb = result.a > 1e-4 ? result.rgb / result.a : vec3(0.0);
+    imageStore(i_out, p, mix(center, result, saturate(roughness * 6.0)));
+}

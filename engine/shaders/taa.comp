@@ -1,0 +1,145 @@
+// Temporal anti-aliasing and upscaling (TAAU): resolves the jittered
+// render-resolution frame into the output-resolution history.
+//  - the current frame is reconstructed with a Blackman-Harris filter over
+//    the 3x3 render pixels around each output pixel (with their jitter),
+//  - motion comes from the closest-depth velocity in a 3x3 neighborhood
+//    (camera reprojection for the sky),
+//  - history is fetched with a 5-tap Catmull-Rom filter and clipped to the
+//    neighborhood's variance box in YCoCg,
+//  - blending is luminance-weighted to avoid flicker on bright pixels.
+#include "frame.glsl"
+
+layout(local_size_x = 8, local_size_y = 8) in;
+layout(binding = 0) uniform sampler2D t_color;    // render res, pre-exposed HDR
+layout(binding = 1) uniform sampler2D t_depth;    // render res
+layout(binding = 2) uniform sampler2D t_velocity; // render res
+layout(binding = 3) uniform sampler2D t_history;  // output res
+layout(rgba16f, binding = 0) uniform writeonly image2D i_output;
+uniform float u_history_weight;
+uniform int u_reset;
+
+vec3 to_ycocg(vec3 c) {
+    return vec3(dot(c, vec3(0.25, 0.5, 0.25)), dot(c, vec3(0.5, 0.0, -0.5)), dot(c, vec3(-0.25, 0.5, -0.25)));
+}
+
+vec3 from_ycocg(vec3 c) {
+    return vec3(c.x + c.y - c.z, c.x + c.z, c.x - c.y - c.z);
+}
+
+// Tonemap-weighted to reduce flicker (Karis).
+vec3 compress(vec3 c) { return c / (1.0 + max3(c)); }
+vec3 uncompress(vec3 c) { return c / max(1.0 - max3(c), 1e-4); }
+
+vec3 sample_history_catmull_rom(vec2 uv) {
+    vec2 size = vec2(textureSize(t_history, 0));
+    vec2 pos = uv * size - 0.5;
+    vec2 center = floor(pos) + 0.5;
+    vec2 f = pos - floor(pos);
+    vec2 w0 = f * (-0.5 + f * (1.0 - 0.5 * f));
+    vec2 w1 = 1.0 + f * f * (-2.5 + 1.5 * f);
+    vec2 w2 = f * (0.5 + f * (2.0 - 1.5 * f));
+    vec2 w3 = f * f * (-0.5 + 0.5 * f);
+    vec2 w12 = w1 + w2;
+    vec2 tc12 = (center + w2 / w12) / size;
+    vec2 tc0 = (center - 1.0) / size;
+    vec2 tc3 = (center + 2.0) / size;
+    vec3 result = textureLod(t_history, vec2(tc12.x, tc0.y), 0.0).rgb * (w12.x * w0.y)
+                + textureLod(t_history, vec2(tc0.x, tc12.y), 0.0).rgb * (w0.x * w12.y)
+                + textureLod(t_history, vec2(tc12.x, tc12.y), 0.0).rgb * (w12.x * w12.y)
+                + textureLod(t_history, vec2(tc3.x, tc12.y), 0.0).rgb * (w3.x * w12.y)
+                + textureLod(t_history, vec2(tc12.x, tc3.y), 0.0).rgb * (w12.x * w3.y);
+    float weight = (w12.x * w0.y) + (w0.x * w12.y) + (w12.x * w12.y) + (w3.x * w12.y) + (w12.x * w3.y);
+    return max(result / weight, vec3(0.0));
+}
+
+void main() {
+    ivec2 out_pixel = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 out_size = imageSize(i_output);
+    if (any(greaterThanEqual(out_pixel, out_size))) {
+        return;
+    }
+    vec2 uv = (vec2(out_pixel) + 0.5) / vec2(out_size);
+    ivec2 in_size = textureSize(t_color, 0);
+    vec2 in_pos = uv * vec2(in_size);              // continuous render-pixel position
+    ivec2 in_pixel = ivec2(floor(in_pos));
+    // Jitter in render pixels (NDC jitter * size / 2).
+    vec2 jitter_px = u_jitter.xy * vec2(in_size) * 0.5;
+
+    vec3 sum = vec3(0.0);
+    float weight_sum = 0.0;
+    vec3 m1 = vec3(0.0);
+    vec3 m2 = vec3(0.0);
+    float closest_depth = 0.0;
+    ivec2 closest = in_pixel;
+    float nearest_sample = 10.0;
+    for (int y = -1; y <= 1; ++y) {
+        for (int x = -1; x <= 1; ++x) {
+            ivec2 p = clamp(in_pixel + ivec2(x, y), ivec2(0), in_size - 1);
+            vec3 c = compress(texelFetch(t_color, p, 0).rgb);
+            // Where this render pixel's sample actually landed.
+            vec2 sample_pos = vec2(p) + 0.5 + jitter_px;
+            vec2 d = sample_pos - in_pos;
+            float d2 = dot(d, d);
+            float w = exp(-2.29 * d2);
+            sum += c * w;
+            weight_sum += w;
+            nearest_sample = min(nearest_sample, d2);
+            vec3 y_c = to_ycocg(c);
+            m1 += y_c;
+            m2 += y_c * y_c;
+            float depth = texelFetch(t_depth, p, 0).r;
+            if (depth > closest_depth) {
+                closest_depth = depth;
+                closest = p;
+            }
+        }
+    }
+    vec3 current = sum / max(weight_sum, 1e-4);
+
+    // Motion: object velocity where there's geometry, camera reprojection
+    // for the sky.
+    vec2 velocity_ndc;
+    if (closest_depth > 0.0) {
+        velocity_ndc = texelFetch(t_velocity, closest, 0).xy;
+    } else {
+        vec4 clip = vec4(uv * 2.0 - 1.0, 1e-7, 1.0);
+        vec4 world = u_inv_view_projection * clip;
+        vec3 dir = normalize(world.xyz / world.w - u_camera_position.xyz);
+        vec4 prev = u_prev_view_projection * vec4(u_camera_position.xyz + dir * 1e5, 1.0);
+        vec4 curr = u_unjittered_view_projection * vec4(u_camera_position.xyz + dir * 1e5, 1.0);
+        velocity_ndc = curr.xy / curr.w - prev.xy / prev.w;
+    }
+    vec2 history_uv = uv - velocity_ndc * 0.5;
+
+    vec3 result;
+    bool offscreen = any(lessThan(history_uv, vec2(0.0))) || any(greaterThan(history_uv, vec2(1.0)));
+    if (u_reset != 0 || offscreen) {
+        result = current;
+    } else {
+        vec3 history = compress(sample_history_catmull_rom(history_uv));
+        vec3 mean = m1 / 9.0;
+        vec3 sigma = sqrt(max(m2 / 9.0 - mean * mean, vec3(0.0)));
+        float gamma = 1.25;
+        vec3 lo = mean - sigma * gamma;
+        vec3 hi = mean + sigma * gamma;
+        // Clip toward the mean (more accurate than clamping).
+        vec3 hy = to_ycocg(history);
+        vec3 center = (lo + hi) * 0.5;
+        vec3 extent = max((hi - lo) * 0.5, vec3(1e-5));
+        vec3 offset = hy - center;
+        vec3 units = abs(offset / extent);
+        float max_unit = max(units.x, max(units.y, units.z));
+        if (max_unit > 1.0) {
+            hy = center + offset / max_unit;
+        }
+        history = from_ycocg(hy);
+        // Less history where the current pixel had a close sample (sharper
+        // when upscaling) and where motion is large.
+        float speed = length(velocity_ndc * vec2(out_size) * 0.5);
+        float blend = 1.0 - u_history_weight;
+        blend = mix(blend, max(blend, 0.35), saturate(speed / 40.0));
+        blend *= mix(1.0, 0.5, saturate(nearest_sample * 2.0)); // upscaling: far samples count less
+        result = mix(history, current, saturate(blend));
+    }
+    imageStore(i_output, out_pixel, vec4(uncompress(max(result, vec3(0.0))), 1.0));
+}
